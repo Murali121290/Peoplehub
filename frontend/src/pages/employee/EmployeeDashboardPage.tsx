@@ -295,7 +295,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [wantsToChangeMode, setWantsToChangeMode] = useState(false);
   const [wagesConfirmData, setWagesConfirmData] = useState<{ isOpen: boolean; reason: string } | null>(null);
-  const [selectedWorkModeOpt, setSelectedWorkModeOpt] = useState<"Office" | "WFH" | "Hybrid">("Office");
+  const [selectedWorkModeOpt, setSelectedWorkModeOpt] = useState<"Office" | "WFH" | "Hybrid" | "Flexible">("Office");
   // Modal state
   const [pendingClarifications, setPendingClarifications] = useState<any[]>([]);
   const [confirmModal, setConfirmModal] = useState(false);
@@ -306,6 +306,7 @@ const EmployeeDashboardPage: React.FC = () => {
     dueDateText: string;
     isPreWeekoff: boolean;
     canCheckOutAnyway?: boolean;
+    targetWeek?: number;
   } | null>(null);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [birthdayEmployees, setBirthdayEmployees] = useState<any[]>([]);
@@ -732,9 +733,12 @@ if (isHalfDayLeave(leave.total_days)) return false;
   const proceedToCheckInModal = () => {
     const isCurrentlyWFH = todayActiveWorkMode === "WFH";
     const isCurrentlyHybrid = todayActiveWorkMode === "Hybrid";
+    const isCurrentlyFlexible = todayActiveWorkMode === "Flexible";
 
     if (isCurrentlyHybrid) {
       setSelectedWorkModeOpt("Hybrid");
+    } else if (isCurrentlyFlexible) {
+      setSelectedWorkModeOpt("Flexible");
     } else {
       setSelectedWorkModeOpt(isCurrentlyWFH ? "WFH" : "Office");
     }
@@ -809,11 +813,67 @@ if (isHalfDayLeave(leave.total_days)) return false;
     proceedToCheckInModal();
   };
 
-  const handleConfirmCheckInShift = async () => {
+  const handleConfirmCheckInShift = async (directMode?: "WFH" | "Office") => {
     setShowCheckInShiftModal(false);
     setIsActionLoading(true);
 
-    const isHybrid = (currentEmployee?.work_mode || "").toLowerCase() === "hybrid";
+    const empMode = (currentEmployee?.work_mode || "").toLowerCase();
+    const isHybrid = empMode === "hybrid";
+    const isFlexible = empMode === "flexible";
+
+    const targetShift = cleanShiftName(selectedCheckInShift);
+
+    // Flexible mode check-in: Automatically approved immediately, no manager request sent
+    if (isFlexible) {
+      try {
+        if (!currentEmployee) {
+          toast.error("Employee details not found");
+          return;
+        }
+
+        const todayStr = new Date().toLocaleDateString("en-CA");
+        const targetWorkMode = directMode || (wantsToChangeMode ? "WFH" : "Office");
+
+        const payload = {
+          employee_id: currentEmployee.employee_id || currentEmployee.id,
+          employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
+          current_shift: todayActiveShift || targetShift,
+          requested_shift: targetShift,
+          current_work_mode: todayActiveWorkMode || currentEmployee.work_mode || "Flexible",
+          requested_work_mode: targetWorkMode,
+          request_type: targetWorkMode === "WFH" ? "WFH" : "Shift",
+          from_date: todayStr,
+          to_date: todayStr,
+          reporting_manager: currentEmployee.reporting_manager || "Admin",
+          reason: `Flexible mode check-in (${targetWorkMode}).`,
+          auto_approve: true,
+        };
+
+        const response = await fetch(`${BASE_URL}/shifts/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          toast.error(data.message || "Failed to confirm attendance mode.");
+          return;
+        }
+
+        toast.success(`Checked in under Flexible Mode (${targetWorkMode} - ${targetShift}).`);
+        loadShiftRequests();
+
+        await handleCheckIn(targetShift);
+      } catch (err) {
+        console.error(err);
+        toast.error("Error setting flexible attendance mode.");
+      } finally {
+        setIsActionLoading(false);
+      }
+      return;
+    }
+
     const shouldProcessChange = true;
 
     if (!shouldProcessChange) {
@@ -829,7 +889,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
       return;
     }
 
-    const targetShift = cleanShiftName(selectedCheckInShift);
     const isShiftChanged = targetShift.toLowerCase() !== cleanShiftName(todayActiveShift).toLowerCase();
     
     const targetWorkMode = isHybrid && wantsToChangeMode ? selectedWorkModeOpt : (todayActiveWorkMode || currentEmployee?.work_mode || "Office");
@@ -1333,40 +1392,55 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
         const hasPendingMonth = isYearly && !isDaily && (r as any).monthly_records && (r as any).monthly_records.some((m: any) => {
           if (m.status !== 'pending_employee') return false;
-          if (m.monthIndex === 6) return true;
-          if (m.monthIndex > 6) {
-            const prev = (r as any).monthly_records.find((p: any) => p.monthIndex === m.monthIndex - 1);
-            return prev?.status === 'manager_approved';
-          }
-          return false;
+          const monthlyRecords: any[] = (r as any).monthly_records;
+          const minMonth = monthlyRecords.length > 0 ? Math.min(...monthlyRecords.map((item: any) => item.monthIndex)) : 1;
+          if (m.monthIndex === minMonth) return true;
+          const prev = monthlyRecords.find((p: any) => p.monthIndex === m.monthIndex - 1);
+          return !prev || prev.status === 'manager_approved' || prev.status === 'submitted_to_manager';
+        });
+
+        const hasPendingQuarter = isYearly && !isDaily && (r as any).quarterly_records && (r as any).quarterly_records.some((q: any) => {
+          if (q.status !== 'pending_employee') return false;
+          const quarterlyRecords: any[] = (r as any).quarterly_records;
+          const minQuarter = quarterlyRecords.length > 0 ? Math.min(...quarterlyRecords.map((item: any) => item.quarterIndex)) : 1;
+          if (q.quarterIndex === minQuarter) return true;
+          const prev = quarterlyRecords.find((p: any) => p.quarterIndex === q.quarterIndex - 1);
+          return !prev || prev.status === 'manager_approved' || prev.status === 'submitted_to_manager';
         });
 
         const hasPendingWeek = isYearly && !isDaily && (r as any).weekly_records && (r as any).weekly_records.some((w: any) => {
           if (w.status !== 'pending_employee') return false;
-          if (w.weekIndex === 26) return true;
-          if (w.weekIndex > 26) {
-            const prev = (r as any).weekly_records.find((p: any) => p.weekIndex === w.weekIndex - 1);
-            return prev?.status === 'manager_approved';
-          }
-          return false;
+          const weeklyRecords: any[] = (r as any).weekly_records;
+          const minWeek = weeklyRecords.length > 0 ? Math.min(...weeklyRecords.map((item: any) => item.weekIndex)) : 1;
+          if (w.weekIndex === minWeek || w.weekIndex === 26) return true;
+          const prev = weeklyRecords.find((p: any) => p.weekIndex === w.weekIndex - 1);
+          return !prev || prev.status === 'manager_approved' || prev.status === 'submitted_to_manager';
         });
 
         const hasPendingDay = isDaily && (() => {
+          const s = String(r.status || '').toLowerCase().trim();
           const dailyRecords = getDailyRecordsForResponse(r, cycle);
           if (dailyRecords.length > 0) {
             const todayRec = dailyRecords.find((d: any) => d.date === todayStr || d.date === localTodayStr);
             if (todayRec) {
-              return todayRec.status === 'pending_employee';
+              const recS = String(todayRec.status || '').toLowerCase().trim();
+              return recS === 'pending_employee';
             }
             const startDateStr = r.startDate || r.start_date || cycle?.startDate || '';
             const endDateStr = r.endDate || r.end_date || cycle?.endDate || '';
             const isTodayInCycle = (!startDateStr || todayStr >= startDateStr || localTodayStr >= startDateStr) && (!endDateStr || todayStr <= endDateStr || localTodayStr <= endDateStr);
-            return isTodayInCycle && dailyRecords.some((d: any) => d.status === 'pending_employee');
+            return isTodayInCycle && dailyRecords.some((d: any) => (d.date <= todayStr || d.date <= localTodayStr) && String(d.status || '').toLowerCase().trim() === 'pending_employee');
           }
-          return r.status !== 'submitted_to_manager' && r.status !== 'manager_approved';
+          // If no dailyRecords sub-array, check the response-level status
+          if (s === 'submitted_to_manager' || s === 'manager_review' || s === 'manager_approved' || s === 'approved' || s === 'completed' || s === 'sm_final_approval') {
+            return false;
+          }
+          return s !== 'submitted_to_manager' && s !== 'manager_review' && s !== 'manager_approved' && s !== 'approved';
         })();
 
-        const isPending = hasPendingDay || hasPendingMonth || hasPendingWeek || r.status === 'employee_in_progress' || r.status === 'returned_to_employee' || r.status === 'Assigned to Employee' || r.status === 'pending_employee' || !r.employeeSubmittedAt;
+        const isPending = isDaily
+          ? hasPendingDay
+          : (hasPendingMonth || hasPendingQuarter || hasPendingWeek || r.status === 'employee_in_progress' || r.status === 'returned_to_employee' || r.status === 'Assigned to Employee' || r.status === 'pending_employee' || !r.employeeSubmittedAt);
         if (!isPending) return false;
 
         const rEmpCode = clean(r.employeeCode);
@@ -1430,8 +1504,12 @@ if (isHalfDayLeave(leave.total_days)) return false;
           const isTodayWeekend = todayDay === 0 || todayDay === 6;
           const isTodayLeaveOrHoliday = isApprovedLeaveOrHoliday(todayStr);
 
-          // Week-offs (Saturday & Sunday), company holidays, and approved leave days are strictly exempt from daily checkout blocking
-          if (!isTodayWeekend && !isTodayLeaveOrHoliday) {
+          // If employee checked in today, daily evaluation is required upon checkout even on Saturdays, rest days, or holidays.
+          // Otherwise, if they did not check in, week-offs (Sundays/Saturdays) and leaves/holidays remain exempt.
+          const isExempt = (isTodayWeekend || isTodayLeaveOrHoliday) && !isCheckedIn;
+
+          if (!isExempt) {
+            const respStatus = String(resp.status || '').toLowerCase().trim();
             const dailyRecords: any[] = getDailyRecordsForResponse(resp, cycle);
             let isTodayPending = false;
             let dayLabel = 'Today';
@@ -1439,17 +1517,23 @@ if (isHalfDayLeave(leave.total_days)) return false;
             if (dailyRecords.length > 0) {
               const todayRec = dailyRecords.find((d: any) => d.date === todayStr || d.date === localTodayStr);
               if (todayRec) {
-                isTodayPending = todayRec.status === 'pending_employee';
+                const recStatus = String(todayRec.status || '').toLowerCase().trim();
+                isTodayPending = recStatus === 'pending_employee';
                 dayLabel = todayRec.dayLabel || 'Today';
               } else {
                 const isTodayActive = (!startDateStr || todayStr >= startDateStr || localTodayStr >= startDateStr) && (!endDateStr || todayStr <= endDateStr || localTodayStr <= endDateStr);
                 if (isTodayActive) {
-                  isTodayPending = dailyRecords.some((d: any) => d.status === 'pending_employee');
+                  isTodayPending = dailyRecords.some((d: any) => (d.date <= todayStr || d.date <= localTodayStr) && String(d.status || '').toLowerCase().trim() === 'pending_employee');
                 }
               }
             } else {
+              // If the response as a whole was already submitted to manager or approved, do not block checkout
+              if (respStatus === 'submitted_to_manager' || respStatus === 'manager_review' || respStatus === 'manager_approved' || respStatus === 'approved' || respStatus === 'completed' || respStatus === 'sm_final_approval') {
+                continue;
+              }
               const isTodayActive = (!startDateStr || todayStr >= startDateStr || localTodayStr >= startDateStr) && (!endDateStr || todayStr <= endDateStr || localTodayStr <= endDateStr);
-              isTodayPending = isTodayActive && (resp.status === 'pending_employee' || resp.status === 'employee_in_progress' || resp.status === 'Assigned to Employee' || !resp.employeeSubmittedAt);
+              const isSubmitted = respStatus === 'submitted_to_manager' || respStatus === 'manager_review' || respStatus === 'manager_approved' || respStatus === 'approved' || respStatus === 'completed';
+              isTodayPending = isTodayActive && !isSubmitted && (respStatus === 'pending_employee' || respStatus === 'employee_in_progress' || respStatus === 'assigned to employee' || !resp.employeeSubmittedAt);
             }
 
             if (isTodayPending) {
@@ -1467,9 +1551,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
           continue;
         }
 
-        const isWeekly = cycle?.frequency === 'weekly';
-        const isYearly = cycle?.frequency === 'yearly' || resp.frequency === 'yearly' || (resp.monthly_records && resp.monthly_records.length > 0) || (resp.weekly_records && resp.weekly_records.length > 0) || periodName.toLowerCase().includes('annual') || periodName.toLowerCase().includes('yearly') || periodName.toLowerCase().includes('fy 20');
-        const isMonthly = cycle?.frequency === 'monthly' || (!isWeekly && !isYearly && !cycle?.frequency);
+        const isWeekly = cycle?.frequency === 'weekly' || resp?.frequency === 'weekly';
+        const isYearly = !isWeekly && (cycle?.frequency === 'yearly' || resp?.frequency === 'yearly' || (resp?.monthly_records && resp.monthly_records.length > 0) || (resp?.weekly_records && resp.weekly_records.length > 0) || periodName.toLowerCase().includes('annual') || periodName.toLowerCase().includes('yearly') || periodName.toLowerCase().includes('fy 20'));
+        const isMonthly = cycle?.frequency === 'monthly' || resp?.frequency === 'monthly' || (!isWeekly && !isYearly && !cycle?.frequency);
 
         const formatDDMMYYYY = (isoStr: string) => {
           try {
@@ -1524,53 +1608,54 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
           if (isWeeklySub) {
             const weeklyRecords: any[] = (resp as any).weekly_records || [];
+            const minWeek = weeklyRecords.length > 0 ? Math.min(...weeklyRecords.map((item: any) => item.weekIndex)) : 1;
             const curWeekRec = weeklyRecords.find((w: any) => {
               if (w.status !== 'pending_employee') return false;
-              if (w.weekIndex === 26) return true;
-              if (w.weekIndex > 26) {
-                const prevRec = weeklyRecords.find((p: any) => p.weekIndex === w.weekIndex - 1);
-                return prevRec?.status === 'manager_approved';
-              }
-              return false;
+              if (w.weekIndex === minWeek || w.weekIndex === 26) return true;
+              const prevRec = weeklyRecords.find((p: any) => p.weekIndex === w.weekIndex - 1);
+              return !prevRec || prevRec.status === 'manager_approved' || prevRec.status === 'submitted_to_manager';
             });
 
             if (curWeekRec && curWeekRec.status === 'pending_employee') {
               const weekLabel = curWeekRec.weekLabel || `Week ${curWeekRec.weekIndex}`;
               const wEndDateStr = curWeekRec.endDate ? String(curWeekRec.endDate).split('T')[0] : endDateStr;
-              const wEndObj = new Date(wEndDateStr);
-              const wDiffTime = wEndObj.getTime() - new Date(todayStr).getTime();
-              const wDiffDays = Math.ceil(wDiffTime / (1000 * 60 * 60 * 24));
 
-              const elapsedWorkingDays = countWorkingDaysBetween(wEndDateStr, todayStr);
-              const isOverdueStrict = elapsedWorkingDays > 2;
-              const isLastGraceDay = elapsedWorkingDays === 2;
-              const isWithinPrompt = elapsedWorkingDays >= 1 || wDiffDays <= 1;
-
-              if (isWithinPrompt || isOverdueStrict || wDiffDays <= 0) {
-                const workingDaysLeft = Math.max(0, 2 - elapsedWorkingDays);
-                return {
-                  type: 'employee_eval' as const,
-                  periodName: `${periodName} (${weekLabel})`,
-                  dueDateText: isOverdueStrict
-                    ? `Overdue (${weekLabel} submission required)`
-                    : isLastGraceDay
-                      ? `Final Working Day to Submit ${weekLabel}`
-                      : `Due in ${workingDaysLeft} Working Day${workingDaysLeft > 1 ? 's' : ''}`,
-                  canCheckOutAnyway: !isOverdueStrict && !isLastGraceDay,
-                  isPreWeekoff: isPreWeekoff || isPreLeaveDay,
-                };
+              // If the current week is still ongoing (e.g. Monday-Sunday, 12/10 - 18/10), do not prompt checkout yet!
+              if (todayStr <= wEndDateStr) {
+                continue;
               }
+
+              // The week has ended (Sunday passed). Working days start counting from Monday:
+              // Day 1 (Monday): Prompt with grace period ("Check Out Anyway" allowed)
+              // Day 2 (Tuesday): Prompt with grace period ("Check Out Anyway" allowed)
+              // Day 3 (Wednesday): MANDATORY ("Final Working Day to Submit / Check Out Anyway" blocked)
+              // Day > 3: OVERDUE (Strictly blocked until submitted)
+              const elapsedWorkingDays = countWorkingDaysBetween(wEndDateStr, todayStr);
+              const isOverdueStrict = elapsedWorkingDays > 3;
+              const isLastGraceDay = elapsedWorkingDays === 3; // Wednesday is mandatory
+              const workingDaysLeft = Math.max(0, 3 - elapsedWorkingDays);
+
+              return {
+                type: 'employee_eval' as const,
+                periodName: `${periodName} (${weekLabel})`,
+                dueDateText: isOverdueStrict
+                  ? `Overdue (${weekLabel} submission mandatory)`
+                  : isLastGraceDay
+                    ? `Mandatory: Final Day to Submit ${weekLabel} (Wednesday)`
+                    : `Due in ${workingDaysLeft} Working Day${workingDaysLeft > 1 ? 's' : ''} (Wednesday)`,
+                canCheckOutAnyway: !isOverdueStrict && !isLastGraceDay,
+                isPreWeekoff: isPreWeekoff || isPreLeaveDay,
+                targetWeek: curWeekRec.weekIndex,
+              };
             }
           } else if (isQuarterlySub) {
             const quarterlyRecords: any[] = (resp as any).quarterly_records || [];
+            const minQuarter = quarterlyRecords.length > 0 ? Math.min(...quarterlyRecords.map((item: any) => item.quarterIndex)) : 1;
             const curQuarterRec = quarterlyRecords.find((q: any) => {
               if (q.status !== 'pending_employee') return false;
-              if (q.quarterIndex === 2) return true;
-              if (q.quarterIndex > 2) {
-                const prevRec = quarterlyRecords.find((p: any) => p.quarterIndex === q.quarterIndex - 1);
-                return prevRec?.status === 'manager_approved';
-              }
-              return false;
+              if (q.quarterIndex === minQuarter) return true;
+              const prevRec = quarterlyRecords.find((p: any) => p.quarterIndex === q.quarterIndex - 1);
+              return !prevRec || prevRec.status === 'manager_approved' || prevRec.status === 'submitted_to_manager';
             });
 
             if (curQuarterRec && curQuarterRec.status === 'pending_employee') {
@@ -1612,18 +1697,16 @@ if (isHalfDayLeave(leave.total_days)) return false;
               }
             }
           } else {
-            // Yearly Evaluation: Check the active actionable unlocked monthly milestone starting from September (Month 6) onwards
+            // Yearly Evaluation: Check the active actionable unlocked monthly milestone starting from first available month onwards
             const monthlyRecords: any[] = (resp as any).monthly_records || [];
+            const minMonth = monthlyRecords.length > 0 ? Math.min(...monthlyRecords.map((item: any) => item.monthIndex)) : 1;
             const curMonthRec = monthlyRecords.find((m: any) => {
               if (m.status !== 'pending_employee') return false;
-              if (m.monthIndex === 6) return true;
-              if (m.monthIndex > 6) {
-                const prevRec = monthlyRecords.find((p: any) => p.monthIndex === m.monthIndex - 1);
-                return prevRec?.status === 'manager_approved';
-              }
-              return false;
+              if (m.monthIndex === minMonth) return true;
+              const prevRec = monthlyRecords.find((p: any) => p.monthIndex === m.monthIndex - 1);
+              return !prevRec || prevRec.status === 'manager_approved' || prevRec.status === 'submitted_to_manager';
             });
-            const monthTitle = curMonthRec ? curMonthRec.monthName : 'September Progress';
+            const monthTitle = curMonthRec ? curMonthRec.monthName : 'Monthly Progress';
 
             if (curMonthRec && curMonthRec.status === 'pending_employee') {
               let mEndStr = curMonthRec.endDate ? String(curMonthRec.endDate).split('T')[0] : '';
@@ -1725,9 +1808,49 @@ if (isHalfDayLeave(leave.total_days)) return false;
             }
           }
 
-          const isWithinPromptWindow = isWeekly
-            ? (diffDays >= 0 && diffDays <= 3) // Last 3 days of week
-            : (diffDays >= 0 && diffDays <= 2);
+          if (isWeekly) {
+            // Determine the specific week's end date (e.g. Sunday 25/10/2026) rather than full multi-month cycle endDate
+            let weeklyEndDateStr = resp?.endDate ? String(resp.endDate).split("T")[0] : endDateStr;
+            const curWeeklyRecords = (resp as any)?.weekly_records || [];
+            if (curWeeklyRecords.length > 0) {
+              const activeWeekRec = curWeeklyRecords.find((w: any) => Boolean(w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate)) || curWeeklyRecords[0];
+              if (activeWeekRec?.endDate) {
+                weeklyEndDateStr = String(activeWeekRec.endDate).split("T")[0];
+              }
+            } else {
+              // Parse from periodName or form e.g. "Weekly (19/10/2026 - 25/10/2026)"
+              const pName = String(resp?.periodName || (resp as any)?.form || periodName || '').trim();
+              const match = pName.match(/(\d{2})\/(\d{2})\/(\d{4})\s*-\s*(\d{2})\/(\d{2})\/(\d{4})/);
+              if (match) {
+                weeklyEndDateStr = `${match[6]}-${match[5]}-${match[4]}`;
+              }
+            }
+
+            const isWeekStillInProgress = todayStr <= weeklyEndDateStr;
+            if (isWeekStillInProgress) {
+              // Current week is still ongoing (Mon-Sun) - do not interrupt checkout
+              continue;
+            } else {
+              const elapsedWorkingDays = countWorkingDaysBetween(weeklyEndDateStr, todayStr);
+              const isOverdueStrict = elapsedWorkingDays > 3;
+              const isLastGraceDay = elapsedWorkingDays === 3; // Wednesday is mandatory
+              const workingDaysLeft = Math.max(0, 3 - elapsedWorkingDays);
+
+              return {
+                type: 'employee_eval' as const,
+                periodName,
+                dueDateText: isOverdueStrict
+                  ? `Overdue (${periodName} submission mandatory)`
+                  : isLastGraceDay
+                    ? `Mandatory: Final Day to Submit ${periodName} (Wednesday)`
+                    : `Due in ${workingDaysLeft} Working Day${workingDaysLeft > 1 ? 's' : ''} (Wednesday)`,
+                canCheckOutAnyway: !isOverdueStrict && !isLastGraceDay,
+                isPreWeekoff: isPreWeekoff || isPreLeaveDay,
+              };
+            }
+          }
+
+          const isWithinPromptWindow = (diffDays >= 0 && diffDays <= 2);
 
           if (isDueToday || diffDays <= 0 || isPreWeekoff || isPreLeaveDay || isWithinPromptWindow) {
             const isStrictBlocked = isDueToday || diffDays <= 0;
@@ -1765,6 +1888,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
         dueDateText: pendingEval.dueDateText,
         isPreWeekoff: pendingEval.isPreWeekoff,
         canCheckOutAnyway: pendingEval.canCheckOutAnyway,
+        targetWeek: (pendingEval as any).targetWeek,
       });
     } else {
       setConfirmModal(true);
@@ -2887,8 +3011,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
           isPreWeekoff={pendingEvalPrompt.isPreWeekoff}
           canCheckOutAnyway={pendingEvalPrompt.canCheckOutAnyway}
           onCompleteNow={() => {
+            const tw = pendingEvalPrompt.targetWeek;
             setPendingEvalPrompt(null);
-            navigate("/evaluation");
+            if (tw) {
+              navigate(`/evaluation?week=${tw}`);
+            } else {
+              navigate("/evaluation");
+            }
           }}
           onCheckOutAnyway={async () => {
             setPendingEvalPrompt(null);
@@ -2981,7 +3110,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                     onCheckInOut={() => isCheckedIn ? handleCheckOutAction() : handleCheckInClick()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}
-                    isHybrid={(currentEmployee?.work_mode || "").toLowerCase() === "hybrid"}
+                    isHybrid={["hybrid", "flexible"].includes((currentEmployee?.work_mode || "").toLowerCase())}
                     isPaused={isPaused}
                     pausedTimer={pausedTimer}
                     onPauseToggle={handlePauseToggle}
@@ -3101,15 +3230,111 @@ if (isHalfDayLeave(leave.total_days)) return false;
             </div>
             {/* Conditionally render content based on employee's work mode */}
             {(() => {
-              const isHybrid = (currentEmployee?.work_mode || "").toLowerCase() === "hybrid";
-                if (isHybrid) {
+              const empMode = (currentEmployee?.work_mode || "").toLowerCase();
+              const isHybrid = empMode === "hybrid";
+              const isFlexible = empMode === "flexible";
+
+              // 1. Flexible Mode: Show WFO vs WFH stacked vertically (one below the other)
+              if (isFlexible) {
+                return (
+                  <div className="flex flex-col gap-3 py-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                      Select Attendance Mode
+                    </span>
+
+                    <div className="flex flex-col gap-2.5">
+                      {/* Work From Office (WFO) */}
+                      <div
+                        onClick={() => setSelectedWorkModeOpt("Office")}
+                        className={`flex items-center gap-3 p-3.5 border rounded-2xl cursor-pointer transition-all duration-200 ${
+                          selectedWorkModeOpt === "Office"
+                            ? "border-teal-600 bg-teal-50/30 ring-2 ring-teal-100 shadow-xs"
+                            : "border-neutral-200 hover:bg-neutral-50/70 hover:border-neutral-300"
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center text-xl shrink-0">
+                          🏢
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[13px] font-bold text-neutral-900 block">
+                            Work From Office (WFO)
+                          </span>
+                          <span className="text-[11px] text-neutral-500 font-semibold block mt-0.5">
+                            Working directly from company premises • Auto-Approved
+                          </span>
+                        </div>
+                        {selectedWorkModeOpt === "Office" && (
+                          <span className="w-5 h-5 rounded-full bg-teal-700 flex items-center justify-center shrink-0">
+                            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+                            </svg>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Work From Home (WFH) */}
+                      <div
+                        onClick={() => setSelectedWorkModeOpt("WFH")}
+                        className={`flex items-center gap-3 p-3.5 border rounded-2xl cursor-pointer transition-all duration-200 ${
+                          selectedWorkModeOpt === "WFH"
+                            ? "border-teal-600 bg-teal-50/30 ring-2 ring-teal-100 shadow-xs"
+                            : "border-neutral-200 hover:bg-neutral-50/70 hover:border-neutral-300"
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center text-xl shrink-0">
+                          🏠
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[13px] font-bold text-neutral-900 block">
+                            Work From Home (WFH)
+                          </span>
+                          <span className="text-[11px] text-neutral-500 font-semibold block mt-0.5">
+                            Working remotely from home today • Auto-Approved
+                          </span>
+                        </div>
+                        {selectedWorkModeOpt === "WFH" && (
+                          <span className="w-5 h-5 rounded-full bg-teal-700 flex items-center justify-center shrink-0">
+                            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+                            </svg>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions: Cancel and Confirm */}
+                    <div className="flex gap-3 pt-3 border-t border-neutral-100">
+                      <button
+                        type="button"
+                        onClick={() => setShowCheckInShiftModal(false)}
+                        className="flex-1 py-2.5 border border-neutral-200 rounded-2xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800 transition-all duration-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmCheckInShift(selectedWorkModeOpt === "WFH" ? "WFH" : "Office")}
+                        className="flex-1 py-2.5 bg-teal-800 hover:bg-teal-900 text-white rounded-2xl text-sm font-extrabold shadow-md hover:shadow-lg transition-all duration-200"
+                      >
+                        Confirm today's mode
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (isHybrid) {
                 return (
                   <>
                     {/* Toggle to change details */}
                     <div className="flex items-center justify-between p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/60 shadow-xs">
                       <div className="flex flex-col gap-0.5 select-none">
-                        <span className="text-[12.5px] font-bold text-neutral-800">Request WFH (Work From Home) today?</span>
-                        <span className="text-[10px] text-neutral-450 font-semibold tracking-wide">Toggle on to request WFH for today</span>
+                        <span className="text-[12.5px] font-bold text-neutral-800">
+                          Request WFH (Work From Home) today?
+                        </span>
+                        <span className="text-[10px] text-neutral-450 font-semibold tracking-wide">
+                          Toggle on to request WFH for today
+                        </span>
                       </div>
                       <button
                         type="button"
@@ -3174,65 +3399,85 @@ if (isHalfDayLeave(leave.total_days)) return false;
                         })}
                       </div>
                     </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-3 pt-3 border-t border-neutral-100">
+                      <button
+                        type="button"
+                        onClick={() => setShowCheckInShiftModal(false)}
+                        className="flex-1 py-2.5 border border-neutral-200 rounded-2xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800 transition-all duration-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmCheckInShift()}
+                        className="flex-1 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl text-sm font-extrabold shadow-md hover:shadow-lg transition-all duration-200"
+                      >
+                        Confirm today's mode
+                      </button>
+                    </div>
                   </>
                 );
               } else {
                 // Non-Hybrid Employees: Only show the three shifts directly
                 return (
-                  <div className="flex flex-col gap-3">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
-                    <div className="grid grid-cols-1 gap-2">
-                      {getAvailableShifts().map((opt) => {
-                        const isSelected = selectedCheckInShift === opt.name;
-                        return (
-                          <div
-                            key={opt.name}
-                            onClick={() => setSelectedCheckInShift(opt.name)}
-                            className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all duration-200 ${
-                              isSelected
-                                ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
-                                : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
-                            }`}
-                          >
-                            <div className="min-w-0 flex-1 flex items-center justify-between">
-                              <div>
-                                <span className="text-[13px] font-bold text-neutral-850 block">{opt.name}</span>
-                                <span className="text-[10px] text-neutral-450 font-semibold block mt-0.5">{opt.time}</span>
+                  <>
+                    <div className="flex flex-col gap-3">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
+                      <div className="grid grid-cols-1 gap-2">
+                        {getAvailableShifts().map((opt) => {
+                          const isSelected = selectedCheckInShift === opt.name;
+                          return (
+                            <div
+                              key={opt.name}
+                              onClick={() => setSelectedCheckInShift(opt.name)}
+                              className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all duration-200 ${
+                                isSelected
+                                  ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
+                                  : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1 flex items-center justify-between">
+                                <div>
+                                  <span className="text-[13px] font-bold text-neutral-850 block">{opt.name}</span>
+                                  <span className="text-[10px] text-neutral-450 font-semibold block mt-0.5">{opt.time}</span>
+                                </div>
+                                {isSelected && (
+                                  <span className="w-4 h-4 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+                                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                  </span>
+                                )}
                               </div>
-                              {isSelected && (
-                                <span className="w-4 h-4 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-                                  <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
-                                  </svg>
-                                </span>
-                              )}
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-3 pt-3 border-t border-neutral-100">
+                      <button
+                        type="button"
+                        onClick={() => setShowCheckInShiftModal(false)}
+                        className="flex-1 py-2.5 border border-neutral-200 rounded-2xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800 transition-all duration-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmCheckInShift()}
+                        className="flex-1 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl text-sm font-extrabold shadow-md hover:shadow-lg transition-all duration-200"
+                      >
+                        Confirm today's mode
+                      </button>
+                    </div>
+                  </>
                 );
               }
             })()}
-
-            {/* Actions */}
-            <div className="flex gap-3 pt-3 border-t border-neutral-100">
-              <button
-                type="button"
-                onClick={() => setShowCheckInShiftModal(false)}
-                className="flex-1 py-2.5 border border-neutral-200 rounded-2xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800 transition-all duration-200"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmCheckInShift}
-                className="flex-1 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl text-sm font-extrabold shadow-md hover:shadow-lg transition-all duration-200"
-              >
-                Confirm today's mode
-              </button>
-            </div>
           </div>
         </div>
       )}

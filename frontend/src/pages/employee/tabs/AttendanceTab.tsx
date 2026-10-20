@@ -481,6 +481,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       return;
     }
 
+    const [fh, fm] = permFromTime.split(":").map(Number);
+    const [th, tm] = permToTime.split(":").map(Number);
+    const requestedMinutes = (th * 60 + tm) - (fh * 60 + fm);
+    if (requestedMinutes !== 60) {
+      toast.error("Permission duration must be exactly 1 hour.");
+      return;
+    }
+
     if (!permReason.trim()) {
       toast.error("Please enter a reason for the permission request");
       return;

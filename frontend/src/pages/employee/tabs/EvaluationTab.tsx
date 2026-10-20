@@ -1145,7 +1145,8 @@ export const EvaluationTab: React.FC = () => {
     pDue = mgrPeriodDueDate,
     pTeamId = mgrAssignTeamId,
     leavesList = dbApprovedLeaves,
-    holidaysList = dbHolidays
+    holidaysList = dbHolidays,
+    pSubFreq = mgrSubFrequency
   ) => {
     const managerDisplayName = user?.full_name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Manager';
     const formTeamLabel = pTeamId === 'all_teams' ? `${managerDisplayName}'s Team` : (pTeamId || 'Team');
@@ -1197,11 +1198,34 @@ export const EvaluationTab: React.FC = () => {
       }
       setMgrPeriodDueDate(actualTo);
     } else if (pType === 'yearly' || (pType as string) === 'annual') {
-      periodStr = `FY ${pYear}-${pYear + 1} (April - March)`;
-      formTitle = `FY ${pYear}-${pYear + 1} Performance Metrics - ${formTeamLabel}`;
-      const rawCandidateDue = `${pYear + 1}-04-05`;
-      autoDueDate = getAdjustedWorkingDueDate(rawCandidateDue, leavesList, holidaysList);
-      setMgrPeriodDueDate(autoDueDate);
+      if (pSubFreq === 'weekly' && pFrom && pTo) {
+        const fromFmt = formatDisplayDate(pFrom);
+        const toFmt = formatDisplayDate(pTo);
+        periodStr = `Weekly (${fromFmt} - ${toFmt})`;
+        formTitle = `Weekly Performance Metrics (${fromFmt} - ${toFmt}) - ${formTeamLabel}`;
+        const rawCandidateDue = pTo || getLocalTodayDateString();
+        autoDueDate = getAdjustedWorkingDueDate(rawCandidateDue, leavesList, holidaysList);
+        setMgrPeriodDueDate(autoDueDate);
+      } else if (pSubFreq === 'daily' && pFrom) {
+        const actualFrom = pFrom;
+        const actualTo = pTo || actualFrom;
+        const fromFmt = formatDisplayDate(actualFrom);
+        const toFmt = formatDisplayDate(actualTo);
+        if (actualFrom !== actualTo) {
+          periodStr = `Daily (${fromFmt} - ${toFmt})`;
+          formTitle = `Daily Deliverables (${fromFmt} - ${toFmt}) - ${formTeamLabel}`;
+        } else {
+          periodStr = `Daily (${fromFmt})`;
+          formTitle = `Daily Deliverables (${fromFmt}) - ${formTeamLabel}`;
+        }
+        setMgrPeriodDueDate(actualTo);
+      } else {
+        periodStr = `FY ${pYear}-${pYear + 1} (April - March)`;
+        formTitle = `FY ${pYear}-${pYear + 1} Performance Metrics - ${formTeamLabel}`;
+        const rawCandidateDue = `${pYear + 1}-04-05`;
+        autoDueDate = getAdjustedWorkingDueDate(rawCandidateDue, leavesList, holidaysList);
+        setMgrPeriodDueDate(autoDueDate);
+      }
     }
 
     setMgrAssignPeriod(periodStr);
@@ -1244,7 +1268,13 @@ export const EvaluationTab: React.FC = () => {
   const [activeMgrYearlyFiscalMonth, setActiveMgrYearlyFiscalMonth] = useState<number>(getCurrentFiscalMonthIndex());
   const [yearlyMonthKpiInputs, setYearlyMonthKpiInputs] = useState<Record<number, Record<string, YearlyMonthKPIEntry>>>({});
   const [yearlyMonthRemarks, setYearlyMonthRemarks] = useState<Record<number, string>>({});
-  const [activeYearlyWeekIndex, setActiveYearlyWeekIndex] = useState<number>(getCurrentFiscalWeekIndex());
+  const [activeYearlyWeekIndex, setActiveYearlyWeekIndex] = useState<number>(() => {
+    try {
+      const p = new URLSearchParams(window.location.search).get('week');
+      if (p && !isNaN(Number(p))) return Number(p);
+    } catch (_) {}
+    return getCurrentFiscalWeekIndex();
+  });
   const [weeklyQuarterFilter, setWeeklyQuarterFilter] = useState<number | 'all'>(getCurrentFiscalQuarterIndex());
   const [activeMgrYearlyWeekIndex, setActiveMgrYearlyWeekIndex] = useState<number>(getCurrentFiscalWeekIndex());
   const [mgrWeeklyQuarterFilter, setMgrWeeklyQuarterFilter] = useState<number | 'all'>('all');
@@ -4255,13 +4285,8 @@ export const EvaluationTab: React.FC = () => {
           setIsAssigning(false);
           return;
         }
-        if (mgrSubFrequency === 'daily') {
-          effectiveStartDate = mgrPeriodFromDate || `${mgrPeriodYear}-04-01`;
-          effectiveEndDate = mgrPeriodToDate || `${mgrPeriodYear + 1}-03-31`;
-        } else {
-          effectiveStartDate = `${mgrPeriodYear}-04-01`;
-          effectiveEndDate = `${mgrPeriodYear + 1}-03-31`;
-        }
+        effectiveStartDate = mgrPeriodFromDate || `${mgrPeriodYear}-04-01`;
+        effectiveEndDate = mgrPeriodToDate || `${mgrPeriodYear + 1}-03-31`;
       }
 
       const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.employee_id || '');
@@ -5401,7 +5426,7 @@ export const EvaluationTab: React.FC = () => {
           }
         }
 
-        const curRecords = activeEmpResponse.monthly_records || [];
+        const curRecords = getResponseMonthlyRecords(activeEmpResponse);
         const initialYearlyInputs: Record<number, Record<string, YearlyMonthKPIEntry>> = {};
         const initialYearlyRemarks: Record<number, string> = {};
         curRecords.forEach(rec => {
@@ -5416,7 +5441,7 @@ export const EvaluationTab: React.FC = () => {
           if (!curWeeklyRecords || curWeeklyRecords.length === 0) {
             let baseYear = new Date().getFullYear();
             if (activeEmpResponse.startDate) baseYear = new Date(activeEmpResponse.startDate).getFullYear();
-            curWeeklyRecords = initializeYearlyWeeklyRecords(baseYear);
+            curWeeklyRecords = initializeYearlyWeeklyRecords(baseYear, activeEmpResponse.startDate, activeEmpResponse.endDate);
           }
           const initialWeeklyInputs: Record<number, Record<string, YearlyMonthKPIEntry>> = {};
           const initialWeeklyRemarks: Record<number, string> = {};
@@ -5429,21 +5454,37 @@ export const EvaluationTab: React.FC = () => {
 
           if (isDifferentResp || !activeYearlyWeekIndex) {
             const todayStr = getLocalTodayDateString();
-            let currentActiveWeekRec = curWeeklyRecords.find(w => Boolean(w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate));
-            if (!currentActiveWeekRec) {
-              const eligiblePastWeeks = curWeeklyRecords.filter(w => Boolean(w.startDate && w.startDate <= todayStr));
-              if (eligiblePastWeeks.length > 0) {
-                currentActiveWeekRec = eligiblePastWeeks[eligiblePastWeeks.length - 1];
+            const urlParams = new URLSearchParams(window.location.search);
+            const paramWeek = urlParams.get('week') ? Number(urlParams.get('week')) : null;
+
+            let selectedWeekRec = paramWeek ? curWeeklyRecords.find(w => w.weekIndex === paramWeek) : null;
+
+            // If not explicitly specified by URL, find the earliest pending week that needs employee submission
+            if (!selectedWeekRec) {
+              const earliestPendingWeek = curWeeklyRecords.find(w => w.status === 'pending_employee' && Boolean(w.startDate && w.startDate <= todayStr));
+              if (earliestPendingWeek) {
+                selectedWeekRec = earliestPendingWeek;
               }
             }
-            if (!currentActiveWeekRec) {
-              currentActiveWeekRec = curWeeklyRecords[0];
+
+            // Fallback to current calendar week or closest past week
+            if (!selectedWeekRec) {
+              selectedWeekRec = curWeeklyRecords.find(w => Boolean(w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate));
+            }
+            if (!selectedWeekRec) {
+              const eligiblePastWeeks = curWeeklyRecords.filter(w => Boolean(w.startDate && w.startDate <= todayStr));
+              if (eligiblePastWeeks.length > 0) {
+                selectedWeekRec = eligiblePastWeeks[eligiblePastWeeks.length - 1];
+              }
+            }
+            if (!selectedWeekRec) {
+              selectedWeekRec = curWeeklyRecords[0];
             }
 
-            if (currentActiveWeekRec) {
-              setActiveYearlyWeekIndex(currentActiveWeekRec.weekIndex);
-              if (currentActiveWeekRec.quarter) {
-                setWeeklyQuarterFilter(currentActiveWeekRec.quarter);
+            if (selectedWeekRec) {
+              setActiveYearlyWeekIndex(selectedWeekRec.weekIndex);
+              if (selectedWeekRec.quarter) {
+                setWeeklyQuarterFilter(selectedWeekRec.quarter);
               }
             }
           }
@@ -5860,16 +5901,30 @@ export const EvaluationTab: React.FC = () => {
   // Helper to determine if an evaluation response is a Yearly / Annual evaluation
   const isYearlyResponse = (r?: EvaluationResponse | null): boolean => {
     if (!r) return false;
-    if (r.monthly_records && r.monthly_records.length > 0) return true;
-    if (r.weekly_records && r.weekly_records.length > 0) return true;
-    if (r.quarterly_records && r.quarterly_records.length > 0) return true;
-    if (r.daily_records && r.daily_records.length > 0) return true;
-    if (r.milestone_frequency === 'daily' || r.milestone_frequency === 'weekly' || r.milestone_frequency === 'quarterly' || r.milestone_frequency === 'monthly') return true;
     const respCycle = cycles.find(c => c.id === r.cycleId);
-    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
+    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase().trim();
+
+    // Standalone daily, weekly, monthly, and quarterly evaluations must NEVER be treated as yearly
+    if (f === 'daily' || f === 'weekly' || f === 'monthly' || f === 'quarterly') {
+      return false;
+    }
+
     if (f === 'yearly' || f === 'annual') return true;
-    if (f && f !== 'yearly' && f !== 'annual') return false;
+
+    // Check records only if frequency is not explicitly daily/weekly/monthly/quarterly
+    if (r.monthly_records && r.monthly_records.length > 0) return true;
+    if (r.quarterly_records && r.quarterly_records.length > 0) return true;
+    if (r.weekly_records && r.weekly_records.length > 0 && !f) return true;
+    if (r.daily_records && r.daily_records.length > 0 && !f) return true;
+
+    if ((r.milestone_frequency === 'daily' || r.milestone_frequency === 'weekly' || r.milestone_frequency === 'quarterly' || r.milestone_frequency === 'monthly') && (!f || f === 'yearly' || f === 'annual')) {
+      return true;
+    }
+
     const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
+    if (p.includes('weekly') || p.includes('daily') || p.includes('quarterly') || p.includes('monthly')) {
+      return false;
+    }
     return p.includes('annual') || p.includes('yearly') || p.includes('year') || p.includes('fy 20') || p.includes('fy20') || p.includes('financial year');
   };
 
@@ -5888,13 +5943,15 @@ export const EvaluationTab: React.FC = () => {
     const isSubmitted = curRec?.status === 'submitted_to_manager';
     const score = isApproved && curRec?.managerScore != null ? Number(curRec.managerScore) : null;
 
-    const prevRec = quarterlyRecords.find(q => q.quarterIndex === quarterIndex - 1);
-    const isPrevApproved = prevRec?.status === 'manager_approved';
+    const sortedQuarterRecs = [...quarterlyRecords].sort((a, b) => a.quarterIndex - b.quarterIndex);
+    const curIdx = sortedQuarterRecs.findIndex(q => q.quarterIndex === quarterIndex);
+    const prevRec = curIdx > 0 ? sortedQuarterRecs[curIdx - 1] : undefined;
+    const isPrevApproved = !prevRec || prevRec.status === 'manager_approved';
 
     const currentQuarterObj = FISCAL_QUARTERS.find(q => q.quarterIndex === quarterIndex);
     const currentQuarterLabel = curRec?.quarterLabel || currentQuarterObj?.quarterLabel || `Q${quarterIndex}`;
-    const prevQuarterObj = FISCAL_QUARTERS.find(q => q.quarterIndex === quarterIndex - 1);
-    const prevQuarterLabel = prevRec?.quarterLabel || prevQuarterObj?.quarterLabel || `Q${quarterIndex - 1}`;
+    const prevQuarterObj = prevRec ? FISCAL_QUARTERS.find(q => q.quarterIndex === prevRec.quarterIndex) : undefined;
+    const prevQuarterLabel = prevRec?.quarterLabel || prevQuarterObj?.quarterLabel || (prevRec ? `Q${prevRec.quarterIndex}` : '');
 
     const todayStr = getLocalTodayDateString();
     const curCalMonth = new Date().getMonth() + 1; // 1-12
@@ -5945,6 +6002,27 @@ export const EvaluationTab: React.FC = () => {
       };
     }
 
+    // Sequential Preceding Milestone Lock: if previous assigned quarter is not approved, lock subsequent quarters
+    if (!isPrevApproved) {
+      const isPrevSubmitted = prevRec?.status === 'submitted_to_manager';
+      const lockReason = isPrevSubmitted
+        ? `Waiting for Manager to review and approve ${prevQuarterLabel} before ${currentQuarterLabel} unlocks.`
+        : `${currentQuarterLabel} is locked. Please complete and submit your ${prevQuarterLabel} milestone first.`;
+
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'locked' as const,
+        statusLabel: 'Locked',
+        lockReason,
+        currentQuarterLabel,
+        prevQuarterLabel,
+        score: null
+      };
+    }
+
     // Current ongoing fiscal quarter: open for deliverables
     if (quarterIndex === curFiscalQuarter) {
       return {
@@ -5969,26 +6047,6 @@ export const EvaluationTab: React.FC = () => {
         isEditable: true,
         status: 'pending_employee' as const,
         statusLabel: 'Past Period',
-        currentQuarterLabel,
-        prevQuarterLabel,
-        score: null
-      };
-    }
-
-    if (!isPrevApproved) {
-      const isPrevSubmitted = prevRec?.status === 'submitted_to_manager';
-      const lockReason = isPrevSubmitted
-        ? `Waiting for Manager to review and approve ${prevQuarterLabel} before ${currentQuarterLabel} unlocks.`
-        : `${currentQuarterLabel} is locked. Please complete and submit your ${prevQuarterLabel} milestone first.`;
-
-      return {
-        isLocked: true,
-        isApproved: false,
-        isSubmitted: false,
-        isEditable: false,
-        status: 'locked' as const,
-        statusLabel: 'Locked',
-        lockReason,
         currentQuarterLabel,
         prevQuarterLabel,
         score: null
@@ -6030,10 +6088,12 @@ export const EvaluationTab: React.FC = () => {
     const isSubmitted = curRec?.status === 'submitted_to_manager';
     const score = isApproved && curRec?.managerScore != null ? Number(curRec.managerScore) : null;
 
-    const prevMonthObj = FISCAL_MONTHS.find(m => m.monthIndex === monthIndex - 1);
-    const prevMonthName = prevMonthObj ? prevMonthObj.monthName : `Month ${monthIndex - 1}`;
-    const prevRec = monthlyRecords.find(m => m.monthIndex === monthIndex - 1);
-    const isPrevApproved = prevRec?.status === 'manager_approved';
+    const sortedRecs = [...monthlyRecords].sort((a, b) => a.monthIndex - b.monthIndex);
+    const curIdx = sortedRecs.findIndex(m => m.monthIndex === monthIndex);
+    const prevRec = curIdx > 0 ? sortedRecs[curIdx - 1] : undefined;
+    const prevMonthObj = prevRec ? FISCAL_MONTHS.find(m => m.monthIndex === prevRec.monthIndex) : undefined;
+    const prevMonthName = prevMonthObj ? prevMonthObj.monthName : (prevRec ? `Month ${prevRec.monthIndex}` : '');
+    const isPrevApproved = !prevRec || prevRec.status === 'manager_approved';
 
     const isFutureMonth = monthIndex > currentFiscalMonthIndex || Boolean(curRec?.startDate && todayStr < curRec.startDate);
 
@@ -6083,37 +6143,7 @@ export const EvaluationTab: React.FC = () => {
       };
     }
 
-    // 4. Current ongoing calendar month: open for deliverables
-    if (monthIndex === currentFiscalMonthIndex) {
-      return {
-        isLocked: false,
-        isApproved: false,
-        isSubmitted: false,
-        isEditable: true,
-        status: 'pending_employee' as const,
-        statusLabel: 'Open for Deliverables',
-        prevMonthName,
-        currentMonthName,
-        score: null
-      };
-    }
-
-    // 5. Past months prior to current calendar month
-    if (monthIndex < currentFiscalMonthIndex) {
-      return {
-        isLocked: false,
-        isApproved: false,
-        isSubmitted: false,
-        isEditable: true,
-        status: 'pending_employee' as const,
-        statusLabel: 'Past Period',
-        prevMonthName,
-        currentMonthName,
-        score: null
-      };
-    }
-
-    // 6. Sequential Preceding Milestone Lock
+    // 4. Sequential Preceding Milestone Lock: if previous assigned month is not approved, lock subsequent months
     if (!isPrevApproved) {
       const isPrevSubmitted = prevRec?.status === 'submitted_to_manager';
       const lockReason = isPrevSubmitted
@@ -6128,6 +6158,36 @@ export const EvaluationTab: React.FC = () => {
         status: 'locked' as const,
         statusLabel: 'Locked',
         lockReason,
+        prevMonthName,
+        currentMonthName,
+        score: null
+      };
+    }
+
+    // 5. Current ongoing calendar month: open for deliverables
+    if (monthIndex === currentFiscalMonthIndex) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: true,
+        status: 'pending_employee' as const,
+        statusLabel: 'Open for Deliverables',
+        prevMonthName,
+        currentMonthName,
+        score: null
+      };
+    }
+
+    // 6. Past months prior to current calendar month
+    if (monthIndex < currentFiscalMonthIndex) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: true,
+        status: 'pending_employee' as const,
+        statusLabel: 'Past Period',
         prevMonthName,
         currentMonthName,
         score: null
@@ -6240,6 +6300,201 @@ export const EvaluationTab: React.FC = () => {
     const records = initializeYearlyDailyRecords(startD, endD);
     r.daily_records = records;
     return records;
+  };
+
+  const getResponseWeeklyRecords = (r: EvaluationResponse | null | undefined): YearlyWeekRecord[] => {
+    if (!r) return [];
+    if (getResponseCadence(r) !== 'weekly') return [];
+    let recs: YearlyWeekRecord[] = r.weekly_records || [];
+    if (!recs || recs.length === 0) {
+      let baseYear = new Date().getFullYear();
+      if (r.startDate) {
+        baseYear = parseInt(r.startDate.slice(0, 4), 10);
+      } else if (r.periodName) {
+        const match = r.periodName.match(/\b(20\d\d)\b/);
+        if (match) baseYear = parseInt(match[1], 10);
+      }
+      recs = initializeYearlyWeeklyRecords(baseYear, r.startDate, r.endDate);
+      r.weekly_records = recs;
+    }
+    // If the response specifies explicit startDate and endDate boundaries, filter out weeks outside this range
+    if (r.startDate && r.endDate && recs.length > 0) {
+      const fStart = r.startDate.slice(0, 10);
+      const fEnd = r.endDate.slice(0, 10);
+      const filtered = recs.filter(w => {
+        const wStart = w.startDate ? w.startDate.slice(0, 10) : '';
+        const wEnd = w.endDate ? w.endDate.slice(0, 10) : '';
+        if (wEnd && wEnd < fStart) return false;
+        if (wStart && wStart > fEnd) return false;
+        return true;
+      });
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+    return recs;
+  };
+
+  const getResponseMonthlyRecords = (r: EvaluationResponse | null | undefined): YearlyMonthRecord[] => {
+    if (!r) return [];
+    const matchedCycle = r.cycleId ? cycles.find(c => c.id === r.cycleId) : activeCycle;
+    const rawStart = (r as any).startDate || (r as any).start_date || (r as any).fromDate || (r as any).from_date || matchedCycle?.startDate || (matchedCycle as any)?.start_date || (matchedCycle as any)?.from_date || '';
+    const rawEnd = (r as any).endDate || (r as any).end_date || (r as any).toDate || (r as any).to_date || matchedCycle?.endDate || (matchedCycle as any)?.end_date || (matchedCycle as any)?.to_date || '';
+
+    let recs: YearlyMonthRecord[] = r.monthly_records || [];
+    if (!recs || recs.length === 0) {
+      let baseYear = new Date().getFullYear();
+      if (rawStart) {
+        baseYear = parseInt(String(rawStart).slice(0, 4), 10);
+      } else if (r.periodName) {
+        const match = r.periodName.match(/\b(20\d\d)\b/);
+        if (match) baseYear = parseInt(match[1], 10);
+      }
+      recs = initializeYearlyMonthlyRecords(baseYear, rawStart, rawEnd);
+      r.monthly_records = recs;
+    }
+
+    // Filter out months outside explicit date range boundaries
+    if (rawStart && recs.length > 0) {
+      const fStart = String(rawStart).slice(0, 10);
+      const fEnd = rawEnd ? String(rawEnd).slice(0, 10) : '';
+      const filtered = recs.filter(m => {
+        let mStart = m.startDate ? m.startDate.slice(0, 10) : '';
+        let mEnd = m.endDate ? m.endDate.slice(0, 10) : '';
+        if (!mStart && m.calendarYear && m.calendarMonth) {
+          const lastDay = new Date(m.calendarYear, m.calendarMonth, 0).getDate();
+          mStart = `${m.calendarYear}-${String(m.calendarMonth).padStart(2, '0')}-01`;
+          mEnd = `${m.calendarYear}-${String(m.calendarMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        }
+        if (fStart && mEnd && mEnd < fStart) return false;
+        if (fEnd && mStart && mStart > fEnd) return false;
+        return true;
+      });
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+    return recs;
+  };
+
+  const getResponseQuarterlyRecords = (r: EvaluationResponse | null | undefined): YearlyQuarterRecord[] => {
+    if (!r) return [];
+    const matchedCycle = r.cycleId ? cycles.find(c => c.id === r.cycleId) : activeCycle;
+    const rawStart = (r as any).startDate || (r as any).start_date || (r as any).fromDate || (r as any).from_date || matchedCycle?.startDate || (matchedCycle as any)?.start_date || (matchedCycle as any)?.from_date || '';
+    const rawEnd = (r as any).endDate || (r as any).end_date || (r as any).toDate || (r as any).to_date || matchedCycle?.endDate || (matchedCycle as any)?.end_date || (matchedCycle as any)?.to_date || '';
+
+    let recs: YearlyQuarterRecord[] = r.quarterly_records || [];
+    if (!recs || recs.length === 0) {
+      let baseYear = new Date().getFullYear();
+      if (rawStart) {
+        baseYear = parseInt(String(rawStart).slice(0, 4), 10);
+      } else if (r.periodName) {
+        const match = r.periodName.match(/\b(20\d\d)\b/);
+        if (match) baseYear = parseInt(match[1], 10);
+      }
+      recs = initializeYearlyQuarterlyRecords(baseYear, rawStart, rawEnd);
+      r.quarterly_records = recs;
+    }
+
+    // Filter out quarters outside explicit date range boundaries
+    if (rawStart && recs.length > 0) {
+      const fStart = String(rawStart).slice(0, 10);
+      const fEnd = rawEnd ? String(rawEnd).slice(0, 10) : '';
+      const filtered = recs.filter(q => {
+        let qStart = q.startDate ? q.startDate.slice(0, 10) : '';
+        let qEnd = q.endDate ? q.endDate.slice(0, 10) : '';
+        if (fStart && qEnd && qEnd < fStart) return false;
+        if (fEnd && qStart && qStart > fEnd) return false;
+        return true;
+      });
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+    return recs;
+  };
+
+  /**
+   * Auto-advances manager review:
+   * 1. Checks if current employee has more pending milestones submitted to manager.
+   * 2. If so, switches directly to that next pending milestone.
+   * 3. If current employee has no more pending milestones, finds the next employee with pending reviews.
+   * 4. If all done, closes the review modal.
+   */
+  const autoAdvanceManagerReview = (
+    currentResp: EvaluationResponse,
+    approvedMilestoneType?: 'week' | 'month' | 'quarter' | 'daily' | 'cycle',
+    approvedIndex?: number
+  ) => {
+    // 1. Check if current employee has another milestone waiting for manager review
+    if (isYearlyResponse(currentResp)) {
+      const cadence = getResponseCadence(currentResp);
+
+      if (cadence === 'weekly') {
+        const weeklyRecs = getResponseWeeklyRecords(currentResp);
+        const nextPending = weeklyRecs.find(w => w.status === 'submitted_to_manager' && w.weekIndex !== approvedIndex);
+        if (nextPending) {
+          switchMgrYearlyWeek(nextPending.weekIndex);
+          if (nextPending.quarter) setMgrWeeklyQuarterFilter(nextPending.quarter);
+          showToast(`Switching to ${currentResp.employeeName || 'employee'}'s next pending milestone: ${nextPending.weekLabel || `Week ${nextPending.weekIndex}`}`);
+          return;
+        }
+      } else if (cadence === 'monthly') {
+        const monthlyRecs = getResponseMonthlyRecords(currentResp);
+        const nextPending = monthlyRecs.find(m => m.status === 'submitted_to_manager' && m.monthIndex !== approvedIndex);
+        if (nextPending) {
+          switchMgrYearlyMonth(nextPending.monthIndex);
+          const mObj = FISCAL_MONTHS.find(m => m.monthIndex === nextPending.monthIndex);
+          showToast(`Switching to ${currentResp.employeeName || 'employee'}'s next pending milestone: ${mObj?.monthName || `Month ${nextPending.monthIndex}`}`);
+          return;
+        }
+      } else if (cadence === 'quarterly') {
+        const quarterlyRecs = getResponseQuarterlyRecords(currentResp);
+        const nextPending = quarterlyRecs.find(q => q.status === 'submitted_to_manager' && q.quarterIndex !== approvedIndex);
+        if (nextPending) {
+          switchMgrYearlyQuarter(nextPending.quarterIndex);
+          const qObj = FISCAL_QUARTERS.find(q => q.quarterIndex === nextPending.quarterIndex);
+          showToast(`Switching to ${currentResp.employeeName || 'employee'}'s next pending milestone: ${qObj?.quarterName || `Quarter ${nextPending.quarterIndex}`}`);
+          return;
+        }
+      } else if (cadence === 'daily') {
+        const dailyRecs = getResponseDailyRecords(currentResp);
+        const nextPending = dailyRecs.find(d => d.status === 'submitted_to_manager' && d.dayIndex !== approvedIndex);
+        if (nextPending) {
+          switchMgrYearlyDay(nextPending.dayIndex);
+          showToast(`Switching to ${currentResp.employeeName || 'employee'}'s next pending day: ${nextPending.dayLabel || `Day ${nextPending.dayIndex}`}`);
+          return;
+        }
+      }
+    }
+
+    // 2. If current employee has no more pending milestones, check for another employee in Direct Reviews with pending reviews
+    const pendingOtherResp = (responses || []).find(r => {
+      if (r.id === currentResp.id) return false;
+      const rawSt = String(r.status || '').toLowerCase();
+      const isDirectlyPending = rawSt === 'submitted_to_manager' || rawSt === 'submitted to manager' || rawSt === 'manager_review' || rawSt.includes('submitted');
+      if (isDirectlyPending && r.managerScore == null) return true;
+
+      // Also check if they have pending milestones
+      if (isYearlyResponse(r)) {
+        const cad = getResponseCadence(r);
+        if (cad === 'weekly') return (r.weekly_records || []).some(w => w.status === 'submitted_to_manager');
+        if (cad === 'monthly') return (r.monthly_records || []).some(m => m.status === 'submitted_to_manager');
+        if (cad === 'quarterly') return (r.quarterly_records || []).some(q => q.status === 'submitted_to_manager');
+        if (cad === 'daily') return (r.daily_records || []).some(d => d.status === 'submitted_to_manager');
+      }
+      return false;
+    });
+
+    if (pendingOtherResp) {
+      handleSelectMgrResponse(pendingOtherResp);
+      showToast(`Loading next employee awaiting review: ${pendingOtherResp.employeeName || 'Next Employee'}`);
+      return;
+    }
+
+    // 3. All pending reviews completed!
+    setSelectedMgrResponseId('');
+    showToast('All pending employee reviews completed successfully! 🎉');
   };
 
   /**
@@ -6721,7 +6976,7 @@ export const EvaluationTab: React.FC = () => {
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
           showToast(`${weekLabel} milestone score approved successfully!`);
-          setSelectedMgrResponseId('');
+          autoAdvanceManagerReview(updatedResp, 'week', wIndex);
         } catch (err: any) {
           showAlert(`Failed to approve week milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
         } finally {
@@ -7057,7 +7312,7 @@ export const EvaluationTab: React.FC = () => {
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
           showToast(`${quarterLabel} milestone score approved successfully!`);
-          setSelectedMgrResponseId('');
+          autoAdvanceManagerReview(updatedResp, 'quarter', qIndex);
         } catch (err: any) {
           showAlert(`Failed to approve quarterly milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
         } finally {
@@ -7361,7 +7616,7 @@ export const EvaluationTab: React.FC = () => {
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
           showToast(`${dayLabel} milestone score approved successfully!`);
-          setSelectedMgrResponseId('');
+          autoAdvanceManagerReview(updatedResp, 'daily', dIndex);
         } catch (err: any) {
           showAlert(`Failed to approve daily milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
         } finally {
@@ -7700,7 +7955,7 @@ export const EvaluationTab: React.FC = () => {
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
           showToast(`${monthName} milestone score approved successfully!`);
-          setSelectedMgrResponseId('');
+          autoAdvanceManagerReview(updatedResp, 'month', mIndex);
         } catch (err: any) {
           showAlert(`Failed to approve month milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
         } finally {
@@ -7896,18 +8151,19 @@ export const EvaluationTab: React.FC = () => {
           );
         }
       } else if (isWeekly) {
-        const weeklyRecords = r.weekly_records || [];
+        const weeklyRecords = getResponseWeeklyRecords(r);
+        const totalWeeks = weeklyRecords.length || 52;
         const approvedCount = weeklyRecords.filter(w => w.status === 'manager_approved').length;
         const submittedCount = weeklyRecords.filter(w => w.status === 'submitted_to_manager').length;
         if (submittedCount > 0) {
           return (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
-              <span>Milestone Submitted ({approvedCount}/52 Approved)</span>
+              <span>Milestone Submitted ({approvedCount}/{totalWeeks} Approved)</span>
             </span>
           );
         }
-        if (approvedCount === 52) {
+        if (approvedCount === totalWeeks && totalWeeks > 0) {
           return (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
@@ -7919,7 +8175,7 @@ export const EvaluationTab: React.FC = () => {
           return (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200/80 shadow-2xs shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
-              <span>YTD Active ({approvedCount}/52 Approved)</span>
+              <span>YTD Active ({approvedCount}/{totalWeeks} Approved)</span>
             </span>
           );
         }
@@ -8867,28 +9123,26 @@ export const EvaluationTab: React.FC = () => {
       if (!isNaN(d.getTime())) end = d;
     }
 
-    if ((!start || !end || start.getTime() === end.getTime()) && Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+    if ((!start || !end) && Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
       const dRecs = (r as any).daily_records;
       const validDates = dRecs.map((d: any) => d?.date ? new Date(d.date) : null).filter((d: any) => d && !isNaN(d.getTime())) as Date[];
       if (validDates.length > 0) {
         validDates.sort((a, b) => a.getTime() - b.getTime());
-        if (!start || (start && end && start.getTime() === end.getTime() && validDates.length > 1)) {
-          start = validDates[0];
-          end = validDates[validDates.length - 1];
-        }
+        if (!start) start = validDates[0];
+        if (!end) end = validDates[validDates.length - 1];
       }
     }
 
-    if ((!start || !end || start.getTime() === end.getTime()) && r.cycleId) {
+    if ((!start || !end) && r.cycleId) {
       const cy = cycles.find(c => c.id === r.cycleId);
       if (cy) {
         const cyStart = cy.startDate || (cy as any).start_date;
         const cyEnd = cy.endDate || (cy as any).end_date;
-        if (cyStart && (!start || (start && end && start.getTime() === end.getTime()))) {
+        if (cyStart && !start) {
           const d = new Date(cyStart);
           if (!isNaN(d.getTime())) start = d;
         }
-        if (cyEnd) {
+        if (cyEnd && !end) {
           const d = new Date(cyEnd);
           if (!isNaN(d.getTime())) end = d;
         }
@@ -10208,38 +10462,145 @@ export const EvaluationTab: React.FC = () => {
     const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const pad = (n: number) => String(n).padStart(2, '0');
 
-    // Filter responses for the active month (including approved monthly records from 12-Month Financial Year cycles)
-    const curMonthResponses: any[] = [];
-    activeScopedResponsesForCards.forEach(r => {
-      if (isYearlyResponse(r)) {
-        const calMonth = topPerformersMonth + 1;
-        const calYear = topPerformersYear;
-        const rec = (r.monthly_records || []).find(m =>
-          (m.calendarMonth === calMonth && (m.calendarYear === calYear || !m.calendarYear)) ||
-          (m.monthIndex === (calMonth >= 4 ? calMonth - 3 : calMonth + 9))
-        );
-        if (rec && rec.status === 'manager_approved' && rec.managerScore != null && Number(rec.managerScore) > 0) {
-          curMonthResponses.push({
+    // Helper to extract approved evaluations and milestone records that fall into a specific date range [rangeStart, rangeEnd]
+    const extractApprovedResponsesForRange = (rangeStart: Date, rangeEnd: Date) => {
+      const items: any[] = [];
+      activeScopedResponsesForCards.forEach(r => {
+        const cadence = getResponseCadence(r);
+        const isYearly = isYearlyResponse(r);
+
+        // Exclude Quarterly evaluations from Weekly rankings!
+        if (cadence === 'quarterly') {
+          return;
+        }
+
+        // 1. Check daily_records (Yearly or Daily evaluation with day milestones)
+        if (Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+          const matchingDays = (r as any).daily_records.filter((d: any) => {
+            if (!d?.date) return false;
+            const dDate = new Date(d.date);
+            if (isNaN(dDate.getTime())) return false;
+            return dDate >= rangeStart && dDate <= rangeEnd;
+          });
+          const approvedDays = matchingDays.filter((d: any) =>
+            d.status === 'manager_approved' ||
+            (d.status as any) === 'approved' ||
+            (d.managerScore != null && Number(d.managerScore) > 0)
+          );
+          if (approvedDays.length > 0) {
+            const scores = approvedDays.map((d: any) => {
+              if (d.managerScore != null && Number(d.managerScore) > 0) return Number(d.managerScore);
+              if (d.earnedScore != null && Number(d.earnedScore) > 0) return Number(d.earnedScore);
+              if (d.employeeScore != null && Number(d.employeeScore) > 0) return Number(d.employeeScore);
+              if (r.managerScore != null && Number(r.managerScore) > 0) return Number(r.managerScore);
+              return Number(r.employeeOverallScore || 0);
+            }).filter((s: number) => s > 0);
+            if (scores.length > 0) {
+              const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+              items.push({
+                ...r,
+                managerScore: Number(avg.toFixed(1))
+              });
+              return;
+            }
+          }
+          // Do not fall through to container dates for evaluations with milestone records
+          return;
+        }
+
+        // 2. Check weekly_records (Yearly or Weekly evaluation with week milestones)
+        if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
+          const matchingWeeks = (r as any).weekly_records.filter((w: any) => {
+            if (w.startDate && w.endDate) {
+              const wStart = new Date(w.startDate);
+              const wEnd = new Date(w.endDate);
+              if (!isNaN(wStart.getTime()) && !isNaN(wEnd.getTime())) {
+                return (wStart <= rangeEnd && wEnd >= rangeStart);
+              }
+            }
+            return false;
+          });
+          const approvedWeeks = matchingWeeks.filter((w: any) =>
+            w.status === 'manager_approved' ||
+            (w.status as any) === 'approved' ||
+            (w.managerScore != null && Number(w.managerScore) > 0)
+          );
+          if (approvedWeeks.length > 0) {
+            const scores = approvedWeeks.map((w: any) => {
+              if (w.managerScore != null && Number(w.managerScore) > 0) return Number(w.managerScore);
+              if (w.earnedScore != null && Number(w.earnedScore) > 0) return Number(w.earnedScore);
+              if (w.employeeScore != null && Number(w.employeeScore) > 0) return Number(w.employeeScore);
+              if (r.managerScore != null && Number(r.managerScore) > 0) return Number(r.managerScore);
+              return Number(r.employeeOverallScore || 0);
+            }).filter((s: number) => s > 0);
+            if (scores.length > 0) {
+              const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+              items.push({
+                ...r,
+                managerScore: Number(avg.toFixed(1))
+              });
+              return;
+            }
+          }
+          // Do not fall through to container dates for evaluations with milestone records
+          return;
+        }
+
+        // Standalone evaluations in weekly tab MUST strictly be daily or weekly
+        if (cadence !== 'daily' && cadence !== 'weekly') {
+          return;
+        }
+
+        // 3. Standalone daily / weekly evaluations
+        const range = getEvaluationDateRange(r);
+        if (!range.startDate) return;
+        const rStart = range.startDate;
+        const rEnd = range.endDate || range.startDate;
+
+        const diffDays = Math.abs((rEnd.getTime() - rStart.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (cadence === 'daily') {
+          // A single daily evaluation must fall precisely on a date within [rangeStart, rangeEnd]
+          // If range spans > 2 days, it is a multi-day assignment container, not an individual day response
+          if (diffDays > 2) return;
+          if (rStart < rangeStart || rStart > rangeEnd) return;
+        } else if (cadence === 'weekly') {
+          // Weekly evaluation covers ~7 days; skip multi-month containers
+          if (diffDays > 14) return;
+          const overlaps = (rStart >= rangeStart && rStart <= rangeEnd) ||
+            (rEnd >= rangeStart && rEnd <= rangeEnd) ||
+            (rStart <= rangeStart && rEnd >= rangeEnd);
+          if (!overlaps) return;
+        }
+
+        const isApproved = r.status === 'approved' ||
+          r.status === 'sm_final_approval' ||
+          (r.status as string) === 'Cycle Completed & Approved' ||
+          (r.status as string) === 'completed' ||
+          r.managerScore != null;
+
+        const scoreVal = r.managerScore != null
+          ? Number(r.managerScore)
+          : ((r as any).manager_score != null
+            ? Number((r as any).manager_score)
+            : (r.employeeOverallScore != null ? Number(r.employeeOverallScore) : null));
+
+        if (isApproved && scoreVal != null && scoreVal > 0) {
+          items.push({
             ...r,
-            managerScore: Number(rec.managerScore)
+            managerScore: scoreVal
           });
         }
-        return;
-      }
-
-      const range = getEvaluationDateRange(r);
-      if (!range.startDate) return;
-      if (range.startDate.getFullYear() === topPerformersYear && range.startDate.getMonth() === topPerformersMonth) {
-        curMonthResponses.push(r);
-      }
-    });
+      });
+      return items;
+    };
 
     const firstDate = new Date(topPerformersYear, topPerformersMonth, 1);
     const lastDate = new Date(topPerformersYear, topPerformersMonth + 1, 0);
 
     const dayOfWeek = firstDate.getDay();
     const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    let currMon = new Date(topPerformersYear, topPerformersMonth, 1 + diffToMonday);
+    let currMon = new Date(topPerformersYear, topPerformersMonth, 1 + diffToMonday, 0, 0, 0, 0);
 
     const now = new Date();
     const isCurrentMonthNow = now.getFullYear() === topPerformersYear && now.getMonth() === topPerformersMonth;
@@ -10259,19 +10620,12 @@ export const EvaluationTab: React.FC = () => {
 
     let weekNum = 1;
     while (currMon <= lastDate) {
-      const currSun = new Date(currMon.getFullYear(), currMon.getMonth(), currMon.getDate() + 6);
+      const currSun = new Date(currMon.getFullYear(), currMon.getMonth(), currMon.getDate() + 6, 23, 59, 59, 999);
       const startStr = `${currMon.getFullYear()}-${pad(currMon.getMonth() + 1)}-${pad(currMon.getDate())}`;
       const isCurrentWeek = isCurrentMonthNow && now >= currMon && now <= currSun;
 
-      // Filter all responses falling in this week
-      const weekResponses = curMonthResponses.filter(r => {
-        const range = getEvaluationDateRange(r);
-        if (!range.startDate) return false;
-        const rStart = range.startDate;
-        const rEnd = range.endDate || range.startDate;
-        return (rStart >= currMon && rStart <= currSun) || (rEnd >= currMon && rEnd <= currSun);
-      });
-
+      // Extract all approved responses falling in this week
+      const weekResponses = extractApprovedResponsesForRange(currMon, currSun);
       const groups = computeTopPerformersGroups(weekResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
       const weekLabel = `${currMon.getDate()} ${monthNamesShort[currMon.getMonth()]} - ${currSun.getDate()} ${monthNamesShort[currSun.getMonth()]}`;
 
@@ -10285,10 +10639,32 @@ export const EvaluationTab: React.FC = () => {
       });
 
       weekNum++;
-      currMon = new Date(currMon.getFullYear(), currMon.getMonth(), currMon.getDate() + 7);
+      currMon = new Date(currMon.getFullYear(), currMon.getMonth(), currMon.getDate() + 7, 0, 0, 0, 0);
     }
 
-    // Month Summary Column (e.g. Sep'26 (month))
+    // Month Summary Column (e.g. Oct'26 (month))
+    const monthStart = new Date(topPerformersYear, topPerformersMonth, 1, 0, 0, 0, 0);
+    const monthEnd = new Date(topPerformersYear, topPerformersMonth + 1, 0, 23, 59, 59, 999);
+    const curMonthResponses = extractApprovedResponsesForRange(monthStart, monthEnd);
+
+    // Also include approved monthly records for Yearly evaluations
+    activeScopedResponsesForCards.forEach(r => {
+      if (isYearlyResponse(r)) {
+        const calMonth = topPerformersMonth + 1;
+        const calYear = topPerformersYear;
+        const rec = (r.monthly_records || []).find(m =>
+          (m.calendarMonth === calMonth && (m.calendarYear === calYear || !m.calendarYear)) ||
+          (m.monthIndex === (calMonth >= 4 ? calMonth - 3 : calMonth + 9))
+        );
+        if (rec && (rec.status === 'manager_approved' || (rec.status as any) === 'approved') && rec.managerScore != null && Number(rec.managerScore) > 0) {
+          curMonthResponses.push({
+            ...r,
+            managerScore: Number(rec.managerScore)
+          });
+        }
+      }
+    });
+
     const yearShort = String(topPerformersYear).slice(-2);
     const monthGroups = computeTopPerformersGroups(curMonthResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
     const monthSummaryCol = {
@@ -10315,28 +10691,97 @@ export const EvaluationTab: React.FC = () => {
       const yrShort = fMonth.calendarMonth >= 4 ? startYearShort : endYearShort;
       const monthLabel = `${fMonth.shortName}'${yrShort}`;
       const mIdx = fMonth.calendarMonth - 1;
+      const mStart = new Date(calYear, mIdx, 1, 0, 0, 0, 0);
+      const mEnd = new Date(calYear, mIdx + 1, 0, 23, 59, 59, 999);
 
       const monthScopedItems: any[] = [];
       activeScopedResponsesForCards.forEach(r => {
-        if (isYearlyResponse(r)) {
+        const cadence = getResponseCadence(r);
+        const isYearly = isYearlyResponse(r);
+
+        // Quarterly evaluations belong in the Quarterly view, not in individual months
+        if (cadence === 'quarterly') {
+          return;
+        }
+
+        if (isYearly) {
           const rec = (r.monthly_records || []).find(m =>
             m.monthIndex === fMonth.monthIndex ||
             (m.calendarMonth === fMonth.calendarMonth && (m.calendarYear === calYear || !m.calendarYear))
           );
-          if (rec && rec.status === 'manager_approved' && rec.managerScore != null && Number(rec.managerScore) > 0) {
+          if (rec && (rec.status === 'manager_approved' || (rec.status as any) === 'approved') && rec.managerScore != null && Number(rec.managerScore) > 0) {
             monthScopedItems.push({
               ...r,
               managerScore: Number(rec.managerScore)
             });
+            return;
+          }
+
+          // Check daily_records in this month
+          if (Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+            const approvedDays = (r as any).daily_records.filter((d: any) => {
+              if (!d?.date) return false;
+              const dDate = new Date(d.date);
+              return !isNaN(dDate.getTime()) && dDate >= mStart && dDate <= mEnd && (d.status === 'manager_approved' || d.status === 'approved' || (d.managerScore != null && Number(d.managerScore) > 0));
+            });
+            if (approvedDays.length > 0) {
+              const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
+          }
+
+          // Check weekly_records in this month
+          if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
+            const approvedWeeks = (r as any).weekly_records.filter((w: any) => {
+              if (!w.startDate) return false;
+              const wDate = new Date(w.startDate);
+              return !isNaN(wDate.getTime()) && wDate >= mStart && wDate <= mEnd && (w.status === 'manager_approved' || w.status === 'approved' || (w.managerScore != null && Number(w.managerScore) > 0));
+            });
+            if (approvedWeeks.length > 0) {
+              const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
           }
           return;
         }
 
         const range = getEvaluationDateRange(r);
         if (!range.startDate) return;
-        if (range.startDate.getFullYear() === calYear && range.startDate.getMonth() === mIdx) {
-          if (r.managerScore != null || r.employeeOverallScore != null) {
-            monthScopedItems.push(r);
+        const rStart = range.startDate;
+        const rEnd = range.endDate || range.startDate;
+
+        // Skip multi-month container cycles from matching every month
+        const diffDays = Math.abs((rEnd.getTime() - rStart.getTime()) / (1000 * 60 * 60 * 24));
+        if (cadence === 'daily' && diffDays > 2) return;
+        if (cadence === 'weekly' && diffDays > 14) return;
+        if (cadence === 'monthly' && diffDays > 35) return;
+
+        const overlaps = (rStart >= mStart && rStart <= mEnd) ||
+          (rEnd >= mStart && rEnd <= mEnd);
+
+        if (overlaps) {
+          const isApproved = r.status === 'approved' ||
+            r.status === 'sm_final_approval' ||
+            (r.status as string) === 'Cycle Completed & Approved' ||
+            (r.status as string) === 'completed' ||
+            r.managerScore != null;
+
+          const scoreVal = r.managerScore != null
+            ? Number(r.managerScore)
+            : ((r as any).manager_score != null
+              ? Number((r as any).manager_score)
+              : (r.employeeOverallScore != null ? Number(r.employeeOverallScore) : null));
+
+          if (isApproved && scoreVal != null && scoreVal > 0) {
+            monthScopedItems.push({ ...r, managerScore: scoreVal });
           }
         }
       });
@@ -10396,6 +10841,42 @@ export const EvaluationTab: React.FC = () => {
             return;
           }
 
+          // 3. Check daily_records in this quarter
+          if (Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+            const approvedDays = (r as any).daily_records.filter((d: any) => {
+              if (!d?.date) return false;
+              const dDate = new Date(d.date);
+              if (isNaN(dDate.getTime())) return false;
+              return dDate.getFullYear() === year && calMonths.includes(dDate.getMonth() + 1) && (d.status === 'manager_approved' || d.status === 'approved' || (d.managerScore != null && Number(d.managerScore) > 0));
+            });
+            if (approvedDays.length > 0) {
+              const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                quarterScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
+          }
+
+          // 4. Check weekly_records in this quarter
+          if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
+            const approvedWeeks = (r as any).weekly_records.filter((w: any) => {
+              if (!w.startDate) return false;
+              const wDate = new Date(w.startDate);
+              if (isNaN(wDate.getTime())) return false;
+              return wDate.getFullYear() === year && calMonths.includes(wDate.getMonth() + 1) && (w.status === 'manager_approved' || w.status === 'approved' || (w.managerScore != null && Number(w.managerScore) > 0));
+            });
+            if (approvedWeeks.length > 0) {
+              const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                quarterScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
+          }
+
           return;
         }
 
@@ -10450,7 +10931,43 @@ export const EvaluationTab: React.FC = () => {
               ...r,
               managerScore: Number(rec.managerScore)
             });
+            return;
           }
+
+          // Check daily_records
+          if (Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+            const approvedDays = (r as any).daily_records.filter((d: any) => {
+              if (!d?.date) return false;
+              const dDate = new Date(d.date);
+              return !isNaN(dDate.getTime()) && dDate.getFullYear() === calYear && (dDate.getMonth() === mIdx) && (d.status === 'manager_approved' || d.status === 'approved' || (d.managerScore != null && Number(d.managerScore) > 0));
+            });
+            if (approvedDays.length > 0) {
+              const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
+          }
+
+          // Check weekly_records
+          if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
+            const approvedWeeks = (r as any).weekly_records.filter((w: any) => {
+              if (!w.startDate) return false;
+              const wDate = new Date(w.startDate);
+              return !isNaN(wDate.getTime()) && wDate.getFullYear() === calYear && (wDate.getMonth() === mIdx) && (w.status === 'manager_approved' || w.status === 'approved' || (w.managerScore != null && Number(w.managerScore) > 0));
+            });
+            if (approvedWeeks.length > 0) {
+              const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
+          }
+
           return;
         }
 
@@ -10478,6 +10995,8 @@ export const EvaluationTab: React.FC = () => {
 
     // 13th Column: Overall Financial Year Summary (e.g. FY 2026-2027 (Annual))
     const yearScopedItems: any[] = [];
+    const fyStart = new Date(startYear, 3, 1, 0, 0, 0, 0); // 1 Apr
+    const fyEnd = new Date(endYear, 2, 31, 23, 59, 59, 999); // 31 Mar
 
     activeScopedResponsesForCards.forEach(r => {
       if (isYearlyResponse(r)) {
@@ -10490,7 +11009,44 @@ export const EvaluationTab: React.FC = () => {
             ...r,
             managerScore: Number(avgScore.toFixed(1))
           });
-        } else if (r.managerScore != null && Number(r.managerScore) > 0) {
+          return;
+        }
+
+        // Check daily_records in FY
+        if (Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+          const approvedDays = (r as any).daily_records.filter((d: any) => {
+            if (!d?.date) return false;
+            const dDate = new Date(d.date);
+            return !isNaN(dDate.getTime()) && dDate >= fyStart && dDate <= fyEnd && (d.status === 'manager_approved' || d.status === 'approved' || (d.managerScore != null && Number(d.managerScore) > 0));
+          });
+          if (approvedDays.length > 0) {
+            const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
+            if (scores.length > 0) {
+              const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+              yearScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+              return;
+            }
+          }
+        }
+
+        // Check weekly_records in FY
+        if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
+          const approvedWeeks = (r as any).weekly_records.filter((w: any) => {
+            if (!w.startDate) return false;
+            const wDate = new Date(w.startDate);
+            return !isNaN(wDate.getTime()) && wDate >= fyStart && wDate <= fyEnd && (w.status === 'manager_approved' || w.status === 'approved' || (w.managerScore != null && Number(w.managerScore) > 0));
+          });
+          if (approvedWeeks.length > 0) {
+            const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
+            if (scores.length > 0) {
+              const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+              yearScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+              return;
+            }
+          }
+        }
+
+        if (r.managerScore != null && Number(r.managerScore) > 0) {
           yearScopedItems.push(r);
         }
         return;
@@ -10500,8 +11056,6 @@ export const EvaluationTab: React.FC = () => {
       const range = getEvaluationDateRange(r);
       if (!range.startDate) return;
       const d = range.startDate;
-      const fyStart = new Date(startYear, 3, 1); // 1 Apr
-      const fyEnd = new Date(endYear, 2, 31, 23, 59, 59); // 31 Mar
       if (d >= fyStart && d <= fyEnd) {
         if (r.managerScore != null || r.employeeOverallScore != null) {
           yearScopedItems.push(r);
@@ -11082,7 +11636,7 @@ export const EvaluationTab: React.FC = () => {
         if (!curWeeklyRecords || curWeeklyRecords.length === 0) {
           let baseYear = new Date().getFullYear();
           if (r.startDate) baseYear = new Date(r.startDate).getFullYear();
-          curWeeklyRecords = initializeYearlyWeeklyRecords(baseYear);
+          curWeeklyRecords = initializeYearlyWeeklyRecords(baseYear, r.startDate, r.endDate);
         }
         const submittedWeek = curWeeklyRecords.find(w => w.status === 'submitted_to_manager');
         const firstActionableWeek = curWeeklyRecords.slice(25).find(w => {
@@ -11340,14 +11894,14 @@ export const EvaluationTab: React.FC = () => {
           });
         });
 
-        await evaluationService.submitManagerReview(selectedMgrResponseId, {
+        const submittedResp = await evaluationService.submitManagerReview(selectedMgrResponseId, {
           kpiResponses: updatedKpiResponses,
           managerScore: mgrScore,
           managerRemarks: mgrRemarks
         });
-        setSelectedMgrResponseId('');
         await loadAllData();
         showToast('Evaluation approved! Official report published to employee.');
+        autoAdvanceManagerReview(submittedResp || resp, 'cycle');
       },
       'Submit Evaluation',
       'info',
@@ -12525,7 +13079,7 @@ export const EvaluationTab: React.FC = () => {
                               {allUserResponses.length > 0 ? (
                                 allUserResponses.map((r, idx) => {
                                   const c = cycles.find(cy => cy.id === r.cycleId);
-                                  const raw = c?.periodName || c?.name || (r as any).periodName || `Cycle ${idx + 1}`;
+                                  const raw = (r as any).periodName || c?.periodName || c?.name || (r as any).form || `Cycle ${idx + 1}`;
                                   // Clean up wordy phrases from the label
                                   const cleanLabel = raw.replace(/Executive Evaluation/gi, '').replace(/\s+/g, ' ').trim();
                                   const isLatest = idx === 0;
@@ -12813,10 +13367,21 @@ export const EvaluationTab: React.FC = () => {
                     }
 
                     if (isQuarterly) {
-                      const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
+                      const curQuarterlyRecords = getResponseQuarterlyRecords(activeEmpResponse);
                       const lockInfo = getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords);
                       const targetQuarterRecord = curQuarterlyRecords.find(q => q.quarterIndex === activeYearlyQuarterIndex);
                       const hasManagerReopenedNote = Boolean(targetQuarterRecord?.managerRemarks && targetQuarterRecord?.status === 'pending_employee');
+
+                      // Restrict displayed quarters to those configured within the evaluation cycle/period
+                      const availableFiscalQuarters = FISCAL_QUARTERS.filter(q => {
+                        if (!curQuarterlyRecords || curQuarterlyRecords.length === 0) return true;
+                        return curQuarterlyRecords.some(r => r.quarterIndex === q.quarterIndex);
+                      });
+
+                      const sortedQuarterIndices: number[] = availableFiscalQuarters.map(q => q.quarterIndex).sort((a, b) => a - b);
+                      const curQuarterPos = sortedQuarterIndices.indexOf(activeYearlyQuarterIndex);
+                      const prevQuarterIndex = curQuarterPos > 0 ? sortedQuarterIndices[curQuarterPos - 1] : sortedQuarterIndices[0];
+                      const nextQuarterIndex = curQuarterPos >= 0 && curQuarterPos < sortedQuarterIndices.length - 1 ? sortedQuarterIndices[curQuarterPos + 1] : sortedQuarterIndices[sortedQuarterIndices.length - 1];
 
                       return (
                         <div className="border-t border-slate-200/80 bg-slate-50/50 p-3 sm:p-4 space-y-3">
@@ -12832,7 +13397,7 @@ export const EvaluationTab: React.FC = () => {
                                   onChange={e => setActiveYearlyQuarterIndex(Number(e.target.value))}
                                   className="w-full bg-slate-50/70 hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                                 >
-                                  {FISCAL_QUARTERS.map(q => {
+                                  {availableFiscalQuarters.map(q => {
                                     const qLockInfo = getYearlyQuarterLockInfo(q.quarterIndex, curQuarterlyRecords);
                                     const isCurActive = q.quarterIndex === currentQuarter;
                                     let badgeStr = '';
@@ -12855,8 +13420,8 @@ export const EvaluationTab: React.FC = () => {
                             <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                               <button
                                 type="button"
-                                disabled={activeYearlyQuarterIndex <= 1}
-                                onClick={() => setActiveYearlyQuarterIndex(prev => prev - 1)}
+                                disabled={curQuarterPos <= 0}
+                                onClick={() => setActiveYearlyQuarterIndex(prevQuarterIndex)}
                                 className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                                 title="Previous Quarter"
                               >
@@ -12864,15 +13429,15 @@ export const EvaluationTab: React.FC = () => {
                               </button>
                               <button
                                 type="button"
-                                disabled={activeYearlyQuarterIndex >= 4}
-                                onClick={() => setActiveYearlyQuarterIndex(prev => prev + 1)}
+                                disabled={curQuarterPos < 0 || curQuarterPos >= sortedQuarterIndices.length - 1}
+                                onClick={() => setActiveYearlyQuarterIndex(nextQuarterIndex)}
                                 className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                                 title="Next Quarter"
                               >
                                 Next ▶
                               </button>
 
-                              {activeYearlyQuarterIndex !== currentQuarter && (
+                              {activeYearlyQuarterIndex !== currentQuarter && sortedQuarterIndices.includes(currentQuarter) && (
                                 <button
                                   type="button"
                                   onClick={() => setActiveYearlyQuarterIndex(currentQuarter)}
@@ -12901,15 +13466,17 @@ export const EvaluationTab: React.FC = () => {
                     }
 
                     if (isWeekly) {
-                      const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
+                      const curWeeklyRecords = getResponseWeeklyRecords(activeEmpResponse);
                       const approvedWeeks = curWeeklyRecords.filter(w => w.status === 'manager_approved');
 
-                      const quarters = [
+                      const allQuarters = [
                         { qNum: 1, name: 'Q1 (Apr – Jun)', weeksRange: 'W1 – W13', weeks: curWeeklyRecords.filter(w => w.quarter === 1) },
                         { qNum: 2, name: 'Q2 (Jul – Sep)', weeksRange: 'W14 – W26', weeks: curWeeklyRecords.filter(w => w.quarter === 2) },
                         { qNum: 3, name: 'Q3 (Oct – Dec)', weeksRange: 'W27 – W39', weeks: curWeeklyRecords.filter(w => w.quarter === 3) },
                         { qNum: 4, name: 'Q4 (Jan – Mar)', weeksRange: 'W40 – W52', weeks: curWeeklyRecords.filter(w => w.quarter === 4) }
                       ];
+                      // Only display quarters that actually have assigned weeks in this evaluation period
+                      const quarters = allQuarters.filter(q => q.weeks.length > 0);
 
                       // Find currently open/active week index by current date
                       const todayStr = getLocalTodayDateString();
@@ -12923,11 +13490,13 @@ export const EvaluationTab: React.FC = () => {
                       if (!currentActiveWeekRec) {
                         currentActiveWeekRec = curWeeklyRecords[0];
                       }
-                      const activeQuarterNum = currentActiveWeekRec?.quarter || 2;
+                      const activeQuarterNum = currentActiveWeekRec?.quarter || (quarters[0]?.qNum ?? 3);
 
                       const effectiveQuarterFilter = weeklyQuarterFilter === 'all'
                         ? 'all'
-                        : (typeof weeklyQuarterFilter === 'number' ? weeklyQuarterFilter : activeQuarterNum);
+                        : (typeof weeklyQuarterFilter === 'number' && quarters.some(q => q.qNum === weeklyQuarterFilter)
+                            ? weeklyQuarterFilter
+                            : (quarters.some(q => q.qNum === activeQuarterNum) ? activeQuarterNum : (quarters[0]?.qNum ?? 'all')));
 
                       const displayedWeeks = effectiveQuarterFilter === 'all'
                         ? curWeeklyRecords
@@ -12936,7 +13505,11 @@ export const EvaluationTab: React.FC = () => {
                       const lockInfo = getYearlyWeekLockInfo(activeYearlyWeekIndex, curWeeklyRecords);
                       const targetWeekRecord = curWeeklyRecords.find(w => w.weekIndex === activeYearlyWeekIndex);
                       const hasManagerReopenedNote = Boolean(targetWeekRecord?.managerRemarks && targetWeekRecord?.status === 'pending_employee');
-                      const percentComplete = Math.round((approvedWeeks.length / 52) * 100);
+                      const totalAssignedWeeks = curWeeklyRecords.length || 52;
+                      const percentComplete = Math.round((approvedWeeks.length / totalAssignedWeeks) * 100);
+
+                      const minWeekIndex = curWeeklyRecords.length > 0 ? Math.min(...curWeeklyRecords.map(w => w.weekIndex)) : 1;
+                      const maxWeekIndex = curWeeklyRecords.length > 0 ? Math.max(...curWeeklyRecords.map(w => w.weekIndex)) : 52;
 
                       return (
                         <div className="border-t border-slate-200/80 bg-slate-50/50 p-3 sm:p-4 space-y-3">
@@ -12986,14 +13559,14 @@ export const EvaluationTab: React.FC = () => {
                                   : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
                                   }`}
                               >
-                                All 52 Weeks
+                                {curWeeklyRecords.length < 52 ? `All Assigned Weeks (${curWeeklyRecords.length})` : 'All 52 Weeks'}
                               </button>
                             </div>
 
                             {/* Right side compact progress indicator */}
                             <div className="flex items-center gap-2.5 self-start sm:self-auto bg-white border border-slate-200/80 px-2.5 py-1 rounded-lg shadow-2xs">
                               <span className="text-[11px] text-slate-600 font-bold">
-                                {approvedWeeks.length} of 52 Approved
+                                {approvedWeeks.length} of {totalAssignedWeeks} Approved
                               </span>
                               <div className="w-16 sm:w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                 <div
@@ -13047,9 +13620,11 @@ export const EvaluationTab: React.FC = () => {
                             <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                               <button
                                 type="button"
-                                disabled={activeYearlyWeekIndex <= 1}
+                                disabled={activeYearlyWeekIndex <= minWeekIndex}
                                 onClick={() => {
-                                  const prevIndex = activeYearlyWeekIndex - 1;
+                                  const sortedIndices = curWeeklyRecords.map(w => w.weekIndex).sort((a, b) => a - b);
+                                  const curPos = sortedIndices.indexOf(activeYearlyWeekIndex);
+                                  const prevIndex = curPos > 0 ? sortedIndices[curPos - 1] : sortedIndices[0];
                                   setActiveYearlyWeekIndex(prevIndex);
                                   const rec = curWeeklyRecords.find(w => w.weekIndex === prevIndex);
                                   if (rec && rec.quarter) setWeeklyQuarterFilter(rec.quarter);
@@ -13061,9 +13636,11 @@ export const EvaluationTab: React.FC = () => {
                               </button>
                               <button
                                 type="button"
-                                disabled={activeYearlyWeekIndex >= 52}
+                                disabled={activeYearlyWeekIndex >= maxWeekIndex}
                                 onClick={() => {
-                                  const nextIndex = activeYearlyWeekIndex + 1;
+                                  const sortedIndices = curWeeklyRecords.map(w => w.weekIndex).sort((a, b) => a - b);
+                                  const curPos = sortedIndices.indexOf(activeYearlyWeekIndex);
+                                  const nextIndex = curPos >= 0 && curPos < sortedIndices.length - 1 ? sortedIndices[curPos + 1] : sortedIndices[sortedIndices.length - 1];
                                   setActiveYearlyWeekIndex(nextIndex);
                                   const rec = curWeeklyRecords.find(w => w.weekIndex === nextIndex);
                                   if (rec && rec.quarter) setWeeklyQuarterFilter(rec.quarter);
@@ -13107,13 +13684,24 @@ export const EvaluationTab: React.FC = () => {
                     }
 
                     // 12-Month Stepper for Monthly Cadence
-                    const curRecords = activeEmpResponse?.monthly_records || [];
+                    const curRecords = getResponseMonthlyRecords(activeEmpResponse);
                     const calMonth = new Date().getMonth() + 1;
                     const currentFiscalMonthNum = calMonth >= 4 ? calMonth - 3 : calMonth + 9;
 
                     const lockInfo = getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords);
                     const targetMonthRecord = curRecords.find(r => r.monthIndex === activeYearlyFiscalMonth);
                     const hasManagerReopenedNote = Boolean(targetMonthRecord?.managerRemarks && targetMonthRecord?.status === 'pending_employee');
+
+                    // Restrict displayed months to those configured within the evaluation cycle/period
+                    const availableFiscalMonths = FISCAL_MONTHS.filter(m => {
+                      if (!curRecords || curRecords.length === 0) return true;
+                      return curRecords.some(r => r.monthIndex === m.monthIndex);
+                    });
+
+                    const sortedMonthIndices = availableFiscalMonths.map(m => m.monthIndex).sort((a, b) => a - b);
+                    const curMonthPos = sortedMonthIndices.indexOf(activeYearlyFiscalMonth);
+                    const prevMonthIndex = curMonthPos > 0 ? sortedMonthIndices[curMonthPos - 1] : sortedMonthIndices[0];
+                    const nextMonthIndex = curMonthPos >= 0 && curMonthPos < sortedMonthIndices.length - 1 ? sortedMonthIndices[curMonthPos + 1] : sortedMonthIndices[sortedMonthIndices.length - 1];
 
                     return (
                       <div className="border-t border-slate-200/80 bg-slate-50/50 p-3 sm:p-4 space-y-3">
@@ -13129,7 +13717,7 @@ export const EvaluationTab: React.FC = () => {
                                 onChange={e => setActiveYearlyFiscalMonth(Number(e.target.value))}
                                 className="w-full bg-slate-50/70 hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                               >
-                                {FISCAL_MONTHS.map(m => {
+                                {availableFiscalMonths.map(m => {
                                   const mLock = getYearlyMonthLockInfo(m.monthIndex, curRecords);
                                   const isCurActive = m.monthIndex === currentFiscalMonthNum;
                                   let badgeStr = '';
@@ -13152,8 +13740,8 @@ export const EvaluationTab: React.FC = () => {
                           <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                             <button
                               type="button"
-                              disabled={activeYearlyFiscalMonth <= 1}
-                              onClick={() => setActiveYearlyFiscalMonth(prev => prev - 1)}
+                              disabled={curMonthPos <= 0}
+                              onClick={() => setActiveYearlyFiscalMonth(prevMonthIndex)}
                               className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                               title="Previous Month"
                             >
@@ -13161,15 +13749,15 @@ export const EvaluationTab: React.FC = () => {
                             </button>
                             <button
                               type="button"
-                              disabled={activeYearlyFiscalMonth >= 12}
-                              onClick={() => setActiveYearlyFiscalMonth(prev => prev + 1)}
+                              disabled={curMonthPos < 0 || curMonthPos >= sortedMonthIndices.length - 1}
+                              onClick={() => setActiveYearlyFiscalMonth(nextMonthIndex)}
                               className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                               title="Next Month"
                             >
                               Next ▶
                             </button>
 
-                            {activeYearlyFiscalMonth !== currentFiscalMonthNum && (
+                            {activeYearlyFiscalMonth !== currentFiscalMonthNum && sortedMonthIndices.includes(currentFiscalMonthNum) && (
                               <button
                                 type="button"
                                 onClick={() => setActiveYearlyFiscalMonth(currentFiscalMonthNum)}
@@ -13204,26 +13792,61 @@ export const EvaluationTab: React.FC = () => {
                   const today = new Date();
                   const todayStr = today.toISOString().split("T")[0];
                   const cycleName = (activeCycle as any)?.name || (activeCycle as any)?.period || '';
-                  const isMonthly = activeCycle?.frequency === 'monthly' || (!activeCycle?.frequency && cycleName.toLowerCase().includes('2026') && !cycleName.toLowerCase().includes('q'));
-                  const cycleEndDateRaw = activeCycle?.endDate ? activeCycle.endDate.split("T")[0] : todayStr;
+                  const empCadence = getResponseCadence(activeEmpResponse);
+                  const isWeekly = activeCycle?.frequency === 'weekly' || activeEmpResponse?.frequency === 'weekly' || empCadence === 'weekly';
+                  const isMonthly = !isWeekly && (activeCycle?.frequency === 'monthly' || (!activeCycle?.frequency && cycleName.toLowerCase().includes('2026') && !cycleName.toLowerCase().includes('q')));
 
-                  let calculatedDueDateStr = (activeCycle as any)?.dueDate || (activeCycle as any)?.due_date;
-                  if (!calculatedDueDateStr) {
-                    if (isMonthly) {
-                      // Monthly cycle due date is 5th working day of the following month
-                      const endD = new Date(cycleEndDateRaw + 'T00:00:00');
-                      const nextMonth = endD.getMonth() === 11 ? 1 : endD.getMonth() + 2;
-                      const nextYear = endD.getMonth() === 11 ? endD.getFullYear() + 1 : endD.getFullYear();
-                      const rawCandidate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-05`;
-                      calculatedDueDateStr = getAdjustedWorkingDueDate(rawCandidate);
+                  // For weekly evaluations, determine the specific week's end date (e.g. Sunday 25/10/2026) rather than full cycle endDate
+                  let periodEndDateRaw = activeEmpResponse?.endDate ? String(activeEmpResponse.endDate).split("T")[0] : (activeCycle?.endDate ? activeCycle.endDate.split("T")[0] : todayStr);
+                  if (isWeekly) {
+                    const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
+                    const activeWeekRec = curWeeklyRecords.find(w => w.weekIndex === activeYearlyWeekIndex) || curWeeklyRecords.find(w => Boolean(w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate));
+                    if (activeWeekRec?.endDate) {
+                      periodEndDateRaw = String(activeWeekRec.endDate).split("T")[0];
+                    } else if (activeEmpResponse?.endDate && activeEmpResponse.endDate !== activeCycle?.endDate) {
+                      periodEndDateRaw = String(activeEmpResponse.endDate).split("T")[0];
                     } else {
-                      calculatedDueDateStr = getAdjustedWorkingDueDate(cycleEndDateRaw);
+                      // Parse from periodName e.g. "Weekly (19/10/2026 - 25/10/2026)"
+                      const pName = String((activeEmpResponse as any)?.periodName || activeCycle?.periodName || '').trim();
+                      const match = pName.match(/(\d{2})\/(\d{2})\/(\d{4})\s*-\s*(\d{2})\/(\d{2})\/(\d{4})/);
+                      if (match) {
+                        periodEndDateRaw = `${match[6]}-${match[5]}-${match[4]}`;
+                      }
                     }
-                  } else {
-                    calculatedDueDateStr = getAdjustedWorkingDueDate(calculatedDueDateStr.split("T")[0]);
                   }
 
-                  const isMonthStillInProgress = isMonthly && todayStr < cycleEndDateRaw;
+                  let calculatedDueDateStr = '';
+                  if (isWeekly) {
+                    // Weekly cycle: week ends Sunday, submission due date is Wednesday of following week (+3 days)
+                    const endD = new Date(periodEndDateRaw + 'T00:00:00');
+                    const wednesdayDue = new Date(endD);
+                    wednesdayDue.setDate(endD.getDate() + 3);
+                    const wY = wednesdayDue.getFullYear();
+                    const wM = String(wednesdayDue.getMonth() + 1).padStart(2, '0');
+                    const wD = String(wednesdayDue.getDate()).padStart(2, '0');
+                    calculatedDueDateStr = getAdjustedWorkingDueDate(`${wY}-${wM}-${wD}`);
+                  } else {
+                    calculatedDueDateStr = (activeCycle as any)?.dueDate || (activeCycle as any)?.due_date;
+                    if (!calculatedDueDateStr) {
+                      if (isMonthly) {
+                        // Monthly cycle due date is 5th working day of the following month
+                        const endD = new Date(periodEndDateRaw + 'T00:00:00');
+                        const nextMonth = endD.getMonth() === 11 ? 1 : endD.getMonth() + 2;
+                        const nextYear = endD.getMonth() === 11 ? endD.getFullYear() + 1 : endD.getFullYear();
+                        const rawCandidate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-05`;
+                        calculatedDueDateStr = getAdjustedWorkingDueDate(rawCandidate);
+                      } else {
+                        calculatedDueDateStr = getAdjustedWorkingDueDate(periodEndDateRaw);
+                      }
+                    } else {
+                      calculatedDueDateStr = getAdjustedWorkingDueDate(calculatedDueDateStr.split("T")[0]);
+                    }
+                  }
+
+                  const isWeekStillInProgress = isWeekly && todayStr <= periodEndDateRaw;
+                  const isMonthStillInProgress = isMonthly && todayStr < periodEndDateRaw;
+                  const isPeriodStillInProgress = isWeekStillInProgress || isMonthStillInProgress;
+
                   const diffTime = new Date(calculatedDueDateStr).getTime() - new Date(todayStr).getTime();
                   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
@@ -13236,8 +13859,8 @@ export const EvaluationTab: React.FC = () => {
                     } catch { return isoStr; }
                   };
 
-                  // Show banner if within 5 days of due date or if near month end
-                  if (diffDays >= 0 && (diffDays <= 7 || isMonthStillInProgress)) {
+                  // Show banner if within 7 days of due date or if period is currently in progress
+                  if (diffDays >= 0 && (diffDays <= 7 || isPeriodStillInProgress)) {
                     return (
                       <div className="p-3.5 bg-gradient-to-r from-amber-50 via-amber-100/40 to-emerald-50 border border-amber-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
                         <div className="flex items-center gap-3">
@@ -13247,20 +13870,24 @@ export const EvaluationTab: React.FC = () => {
                           <div>
                             <div className="flex items-center gap-2">
                               <h4 className="text-xs font-bold text-amber-950">
-                                {isMonthStillInProgress ? 'Self-Assessment Window (Upcoming)' : 'Self-Assessment Submission Window Open'}
+                                {isPeriodStillInProgress ? 'Self-Assessment Window (Upcoming)' : 'Self-Assessment Submission Window Open'}
                               </h4>
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-200/80 text-amber-900 uppercase">
-                                {diffDays === 0
-                                  ? 'Due Today'
+                                {isWeekStillInProgress
+                                  ? `Due Next Wednesday (${formatDDMMYYYY(calculatedDueDateStr)})`
                                   : isMonthStillInProgress
                                     ? `Due on 5th Working Day (${formatDDMMYYYY(calculatedDueDateStr)})`
-                                    : `Due in ${diffDays} Day${diffDays > 1 ? 's' : ''} (${formatDDMMYYYY(calculatedDueDateStr)})`}
+                                    : diffDays === 0
+                                      ? 'Due Today'
+                                      : `Due in ${diffDays} Day${diffDays > 1 ? 's' : ''} (${formatDDMMYYYY(calculatedDueDateStr)})`}
                               </span>
                             </div>
                             <p className="text-[11px] text-amber-800 font-medium">
-                              {isMonthStillInProgress
-                                ? `${FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth)?.monthName || 'Current'} evaluation period is in progress. Submission window is from 1st to 5th working day of the following month.`
-                                : 'Please enter your actual deliverables and submit your self-assessment before the deadline.'}
+                              {isWeekStillInProgress
+                                ? 'Current weekly evaluation period is in progress. Self-assessment submission opens next week following the completion of this week.'
+                                : isMonthStillInProgress
+                                  ? `${FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth)?.monthName || 'Current'} evaluation period is in progress. Submission window is from 1st to 5th working day of the following month.`
+                                  : 'Please enter your actual deliverables and submit your self-assessment before the deadline.'}
                             </p>
                           </div>
                         </div>
@@ -13277,26 +13904,36 @@ export const EvaluationTab: React.FC = () => {
                     {/* Left: Deliverable Title & Category Filters */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                        Deliverables {isYearlyResponse(activeEmpResponse) && (() => {
-                          const empCadence = getResponseCadence(activeEmpResponse);
-                          const isDaily = empCadence === 'daily';
-                          const isWeekly = empCadence === 'weekly';
-                          const isQuarterly = empCadence === 'quarterly';
-                          if (isDaily) {
-                            const curD = getResponseDailyRecords(activeEmpResponse).find(d => d.dayIndex === activeYearlyDailyIndex);
-                            return `— ${curD?.dayLabel || `Day ${activeYearlyDailyIndex}`}`;
+                        Deliverables {(() => {
+                          if (isYearlyResponse(activeEmpResponse)) {
+                            const empCadence = getResponseCadence(activeEmpResponse);
+                            const isDaily = empCadence === 'daily';
+                            const isWeekly = empCadence === 'weekly';
+                            const isQuarterly = empCadence === 'quarterly';
+                            if (isDaily) {
+                              const curD = getResponseDailyRecords(activeEmpResponse).find(d => d.dayIndex === activeYearlyDailyIndex);
+                              return `— ${curD?.dayLabel || `Day ${activeYearlyDailyIndex}`}`;
+                            }
+                            if (isWeekly) {
+                              const curW = (activeEmpResponse?.weekly_records || []).find(w => w.weekIndex === activeYearlyWeekIndex);
+                              return `— ${curW?.weekLabel || `Week ${activeYearlyWeekIndex}`}`;
+                            }
+                            if (isQuarterly) {
+                              const curQ = (activeEmpResponse?.quarterly_records || []).find(q => q.quarterIndex === activeYearlyQuarterIndex);
+                              const qObj = FISCAL_QUARTERS.find(q => q.quarterIndex === activeYearlyQuarterIndex);
+                              return `— ${curQ?.quarterLabel || qObj?.quarterLabel || `Q${activeYearlyQuarterIndex}`}`;
+                            }
+                            const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
+                            return `— ${mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`}`;
                           }
-                          if (isWeekly) {
-                            const curW = (activeEmpResponse?.weekly_records || []).find(w => w.weekIndex === activeYearlyWeekIndex);
-                            return `— ${curW?.weekLabel || `Week ${activeYearlyWeekIndex}`}`;
+                          const f = String(activeEmpResponse?.frequency || '').toLowerCase();
+                          if (f === 'weekly') {
+                            return activeEmpResponse?.periodName ? `— ${activeEmpResponse.periodName}` : '— Weekly';
                           }
-                          if (isQuarterly) {
-                            const curQ = (activeEmpResponse?.quarterly_records || []).find(q => q.quarterIndex === activeYearlyQuarterIndex);
-                            const qObj = FISCAL_QUARTERS.find(q => q.quarterIndex === activeYearlyQuarterIndex);
-                            return `— ${curQ?.quarterLabel || qObj?.quarterLabel || `Q${activeYearlyQuarterIndex}`}`;
+                          if (f === 'daily') {
+                            return activeEmpResponse?.periodName ? `— ${activeEmpResponse.periodName}` : '— Daily';
                           }
-                          const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
-                          return `— ${mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`}`;
+                          return '';
                         })()}
                       </h4>
 
@@ -13332,7 +13969,7 @@ export const EvaluationTab: React.FC = () => {
                         const isWeekly = !isDaily && isYearly && (activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length));
                         const isQuarterly = !isDaily && isYearly && (activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length));
                         const curRecords = activeEmpResponse?.monthly_records || [];
-                        const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
+                        const curWeeklyRecords = getResponseWeeklyRecords(activeEmpResponse);
                         const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
                         const curDailyRecords = getResponseDailyRecords(activeEmpResponse);
                         const lockInfo = isDaily
@@ -13411,7 +14048,7 @@ export const EvaluationTab: React.FC = () => {
                       const isWeekly = empCadence === 'weekly';
                       const isQuarterly = empCadence === 'quarterly';
                       const curRecords = activeEmpResponse?.monthly_records || [];
-                      const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
+                      const curWeeklyRecords = getResponseWeeklyRecords(activeEmpResponse);
                       const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
                       const curDailyRecords = getResponseDailyRecords(activeEmpResponse);
                       const lockInfo = isDaily
@@ -13990,7 +14627,7 @@ export const EvaluationTab: React.FC = () => {
                       const isWeekly = empCadence === 'weekly';
                       const isQuarterly = empCadence === 'quarterly';
                       const curRecords = activeEmpResponse?.monthly_records || [];
-                      const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
+                      const curWeeklyRecords = getResponseWeeklyRecords(activeEmpResponse);
                       const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
                       const curDailyRecords = getResponseDailyRecords(activeEmpResponse);
 
@@ -16671,11 +17308,18 @@ export const EvaluationTab: React.FC = () => {
                                   onChange={e => {
                                     const newSub = e.target.value as 'monthly' | 'weekly' | 'quarterly' | 'annual' | 'daily' | '';
                                     setMgrSubFrequency(newSub);
+                                    const marchLastDate = `${mgrPeriodYear + 1}-03-31`;
+                                    let candidateFrom = mgrPeriodFromDate;
+                                    let candidateTo = marchLastDate;
+                                    setMgrPeriodToDate(marchLastDate);
                                     if (newSub === 'daily') {
                                       const todayStr = getLocalTodayDateString();
-                                      if (!mgrPeriodFromDate) setMgrPeriodFromDate(todayStr);
-                                      if (!mgrPeriodToDate) setMgrPeriodToDate(todayStr);
+                                      if (!candidateFrom) { candidateFrom = todayStr; setMgrPeriodFromDate(todayStr); }
+                                    } else if (newSub === 'weekly') {
+                                      const week = getLocalCurrentWeekRange();
+                                      if (!candidateFrom) { candidateFrom = week.from; setMgrPeriodFromDate(week.from); }
                                     }
+                                    syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, candidateFrom, candidateTo, candidateTo, mgrAssignTeamId, undefined, undefined, newSub);
                                   }}
                                   className={`w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border rounded-lg text-xs sm:text-sm font-medium transition cursor-pointer ${!mgrSubFrequency ? 'border-amber-400 text-slate-500' : 'border-slate-200 text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20'
                                     }`}
@@ -16689,17 +17333,19 @@ export const EvaluationTab: React.FC = () => {
                                 </select>
                               </div>
 
-                              {mgrSubFrequency === 'daily' && (
+                              {mgrSubFrequency && (
                                 <>
                                   <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
                                     <label className="block text-xs font-medium text-slate-600 mb-1.5">
                                       From Date <span className="text-rose-500">*</span>
                                     </label>
                                     <DatePicker
-                                      value={mgrPeriodFromDate}
+                                      value={mgrPeriodFromDate || getLocalTodayDateString()}
                                       onChange={(newFrom: string) => {
                                         setMgrPeriodFromDate(newFrom);
-                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newFrom, mgrPeriodToDate, newFrom, mgrAssignTeamId);
+                                        const marchEndDate = `${mgrPeriodYear + 1}-03-31`;
+                                        setMgrPeriodToDate(marchEndDate);
+                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newFrom, marchEndDate, marchEndDate, mgrAssignTeamId, undefined, undefined, mgrSubFrequency);
                                       }}
                                       placeholder="Select From Date"
                                       className="w-full font-medium text-slate-700"
@@ -16707,14 +17353,19 @@ export const EvaluationTab: React.FC = () => {
                                   </div>
 
                                   <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                                    <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                                      To Date <span className="text-rose-500">*</span>
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <label className="block text-xs font-medium text-slate-600">
+                                        To Date <span className="text-rose-500">*</span>
+                                      </label>
+                                      <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">
+                                        Fiscal Year End (31 March)
+                                      </span>
+                                    </div>
                                     <DatePicker
-                                      value={mgrPeriodToDate}
+                                      value={mgrPeriodToDate || `${mgrPeriodYear + 1}-03-31`}
                                       onChange={(newTo: string) => {
                                         setMgrPeriodToDate(newTo);
-                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, newTo, newTo, mgrAssignTeamId);
+                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, newTo, newTo, mgrAssignTeamId, undefined, undefined, mgrSubFrequency);
                                       }}
                                       placeholder="Select To Date"
                                       className="w-full font-medium text-slate-700"
@@ -17054,9 +17705,15 @@ export const EvaluationTab: React.FC = () => {
                               showAlert('Please select at least one team member to assign metrics to.', 'Member Required');
                               return;
                             }
-                            if ((mgrPeriodType === 'yearly' || (mgrPeriodType as string) === 'annual') && !mgrSubFrequency) {
-                              showAlert('Please select a Milestone Tracking Cadence (Daily, Monthly, Weekly, Quarterly, or Annual) for the automated rollout.', 'Milestone Cadence Required');
-                              return;
+                            if ((mgrPeriodType === 'yearly' || (mgrPeriodType as string) === 'annual')) {
+                              if (!mgrSubFrequency) {
+                                showAlert('Please select a Milestone Tracking Cadence (Daily, Monthly, Weekly, Quarterly, or Annual) for the automated rollout.', 'Milestone Cadence Required');
+                                return;
+                              }
+                              if ((mgrSubFrequency === 'daily' || mgrSubFrequency === 'weekly') && (!mgrPeriodFromDate || !mgrPeriodToDate)) {
+                                showAlert('Please select both From Date and To Date for the milestone period.', 'Date Range Required');
+                                return;
+                              }
                             }
                             setMgrWizardStep(2);
                           }}
@@ -19319,11 +19976,11 @@ export const EvaluationTab: React.FC = () => {
           const isQuarterly = mgrRespCadence === 'quarterly';
           const curDailyRecords = getResponseDailyRecords(selectedMgrResponse);
           const curDailyRec = isDaily ? curDailyRecords.find(d => d.dayIndex === activeMgrYearlyDailyIndex) : null;
-          const curWeeklyRecords = selectedMgrResponse!.weekly_records || [];
+          const curWeeklyRecords = getResponseWeeklyRecords(selectedMgrResponse);
           const curWeeklyRec = isWeekly ? curWeeklyRecords.find(w => w.weekIndex === activeMgrYearlyWeekIndex) : null;
           const curQuarterlyRecords = selectedMgrResponse!.quarterly_records || [];
           const curQuarterlyRec = isQuarterly ? curQuarterlyRecords.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex) : null;
-          const curYearlyRecords = selectedMgrResponse!.monthly_records || [];
+          const curYearlyRecords = getResponseMonthlyRecords(selectedMgrResponse);
           const curYearlyRec = isYearly ? (isDaily || isWeekly || isQuarterly ? null : curYearlyRecords.find(m => m.monthIndex === activeMgrYearlyFiscalMonth)) : null;
           const curFiscalMonthObj = FISCAL_MONTHS.find(m => m.monthIndex === activeMgrYearlyFiscalMonth);
           const curQuarterFiscalObj = FISCAL_QUARTERS.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex);
@@ -19589,25 +20246,30 @@ export const EvaluationTab: React.FC = () => {
                     }
 
                     if (isWeekly) {
-                      const curWeeklyRecords = selectedMgrResponse?.weekly_records || [];
+                      const curWeeklyRecords = getResponseWeeklyRecords(selectedMgrResponse);
                       const approvedWeeks = curWeeklyRecords.filter(w => w.status === 'manager_approved');
                       const ytdScore = approvedWeeks.length > 0
                         ? Number((approvedWeeks.reduce((acc, w) => acc + (Number(w.managerScore) || 0), 0) / approvedWeeks.length).toFixed(1))
                         : null;
 
-                      const quarters = [
+                      const allQuarters = [
                         { qNum: 1, name: 'Q1 (Apr – Jun)', weeks: curWeeklyRecords.filter(w => w.quarter === 1) },
                         { qNum: 2, name: 'Q2 (Jul – Sep)', weeks: curWeeklyRecords.filter(w => w.quarter === 2) },
                         { qNum: 3, name: 'Q3 (Oct – Dec)', weeks: curWeeklyRecords.filter(w => w.quarter === 3) },
                         { qNum: 4, name: 'Q4 (Jan – Mar)', weeks: curWeeklyRecords.filter(w => w.quarter === 4) }
                       ];
+                      const quarters = allQuarters.filter(q => q.weeks.length > 0);
 
                       const pendingSubmittedWeekRec = curWeeklyRecords.find(w => w.status === 'submitted_to_manager');
-                      const percentComplete = Math.round((approvedWeeks.length / 52) * 100);
+                      const totalAssignedWeeks = curWeeklyRecords.length || 52;
+                      const percentComplete = Math.round((approvedWeeks.length / totalAssignedWeeks) * 100);
 
+                      const currentFiscalQ = getCurrentFiscalQuarterIndex();
                       const effectiveQuarterFilter = mgrWeeklyQuarterFilter === 'all'
                         ? 'all'
-                        : (typeof mgrWeeklyQuarterFilter === 'number' ? mgrWeeklyQuarterFilter : getCurrentFiscalQuarterIndex());
+                        : (typeof mgrWeeklyQuarterFilter === 'number' && quarters.some(q => q.qNum === mgrWeeklyQuarterFilter)
+                            ? mgrWeeklyQuarterFilter
+                            : (quarters.some(q => q.qNum === currentFiscalQ) ? currentFiscalQ : (quarters[0]?.qNum ?? 'all')));
 
                       const displayedWeeks = effectiveQuarterFilter === 'all'
                         ? curWeeklyRecords
@@ -19616,6 +20278,9 @@ export const EvaluationTab: React.FC = () => {
                       const curWeekRec = curWeeklyRecords.find(w => w.weekIndex === activeMgrYearlyWeekIndex);
                       const curWeekLock = getYearlyWeekLockInfo(activeMgrYearlyWeekIndex, curWeeklyRecords);
                       const curWeekLabel = curWeekRec?.weekLabel || `Week ${activeMgrYearlyWeekIndex}`;
+
+                      const minWeekIndex = curWeeklyRecords.length > 0 ? Math.min(...curWeeklyRecords.map(w => w.weekIndex)) : 1;
+                      const maxWeekIndex = curWeeklyRecords.length > 0 ? Math.max(...curWeeklyRecords.map(w => w.weekIndex)) : 52;
 
                       return (
                         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-3.5 sm:p-4 space-y-3">
@@ -19665,7 +20330,7 @@ export const EvaluationTab: React.FC = () => {
                                   : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
                                   }`}
                               >
-                                All 52 Weeks
+                                {curWeeklyRecords.length < 52 ? `All Assigned Weeks (${curWeeklyRecords.length})` : 'All 52 Weeks'}
                               </button>
                             </div>
 
@@ -19673,7 +20338,7 @@ export const EvaluationTab: React.FC = () => {
                             <div className="flex items-center gap-3 self-start sm:self-auto">
                               <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg">
                                 <span className="text-[11px] text-slate-500 font-semibold">Approved:</span>
-                                <span className="text-xs font-bold text-slate-800">{approvedWeeks.length}/52</span>
+                                <span className="text-xs font-bold text-slate-800">{approvedWeeks.length}/{totalAssignedWeeks}</span>
                                 <div className="w-16 h-1.5 bg-slate-200/80 rounded-full overflow-hidden ml-1">
                                   <div
                                     className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all"
@@ -19729,9 +20394,11 @@ export const EvaluationTab: React.FC = () => {
                             <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
                               <button
                                 type="button"
-                                disabled={activeMgrYearlyWeekIndex <= 1}
+                                disabled={activeMgrYearlyWeekIndex <= minWeekIndex}
                                 onClick={() => {
-                                  const prevIndex = activeMgrYearlyWeekIndex - 1;
+                                  const sortedIndices = curWeeklyRecords.map(w => w.weekIndex).sort((a, b) => a - b);
+                                  const curPos = sortedIndices.indexOf(activeMgrYearlyWeekIndex);
+                                  const prevIndex = curPos > 0 ? sortedIndices[curPos - 1] : sortedIndices[0];
                                   switchMgrYearlyWeek(prevIndex);
                                   const rec = curWeeklyRecords.find(w => w.weekIndex === prevIndex);
                                   if (rec && rec.quarter) setMgrWeeklyQuarterFilter(rec.quarter);
@@ -19743,9 +20410,11 @@ export const EvaluationTab: React.FC = () => {
                               </button>
                               <button
                                 type="button"
-                                disabled={activeMgrYearlyWeekIndex >= 52}
+                                disabled={activeMgrYearlyWeekIndex >= maxWeekIndex}
                                 onClick={() => {
-                                  const nextIndex = activeMgrYearlyWeekIndex + 1;
+                                  const sortedIndices = curWeeklyRecords.map(w => w.weekIndex).sort((a, b) => a - b);
+                                  const curPos = sortedIndices.indexOf(activeMgrYearlyWeekIndex);
+                                  const nextIndex = curPos >= 0 && curPos < sortedIndices.length - 1 ? sortedIndices[curPos + 1] : sortedIndices[sortedIndices.length - 1];
                                   switchMgrYearlyWeek(nextIndex);
                                   const rec = curWeeklyRecords.find(w => w.weekIndex === nextIndex);
                                   if (rec && rec.quarter) setMgrWeeklyQuarterFilter(rec.quarter);
@@ -19822,13 +20491,23 @@ export const EvaluationTab: React.FC = () => {
 
                     // 4-Quarter Milestone Stepper
                     if (isQuarterly) {
-                      const curQuarterlyRecords = selectedMgrResponse?.quarterly_records || [];
+                      const curQuarterlyRecords = getResponseQuarterlyRecords(selectedMgrResponse);
                       const approvedQs = curQuarterlyRecords.filter(q => q.status === 'manager_approved');
                       const qtdScore = approvedQs.length > 0
                         ? Number((approvedQs.reduce((acc, q) => acc + (Number(q.managerScore) || 0), 0) / approvedQs.length).toFixed(1))
                         : null;
 
                       const curQuarterlyRec = curQuarterlyRecords.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex);
+
+                      const availableFiscalQuarters = FISCAL_QUARTERS.filter(q => {
+                        if (!curQuarterlyRecords || curQuarterlyRecords.length === 0) return true;
+                        return curQuarterlyRecords.some(r => r.quarterIndex === q.quarterIndex);
+                      });
+
+                      const sortedQuarterIndices: number[] = availableFiscalQuarters.map(q => q.quarterIndex).sort((a, b) => a - b);
+                      const curQuarterPos = sortedQuarterIndices.indexOf(activeMgrYearlyQuarterIndex);
+                      const prevQuarterIndex = curQuarterPos > 0 ? sortedQuarterIndices[curQuarterPos - 1] : sortedQuarterIndices[0];
+                      const nextQuarterIndex = curQuarterPos >= 0 && curQuarterPos < sortedQuarterIndices.length - 1 ? sortedQuarterIndices[curQuarterPos + 1] : sortedQuarterIndices[sortedQuarterIndices.length - 1];
 
                       return (
                         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-3.5 sm:p-4 space-y-3">
@@ -19844,7 +20523,7 @@ export const EvaluationTab: React.FC = () => {
                                   onChange={e => switchMgrYearlyQuarter(Number(e.target.value))}
                                   className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                                 >
-                                  {FISCAL_QUARTERS.map(q => {
+                                  {availableFiscalQuarters.map(q => {
                                     const qLockInfo = getYearlyQuarterLockInfo(q.quarterIndex, curQuarterlyRecords);
                                     let badgeStr = '';
                                     if (qLockInfo.isApproved) badgeStr = `✅ Approved (${qLockInfo.score != null ? `${qLockInfo.score}%` : ''})`;
@@ -19865,8 +20544,8 @@ export const EvaluationTab: React.FC = () => {
                             <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                               <button
                                 type="button"
-                                disabled={activeMgrYearlyQuarterIndex <= 1}
-                                onClick={() => switchMgrYearlyQuarter(activeMgrYearlyQuarterIndex - 1)}
+                                disabled={curQuarterPos <= 0}
+                                onClick={() => switchMgrYearlyQuarter(prevQuarterIndex)}
                                 className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                                 title="Previous Quarter"
                               >
@@ -19874,8 +20553,8 @@ export const EvaluationTab: React.FC = () => {
                               </button>
                               <button
                                 type="button"
-                                disabled={activeMgrYearlyQuarterIndex >= 4}
-                                onClick={() => switchMgrYearlyQuarter(activeMgrYearlyQuarterIndex + 1)}
+                                disabled={curQuarterPos < 0 || curQuarterPos >= sortedQuarterIndices.length - 1}
+                                onClick={() => switchMgrYearlyQuarter(nextQuarterIndex)}
                                 className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                                 title="Next Quarter"
                               >
@@ -19936,6 +20615,16 @@ export const EvaluationTab: React.FC = () => {
                       ? Number((approvedMonths.reduce((acc, m) => acc + (Number(m.managerScore) || 0), 0) / approvedMonths.length).toFixed(1))
                       : null;
 
+                    const availableFiscalMonths = FISCAL_MONTHS.filter(m => {
+                      if (!curRecords || curRecords.length === 0) return true;
+                      return curRecords.some(r => r.monthIndex === m.monthIndex);
+                    });
+
+                    const sortedMonthIndices = availableFiscalMonths.map(m => m.monthIndex).sort((a, b) => a - b);
+                    const curMonthPos = sortedMonthIndices.indexOf(activeMgrYearlyFiscalMonth);
+                    const prevMonthIndex = curMonthPos > 0 ? sortedMonthIndices[curMonthPos - 1] : sortedMonthIndices[0];
+                    const nextMonthIndex = curMonthPos >= 0 && curMonthPos < sortedMonthIndices.length - 1 ? sortedMonthIndices[curMonthPos + 1] : sortedMonthIndices[sortedMonthIndices.length - 1];
+
                     return (
                       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-3.5 sm:p-4 space-y-3">
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-slate-50/70 p-2.5 sm:p-3 rounded-xl border border-slate-200/80">
@@ -19950,7 +20639,7 @@ export const EvaluationTab: React.FC = () => {
                                 onChange={e => switchMgrYearlyMonth(Number(e.target.value))}
                                 className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                               >
-                                {FISCAL_MONTHS.map(m => {
+                                {availableFiscalMonths.map(m => {
                                   const mLock = getYearlyMonthLockInfo(m.monthIndex, curRecords);
                                   let badgeStr = '';
                                   if (mLock.isApproved) badgeStr = `✅ Approved (${mLock.score != null ? `${mLock.score}%` : ''})`;
@@ -19971,8 +20660,8 @@ export const EvaluationTab: React.FC = () => {
                           <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                             <button
                               type="button"
-                              disabled={activeMgrYearlyFiscalMonth <= 1}
-                              onClick={() => switchMgrYearlyMonth(activeMgrYearlyFiscalMonth - 1)}
+                              disabled={curMonthPos <= 0}
+                              onClick={() => switchMgrYearlyMonth(prevMonthIndex)}
                               className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                               title="Previous Month"
                             >
@@ -19980,8 +20669,8 @@ export const EvaluationTab: React.FC = () => {
                             </button>
                             <button
                               type="button"
-                              disabled={activeMgrYearlyFiscalMonth >= 12}
-                              onClick={() => switchMgrYearlyMonth(activeMgrYearlyFiscalMonth + 1)}
+                              disabled={curMonthPos < 0 || curMonthPos >= sortedMonthIndices.length - 1}
+                              onClick={() => switchMgrYearlyMonth(nextMonthIndex)}
                               className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                               title="Next Month"
                             >

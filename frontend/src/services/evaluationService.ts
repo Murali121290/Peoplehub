@@ -23,7 +23,14 @@ export const FISCAL_QUARTERS = [
   { quarterIndex: 4 as const, quarterKey: 'q4' as const, shortName: 'Q4' as const, quarterLabel: 'Q4 (Jan – Mar)', quarterName: 'Quarter 4', monthsIncluded: 'January – March', startMonthName: 'January', endMonthName: 'March', startMonth: 1, endMonth: 3 },
 ];
 
-export const initializeYearlyQuarterlyRecords = (baseStartYear: number): YearlyQuarterRecord[] => {
+export const initializeYearlyQuarterlyRecords = (
+  baseStartYear: number,
+  startDate?: string,
+  endDate?: string
+): YearlyQuarterRecord[] => {
+  const filterStart = startDate ? startDate.slice(0, 10) : '';
+  const filterEnd = endDate ? endDate.slice(0, 10) : '';
+
   return FISCAL_QUARTERS.map(q => {
     const startYear = q.quarterIndex === 4 ? baseStartYear + 1 : baseStartYear;
     const endYear = q.quarterIndex === 4 ? baseStartYear + 1 : baseStartYear;
@@ -38,9 +45,13 @@ export const initializeYearlyQuarterlyRecords = (baseStartYear: number): YearlyQ
       endMonthName: q.endMonthName,
       startDate: `${startYear}-${String(q.startMonth).padStart(2, '0')}-01`,
       endDate: `${endYear}-${String(q.endMonth).padStart(2, '0')}-${lastDay}`,
-      status: 'pending_employee',
+      status: 'pending_employee' as const,
       kpiEntries: {}
     };
+  }).filter(q => {
+    if (filterStart && q.endDate < filterStart) return false;
+    if (filterEnd && q.startDate > filterEnd) return false;
+    return true;
   });
 };
 
@@ -91,7 +102,14 @@ export const FISCAL_MONTHS = [
   { monthIndex: 12, monthKey: 'march', monthName: 'March', shortName: 'Mar', calendarMonth: 3, quarter: 4 as const },
 ];
 
-export const initializeYearlyMonthlyRecords = (baseStartYear: number): YearlyMonthRecord[] => {
+export const initializeYearlyMonthlyRecords = (
+  baseStartYear: number,
+  startDate?: string,
+  endDate?: string
+): YearlyMonthRecord[] => {
+  const filterStart = startDate ? startDate.slice(0, 10) : '';
+  const filterEnd = endDate ? endDate.slice(0, 10) : '';
+
   return FISCAL_MONTHS.map(m => {
     const calendarYear = m.calendarMonth >= 4 ? baseStartYear : baseStartYear + 1;
     const lastDay = new Date(calendarYear, m.calendarMonth, 0).getDate();
@@ -104,13 +122,21 @@ export const initializeYearlyMonthlyRecords = (baseStartYear: number): YearlyMon
       quarter: m.quarter,
       startDate: `${calendarYear}-${String(m.calendarMonth).padStart(2, '0')}-01`,
       endDate: `${calendarYear}-${String(m.calendarMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
-      status: 'pending_employee',
+      status: 'pending_employee' as const,
       kpiEntries: {}
     };
+  }).filter(m => {
+    if (filterStart && m.endDate < filterStart) return false;
+    if (filterEnd && m.startDate > filterEnd) return false;
+    return true;
   });
 };
 
-export const initializeYearlyWeeklyRecords = (baseStartYear: number): YearlyWeekRecord[] => {
+export const initializeYearlyWeeklyRecords = (
+  baseStartYear: number,
+  startDate?: string,
+  endDate?: string
+): YearlyWeekRecord[] => {
   const records: YearlyWeekRecord[] = [];
   
   // April 1st of the fiscal start year
@@ -125,6 +151,9 @@ export const initializeYearlyWeeklyRecords = (baseStartYear: number): YearlyWeek
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
+  const filterStart = startDate ? startDate.slice(0, 10) : '';
+  const filterEnd = endDate ? endDate.slice(0, 10) : '';
+
   for (let w = 1; w <= 52; w++) {
     // Each week w starts strictly on Monday and ends on Sunday
     const wMonday = new Date(firstMonday.getFullYear(), firstMonday.getMonth(), firstMonday.getDate() + (w - 1) * 7);
@@ -133,6 +162,14 @@ export const initializeYearlyWeeklyRecords = (baseStartYear: number): YearlyWeek
     const pad = (n: number) => String(n).padStart(2, '0');
     const startIso = `${wMonday.getFullYear()}-${pad(wMonday.getMonth() + 1)}-${pad(wMonday.getDate())}`;
     const endIso = `${wSunday.getFullYear()}-${pad(wSunday.getMonth() + 1)}-${pad(wSunday.getDate())}`;
+
+    // If an explicit date range is specified, only include weeks that overlap with that range
+    if (filterStart && endIso < filterStart) {
+      continue;
+    }
+    if (filterEnd && startIso > filterEnd) {
+      continue;
+    }
 
     const startDay = pad(wMonday.getDate());
     const startMonth = pad(wMonday.getMonth() + 1);
@@ -1081,11 +1118,12 @@ export const evaluationService = {
 
     const baseStartYear = data.startDate ? parseInt(data.startDate.slice(0, 4), 10) : new Date().getFullYear();
     const isYearly = (data.frequency || '').toLowerCase() === 'yearly' || (data.frequency || '').toLowerCase() === 'annual';
-    const isDaily = (data.frequency || '').toLowerCase() === 'daily' || data.milestone_frequency === 'daily';
-    const subFreq = data.milestone_frequency || (isDaily ? 'daily' : ((data.frequency || '').toLowerCase() === 'weekly' ? 'weekly' : 'monthly'));
-    const initialMonthlyRecords = isYearly && subFreq === 'monthly' ? initializeYearlyMonthlyRecords(baseStartYear) : undefined;
-    const initialWeeklyRecords = isYearly && subFreq === 'weekly' ? initializeYearlyWeeklyRecords(baseStartYear) : undefined;
-    const initialQuarterlyRecords = isYearly && subFreq === 'quarterly' ? initializeYearlyQuarterlyRecords(baseStartYear) : undefined;
+    const isDaily = (data.frequency || '').toLowerCase() === 'daily';
+    const isWeekly = (data.frequency || '').toLowerCase() === 'weekly';
+    const subFreq = isYearly ? (data.milestone_frequency || 'monthly') : (isDaily ? 'daily' : undefined);
+    const initialMonthlyRecords = isYearly && subFreq === 'monthly' ? initializeYearlyMonthlyRecords(baseStartYear, data.startDate, data.endDate) : undefined;
+    const initialWeeklyRecords = isYearly && subFreq === 'weekly' ? initializeYearlyWeeklyRecords(baseStartYear, data.startDate, data.endDate) : (isWeekly ? [] : undefined);
+    const initialQuarterlyRecords = isYearly && subFreq === 'quarterly' ? initializeYearlyQuarterlyRecords(baseStartYear, data.startDate, data.endDate) : undefined;
     const initialDailyRecords = isDaily ? initializeYearlyDailyRecords(data.startDate, data.endDate) : undefined;
 
     // 1. Assign to PostgreSQL kpi_evaluations table (strictly 1 row per employee)
@@ -1112,7 +1150,7 @@ export const evaluationService = {
         template_key: data.templateKey || 'form_1',
         template_name: data.templateName || '',
         monthly_records: initialMonthlyRecords,
-        weekly_records: initialWeeklyRecords,
+        weekly_records: isWeekly ? [] : initialWeeklyRecords,
         quarterly_records: initialQuarterlyRecords,
         daily_records: initialDailyRecords,
         employees: targetEmployees,
@@ -1304,7 +1342,7 @@ export const evaluationService = {
 
     let monthlyRecords: YearlyMonthRecord[] = resp.monthly_records || [];
     if (!monthlyRecords || monthlyRecords.length === 0) {
-      monthlyRecords = initializeYearlyMonthlyRecords(baseYear);
+      monthlyRecords = initializeYearlyMonthlyRecords(baseYear, resp.startDate, resp.endDate);
     }
 
     // Calculate month employee score based on categories & kpiEntries
@@ -1395,7 +1433,7 @@ export const evaluationService = {
 
     let monthlyRecords: YearlyMonthRecord[] = resp.monthly_records || [];
     if (!monthlyRecords || monthlyRecords.length === 0) {
-      monthlyRecords = initializeYearlyMonthlyRecords(baseYear);
+      monthlyRecords = initializeYearlyMonthlyRecords(baseYear, resp.startDate, resp.endDate);
     }
 
     // Calculate month manager score based on explicitScore or categories & kpiEntries
@@ -1806,7 +1844,7 @@ export const evaluationService = {
 
     let quarterlyRecords: YearlyQuarterRecord[] = resp.quarterly_records || [];
     if (!quarterlyRecords || quarterlyRecords.length === 0) {
-      quarterlyRecords = initializeYearlyQuarterlyRecords(baseYear);
+      quarterlyRecords = initializeYearlyQuarterlyRecords(baseYear, resp.startDate, resp.endDate);
     }
 
     // Calculate quarter employee score based on categories & kpiEntries
@@ -1899,7 +1937,7 @@ export const evaluationService = {
 
     let quarterlyRecords: YearlyQuarterRecord[] = resp.quarterly_records || [];
     if (!quarterlyRecords || quarterlyRecords.length === 0) {
-      quarterlyRecords = initializeYearlyQuarterlyRecords(baseYear);
+      quarterlyRecords = initializeYearlyQuarterlyRecords(baseYear, resp.startDate, resp.endDate);
     }
 
     // Calculate quarter manager score based on explicitScore or categories & kpiEntries

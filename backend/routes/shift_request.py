@@ -97,6 +97,11 @@ def apply_shift():
                     "message": "Cannot apply for today's shift/WFH request because you have already checked in today."
                 }), 400
 
+        # Check if auto_approve is requested for a Flexible employee
+        is_auto_approve_requested = (data.get("auto_approve") is True or str(data.get("auto_approve", "")).lower() == "true")
+        is_flexible_employee = bool(employee and (employee.work_mode or "").strip().lower() == "flexible")
+        is_flexible_auto_approve = is_auto_approve_requested and is_flexible_employee
+
         if employee:
             overlapping_leave = LeaveRequest.query.filter(
                 LeaveRequest.employee_id == employee.employee_id,
@@ -146,11 +151,47 @@ def apply_shift():
                 ).first()
 
                 if existing_approved_request:
-                    req_label = existing_approved_request.request_type or "Shift/WFH"
-                    return jsonify({
-                        "success": False,
-                        "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new {req_label.lower()}."
-                    }), 400
+                    if is_flexible_auto_approve:
+                        # For Flexible employee check-in, seamlessly update existing approved record for today
+                        if data.get("requested_shift"):
+                            existing_approved_request.requested_shift = data.get("requested_shift")
+                        if data.get("requested_work_mode"):
+                            existing_approved_request.requested_work_mode = data.get("requested_work_mode")
+                        if data.get("request_type"):
+                            existing_approved_request.request_type = data.get("request_type")
+                        existing_approved_request.reason = data.get("reason") or "Flexible mode check-in for today."
+                        existing_approved_request.approved_by = "Auto-Approved (Flexible Mode)"
+                        existing_approved_request.approved_at = datetime.utcnow()
+                        if employee:
+                            curr_attendance = Attendance.query.filter_by(
+                                user_id=employee.user_id,
+                                attendance_date=existing_approved_request.from_date
+                            ).first()
+                            if curr_attendance:
+                                if data.get("requested_shift"):
+                                    curr_attendance.shift_timing = data.get("requested_shift")
+                                if data.get("requested_work_mode"):
+                                    curr_attendance.work_mode = data.get("requested_work_mode")
+
+                        db.session.commit()
+
+                        try:
+                            from extensions import socketio
+                            socketio.emit("shift_update", existing_approved_request.to_dict())
+                        except Exception as socket_err:
+                            print("Failed to emit shift socket:", str(socket_err))
+
+                        return jsonify({
+                            "success": True,
+                            "message": "Today's flexible attendance mode updated successfully",
+                            "data": existing_approved_request.to_dict()
+                        }), 200
+                    else:
+                        req_label = existing_approved_request.request_type or "Shift/WFH"
+                        return jsonify({
+                            "success": False,
+                            "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new {req_label.lower()}."
+                        }), 400
 
         # Check if supportive_document was uploaded
         supportive_document_path = None
@@ -166,6 +207,11 @@ def apply_shift():
                 target_path = os.path.join(target_dir, target_filename)
                 file.save(target_path)
                 supportive_document_path = f"shift_requests/{target_filename}"
+
+        shift_status = "Approved" if is_flexible_auto_approve else "Pending"
+        shift_approved_by = "Auto-Approved (Flexible Mode)" if is_flexible_auto_approve else None
+        shift_approved_at = datetime.utcnow() if is_flexible_auto_approve else None
+        shift_comment = "Auto-approved via Flexible Check-In" if is_flexible_auto_approve else None
 
         shift_request = ShiftRequest(
             employee_id=employee.employee_id if employee and employee.employee_id else emp_code,
@@ -197,28 +243,45 @@ def apply_shift():
             reporting_manager=data["reporting_manager"],
             supportive_document=supportive_document_path,
 
-            status="Pending"
+            status=shift_status,
+            approved_by=shift_approved_by,
+            approved_at=shift_approved_at,
+            manager_comment=shift_comment
         )
 
         db.session.add(shift_request)
         db.session.flush()
 
-        notification = Notification(
-            receiver_name=shift_request.reporting_manager,
-            title="New Shift Request",
-            message=f"{shift_request.employee_name} submitted a shift request.",
-            is_read=False
-    )
+        if is_flexible_auto_approve and employee:
+            curr_attendance = Attendance.query.filter_by(
+                user_id=employee.user_id,
+                attendance_date=shift_request.from_date
+            ).first()
+            if curr_attendance:
+                if shift_request.requested_shift:
+                    curr_attendance.shift_timing = shift_request.requested_shift
+                if shift_request.requested_work_mode:
+                    curr_attendance.work_mode = shift_request.requested_work_mode
 
-        db.session.add(notification)
+        # Manager notifications & emails are skipped for flexible mode auto-approvals
+        if not is_flexible_auto_approve:
+            notification = Notification(
+                receiver_name=shift_request.reporting_manager,
+                title="New Shift Request",
+                message=f"{shift_request.employee_name} submitted a shift request.",
+                is_read=False
+            )
+            db.session.add(notification)
+
         db.session.commit()
 
-        # Send manager notification email
-        try:
-            from services.request_email_service import send_manager_request_email
-            send_manager_request_email(shift_request, shift_request.request_type)
-        except Exception as email_err:
-            print("Failed to send manager request email:", str(email_err))
+        # Send manager notification email ONLY if not auto-approved
+        if not is_flexible_auto_approve:
+            try:
+                from services.request_email_service import send_manager_request_email
+                send_manager_request_email(shift_request, shift_request.request_type)
+            except Exception as email_err:
+                print("Failed to send manager request email:", str(email_err))
 
         # Emit shift_update socket event for real-time dashboard updates
         try:
@@ -229,7 +292,8 @@ def apply_shift():
 
         return jsonify({
             "success": True,
-            "message": "Shift Request Submitted Successfully"
+            "message": "Today's flexible attendance mode confirmed" if is_flexible_auto_approve else "Shift Request Submitted Successfully",
+            "data": shift_request.to_dict()
         }), 201
 
     except Exception as e:
