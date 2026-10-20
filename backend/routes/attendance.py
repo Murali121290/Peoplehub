@@ -167,19 +167,17 @@ def check_in():
         # First Shift (07:00 AM - 04:00 PM)
         if shift_name == "first shift":
 
-
             allowed_time = datetime.strptime(
                 "07:00",
                 "%H:%M"
             ).time()
 
-            if current_time < allowed_time:
-
-                return jsonify({
-                    "success": False,
-                    "message":
-                    "First Shift check-in allowed only after 07:00 AM"
-                }), 400
+            # if current_time < allowed_time:
+            #     return jsonify({
+            #         "success": False,
+            #         "message":
+            #         "First Shift check-in allowed only after 07:00 AM"
+            #     }), 400
 
         # General Shift (09:00 AM - 06:00 PM)
         elif shift_name == "general shift":
@@ -221,13 +219,12 @@ def check_in():
                 "%H:%M"
             ).time()
 
-            if current_time < allowed_time:
-
-                return jsonify({
-                    "success": False,
-                    "message":
-                    "You have a night shift"
-                }), 400
+            # if current_time < allowed_time:
+            #     return jsonify({
+            #         "success": False,
+            #         "message":
+            #         "You have a night shift"
+            #     }), 400
 
         # =====================================
         # APPROVED LEAVE CHECK — block check-in on approved leave days
