@@ -17147,7 +17147,7 @@ export const EvaluationTab: React.FC = () => {
                               <option value="quarterly">Quarterly</option>
                               <option value="monthly">Monthly</option>
                               <option value="weekly">Weekly</option>
-                              <option value="daily">Daily</option>
+                              {/* <option value="daily">Daily</option> */}
                               <option value="yearly">⚡ Automatically Assign Milestones (Yearly Rollout)</option>
                             </select>
                           </div>
