@@ -1285,7 +1285,9 @@ export const EvaluationTab: React.FC = () => {
   const [yearlyQuarterKpiInputs, setYearlyQuarterKpiInputs] = useState<Record<number, Record<string, YearlyMonthKPIEntry>>>({});
   const [yearlyQuarterRemarks, setYearlyQuarterRemarks] = useState<Record<number, string>>({});
   const [activeYearlyDailyIndex, setActiveYearlyDailyIndex] = useState<number>(1);
+  const [dailyMonthFilter, setDailyMonthFilter] = useState<string | 'all'>('all');
   const [activeMgrYearlyDailyIndex, setActiveMgrYearlyDailyIndex] = useState<number>(1);
+  const [mgrDailyMonthFilter, setMgrDailyMonthFilter] = useState<string | 'all'>('all');
   const [yearlyDailyKpiInputs, setYearlyDailyKpiInputs] = useState<Record<number, Record<string, YearlyMonthKPIEntry>>>({});
   const [yearlyDailyRemarks, setYearlyDailyRemarks] = useState<Record<number, string>>({});
 
@@ -13262,22 +13264,97 @@ export const EvaluationTab: React.FC = () => {
                       const targetDayRecord = curDailyRecords.find(d => d.dayIndex === activeYearlyDailyIndex);
                       const hasManagerReopenedNote = Boolean(targetDayRecord?.managerRemarks && targetDayRecord?.status === 'pending_employee');
                       const approvedDays = curDailyRecords.filter(d => d.status === 'manager_approved');
-                      const percentComplete = curDailyRecords.length > 0 ? Math.round((approvedDays.length / curDailyRecords.length) * 100) : 0;
+                      const totalAssignedDays = curDailyRecords.length || 1;
+                      const percentComplete = Math.round((approvedDays.length / totalAssignedDays) * 100);
                       const todayStr = getLocalTodayDateString();
                       const todayDayRecord = curDailyRecords.find(d => d.date === todayStr);
 
+                      // Group days into months dynamically (e.g. "Oct 2026", "Nov 2026")
+                      const monthsMap = new Map<string, { key: string; name: string; days: YearlyDailyRecord[] }>();
+                      curDailyRecords.forEach(d => {
+                        const mKey = d.date ? d.date.slice(0, 7) : 'all';
+                        if (!monthsMap.has(mKey)) {
+                          let mName = mKey;
+                          if (d.date) {
+                            try {
+                              const dt = new Date(d.date + 'T00:00:00');
+                              mName = dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                            } catch (_) {}
+                          }
+                          monthsMap.set(mKey, { key: mKey, name: mName, days: [] });
+                        }
+                        monthsMap.get(mKey)!.days.push(d);
+                      });
+                      const monthsList = Array.from(monthsMap.values());
+                      const todayMonthKey = todayStr ? todayStr.slice(0, 7) : '';
+
+                      const effectiveMonthFilter = dailyMonthFilter === 'all'
+                        ? 'all'
+                        : (monthsMap.has(dailyMonthFilter)
+                            ? dailyMonthFilter
+                            : (monthsMap.has(todayMonthKey) ? todayMonthKey : (monthsList[0]?.key ?? 'all')));
+
+                      const displayedDays = effectiveMonthFilter === 'all'
+                        ? curDailyRecords
+                        : (monthsMap.get(effectiveMonthFilter)?.days || curDailyRecords);
+
+                      const minDayIndex = curDailyRecords.length > 0 ? Math.min(...curDailyRecords.map(d => d.dayIndex)) : 1;
+                      const maxDayIndex = curDailyRecords.length > 0 ? Math.max(...curDailyRecords.map(d => d.dayIndex)) : 1;
+
                       return (
                         <div className="border-t border-slate-200/80 bg-slate-50/50 p-3 sm:p-4 space-y-3">
-                          {/* Approval Progress */}
+                          {/* Top Row: Month Filter Tabs + Approval Progress */}
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-slate-700">Daily Milestone Progress:</span>
-                              <span className="text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md">
-                                {approvedDays.length} / {curDailyRecords.length} Days Approved ({percentComplete}%)
-                              </span>
+                            <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 flex-wrap">
+                              {monthsList.map(m => {
+                                const isMActive = effectiveMonthFilter === m.key;
+                                const mApprovedCount = m.days.filter(d => d.status === 'manager_approved').length;
+
+                                return (
+                                  <button
+                                    key={m.key}
+                                    type="button"
+                                    onClick={() => {
+                                      setDailyMonthFilter(m.key);
+                                      const mDays = m.days;
+                                      if (mDays.length > 0 && !mDays.some(d => d.dayIndex === activeYearlyDailyIndex)) {
+                                        const targetD = mDays.find(d => d.date === todayStr) || mDays[0];
+                                        if (targetD) {
+                                          setActiveYearlyDailyIndex(targetD.dayIndex);
+                                        }
+                                      }
+                                    }}
+                                    className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${isMActive
+                                      ? 'bg-white text-teal-950 shadow-2xs border border-slate-200/90'
+                                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                      }`}
+                                  >
+                                    <span>{m.name}</span>
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${isMActive ? 'bg-teal-50 text-teal-700 font-extrabold' : 'bg-slate-200/70 text-slate-500'}`}>
+                                      {mApprovedCount}/{m.days.length}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+
+                              <button
+                                type="button"
+                                onClick={() => setDailyMonthFilter('all')}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${effectiveMonthFilter === 'all'
+                                  ? 'bg-white text-teal-950 shadow-2xs border border-slate-200/90'
+                                  : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
+                                  }`}
+                              >
+                                {curDailyRecords.length > 0 ? `All Assigned Days (${curDailyRecords.length})` : 'All Days'}
+                              </button>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <div className="w-24 sm:w-32 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+
+                            {/* Right side compact progress indicator */}
+                            <div className="flex items-center gap-2.5 self-start sm:self-auto bg-white border border-slate-200/80 px-2.5 py-1 rounded-lg shadow-2xs">
+                              <span className="text-[11px] text-slate-600 font-bold">
+                                {approvedDays.length} of {totalAssignedDays} Approved
+                              </span>
+                              <div className="w-16 sm:w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                 <div
                                   className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all"
                                   style={{ width: `${percentComplete}%` }}
@@ -13290,15 +13367,23 @@ export const EvaluationTab: React.FC = () => {
                             <div className="flex items-center gap-2.5 flex-1 min-w-0">
                               <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
                                 <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
-                                Select Date / Day:
+                                Select Milestone:
                               </span>
                               <div className="relative flex-1 max-w-xl">
                                 <select
                                   value={activeYearlyDailyIndex}
-                                  onChange={e => setActiveYearlyDailyIndex(Number(e.target.value))}
+                                  onChange={e => {
+                                    const val = Number(e.target.value);
+                                    setActiveYearlyDailyIndex(val);
+                                    const rec = curDailyRecords.find(d => d.dayIndex === val);
+                                    if (rec && rec.date) {
+                                      const mKey = rec.date.slice(0, 7);
+                                      if (monthsMap.has(mKey)) setDailyMonthFilter(mKey);
+                                    }
+                                  }}
                                   className="w-full bg-slate-50/70 hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                                 >
-                                  {curDailyRecords.map(d => {
+                                  {displayedDays.map(d => {
                                     const dLockInfo = getYearlyDailyLockInfo(d.dayIndex, curDailyRecords);
                                     const isToday = d.date === todayStr;
                                     let badgeStr = '';
@@ -13318,11 +13403,21 @@ export const EvaluationTab: React.FC = () => {
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
                               <button
                                 type="button"
-                                disabled={activeYearlyDailyIndex <= 1}
-                                onClick={() => setActiveYearlyDailyIndex(prev => prev - 1)}
+                                disabled={activeYearlyDailyIndex <= minDayIndex}
+                                onClick={() => {
+                                  const sortedIndices = curDailyRecords.map(d => d.dayIndex).sort((a, b) => a - b);
+                                  const curPos = sortedIndices.indexOf(activeYearlyDailyIndex);
+                                  const prevIndex = curPos > 0 ? sortedIndices[curPos - 1] : sortedIndices[0];
+                                  setActiveYearlyDailyIndex(prevIndex);
+                                  const rec = curDailyRecords.find(d => d.dayIndex === prevIndex);
+                                  if (rec && rec.date) {
+                                    const mKey = rec.date.slice(0, 7);
+                                    if (monthsMap.has(mKey)) setDailyMonthFilter(mKey);
+                                  }
+                                }}
                                 className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                                 title="Previous Day"
                               >
@@ -13330,8 +13425,18 @@ export const EvaluationTab: React.FC = () => {
                               </button>
                               <button
                                 type="button"
-                                disabled={activeYearlyDailyIndex >= curDailyRecords.length}
-                                onClick={() => setActiveYearlyDailyIndex(prev => prev + 1)}
+                                disabled={activeYearlyDailyIndex >= maxDayIndex}
+                                onClick={() => {
+                                  const sortedIndices = curDailyRecords.map(d => d.dayIndex).sort((a, b) => a - b);
+                                  const curPos = sortedIndices.indexOf(activeYearlyDailyIndex);
+                                  const nextIndex = curPos >= 0 && curPos < sortedIndices.length - 1 ? sortedIndices[curPos + 1] : sortedIndices[sortedIndices.length - 1];
+                                  setActiveYearlyDailyIndex(nextIndex);
+                                  const rec = curDailyRecords.find(d => d.dayIndex === nextIndex);
+                                  if (rec && rec.date) {
+                                    const mKey = rec.date.slice(0, 7);
+                                    if (monthsMap.has(mKey)) setDailyMonthFilter(mKey);
+                                  }
+                                }}
                                 className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                                 title="Next Day"
                               >
@@ -13341,7 +13446,13 @@ export const EvaluationTab: React.FC = () => {
                               {todayDayRecord && activeYearlyDailyIndex !== todayDayRecord.dayIndex && (
                                 <button
                                   type="button"
-                                  onClick={() => setActiveYearlyDailyIndex(todayDayRecord.dayIndex)}
+                                  onClick={() => {
+                                    setActiveYearlyDailyIndex(todayDayRecord.dayIndex);
+                                    if (todayDayRecord.date) {
+                                      const mKey = todayDayRecord.date.slice(0, 7);
+                                      if (monthsMap.has(mKey)) setDailyMonthFilter(mKey);
+                                    }
+                                  }}
                                   className="text-[11px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/90 px-3 py-1.5 rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
                                 >
                                   <SparklesIcon className="w-3.5 h-3.5 text-teal-600" />
@@ -20153,93 +20264,264 @@ export const EvaluationTab: React.FC = () => {
                     if (isDaily) {
                       const curDailyRecords = getResponseDailyRecords(selectedMgrResponse);
                       const approvedDays = curDailyRecords.filter(d => d.status === 'manager_approved');
+                      const ytdScore = approvedDays.length > 0
+                        ? Number((approvedDays.reduce((acc, d) => acc + (Number(d.managerScore) || 0), 0) / approvedDays.length).toFixed(1))
+                        : null;
+
+                      // Group days into months dynamically (e.g. "Oct 2026", "Nov 2026", etc.)
+                      const monthsMap = new Map<string, { key: string; name: string; days: YearlyDailyRecord[] }>();
+                      curDailyRecords.forEach(d => {
+                        const mKey = d.date ? d.date.slice(0, 7) : 'all'; // "YYYY-MM"
+                        if (!monthsMap.has(mKey)) {
+                          let mName = mKey;
+                          if (d.date) {
+                            try {
+                              const dt = new Date(d.date + 'T00:00:00');
+                              mName = dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                            } catch (_) {}
+                          }
+                          monthsMap.set(mKey, { key: mKey, name: mName, days: [] });
+                        }
+                        monthsMap.get(mKey)!.days.push(d);
+                      });
+                      const monthsList = Array.from(monthsMap.values());
+
                       const pendingSubmittedDayRec = curDailyRecords.find(d => d.status === 'submitted_to_manager');
+                      const totalAssignedDays = curDailyRecords.length || 1;
+                      const percentComplete = Math.round((approvedDays.length / totalAssignedDays) * 100);
+
+                      const todayStr = getLocalTodayDateString();
+                      const todayMonthKey = todayStr ? todayStr.slice(0, 7) : '';
+
+                      const effectiveMonthFilter = mgrDailyMonthFilter === 'all'
+                        ? 'all'
+                        : (monthsMap.has(mgrDailyMonthFilter)
+                            ? mgrDailyMonthFilter
+                            : (monthsMap.has(todayMonthKey) ? todayMonthKey : (monthsList[0]?.key ?? 'all')));
+
+                      const displayedDays = effectiveMonthFilter === 'all'
+                        ? curDailyRecords
+                        : (monthsMap.get(effectiveMonthFilter)?.days || curDailyRecords);
+
                       const curDayRec = curDailyRecords.find(d => d.dayIndex === activeMgrYearlyDailyIndex);
+                      const curDayLock = getYearlyDailyLockInfo(activeMgrYearlyDailyIndex, curDailyRecords);
                       const curDayLabel = curDayRec?.dayLabel || `Day ${activeMgrYearlyDailyIndex}`;
 
-                      const currentDayIdx = curDailyRecords.findIndex(d => d.dayIndex === activeMgrYearlyDailyIndex);
-                      const prevDay = currentDayIdx > 0 ? curDailyRecords[currentDayIdx - 1] : null;
-                      const nextDay = currentDayIdx < curDailyRecords.length - 1 ? curDailyRecords[currentDayIdx + 1] : null;
+                      const minDayIndex = curDailyRecords.length > 0 ? Math.min(...curDailyRecords.map(d => d.dayIndex)) : 1;
+                      const maxDayIndex = curDailyRecords.length > 0 ? Math.max(...curDailyRecords.map(d => d.dayIndex)) : 1;
 
                       return (
                         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-3.5 sm:p-4 space-y-3">
+                          {/* Top Row: Month Filter Tabs + Approval Progress */}
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-slate-700">Select Date / Day:</span>
-                              <div className="relative">
+                            <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 flex-wrap">
+                              {monthsList.map(m => {
+                                const isMActive = effectiveMonthFilter === m.key;
+                                const mApprovedCount = m.days.filter(d => d.status === 'manager_approved').length;
+                                const mSubmittedCount = m.days.filter(d => d.status === 'submitted_to_manager').length;
+
+                                return (
+                                  <button
+                                    key={m.key}
+                                    type="button"
+                                    onClick={() => {
+                                      setMgrDailyMonthFilter(m.key);
+                                      const mDays = m.days;
+                                      if (mDays.length > 0 && !mDays.some(d => d.dayIndex === activeMgrYearlyDailyIndex)) {
+                                        const targetD = mDays.find(d => d.status === 'submitted_to_manager') || mDays[0];
+                                        if (targetD) {
+                                          switchMgrYearlyDay(targetD.dayIndex);
+                                        }
+                                      }
+                                    }}
+                                    className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${isMActive
+                                      ? 'bg-white text-teal-950 shadow-2xs border border-slate-200/90'
+                                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                      }`}
+                                  >
+                                    {mSubmittedCount > 0 && (
+                                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                                    )}
+                                    <span>{m.name}</span>
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${isMActive ? 'bg-teal-50 text-teal-700 font-extrabold' : 'bg-slate-200/70 text-slate-500'}`}>
+                                      {mApprovedCount}/{m.days.length}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+
+                              <button
+                                type="button"
+                                onClick={() => setMgrDailyMonthFilter('all')}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${effectiveMonthFilter === 'all'
+                                  ? 'bg-white text-teal-950 shadow-2xs border border-slate-200/90'
+                                  : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
+                                  }`}
+                              >
+                                {curDailyRecords.length > 0 ? `All Assigned Days (${curDailyRecords.length})` : 'All Days'}
+                              </button>
+                            </div>
+
+                            {/* Right side progress summary */}
+                            <div className="flex items-center gap-3 self-start sm:self-auto">
+                              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg">
+                                <span className="text-[11px] text-slate-500 font-semibold">Approved:</span>
+                                <span className="text-xs font-bold text-slate-800">{approvedDays.length}/{totalAssignedDays}</span>
+                                <div className="w-16 h-1.5 bg-slate-200/80 rounded-full overflow-hidden ml-1">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all"
+                                    style={{ width: `${percentComplete}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 bg-teal-50/80 border border-teal-200 px-2.5 py-1 rounded-lg">
+                                <span className="text-[11px] text-teal-700 font-semibold">YTD:</span>
+                                <span className="text-xs font-extrabold text-teal-950">{ytdScore !== null ? `${ytdScore}%` : '—'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Middle Row: Day Selector & Actions */}
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-slate-50/70 p-2.5 sm:p-3 rounded-xl border border-slate-200/80">
+                            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                              <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
+                                <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                                Select Milestone:
+                              </span>
+                              <div className="relative flex-1 max-w-xl">
                                 <select
                                   value={activeMgrYearlyDailyIndex}
-                                  onChange={e => switchMgrYearlyDay(Number(e.target.value))}
-                                  className="h-8.5 pl-3 pr-8 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer appearance-none shadow-2xs"
+                                  onChange={e => {
+                                    const val = Number(e.target.value);
+                                    switchMgrYearlyDay(val);
+                                    const rec = curDailyRecords.find(d => d.dayIndex === val);
+                                    if (rec && rec.date) {
+                                      const mKey = rec.date.slice(0, 7);
+                                      if (monthsMap.has(mKey)) setMgrDailyMonthFilter(mKey);
+                                    }
+                                  }}
+                                  className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                                 >
-                                  {curDailyRecords.map(d => {
-                                    const dApproved = d.status === 'manager_approved';
-                                    const dSubmitted = d.status === 'submitted_to_manager';
-                                    const icon = dApproved ? '✓ ' : dSubmitted ? '● ' : '';
+                                  {displayedDays.map(d => {
+                                    const dLock = getYearlyDailyLockInfo(d.dayIndex, curDailyRecords);
+                                    let badgeStr = '';
+                                    if (d.status === 'manager_approved') badgeStr = `✅ Approved (${d.managerScore != null ? `${d.managerScore}%` : ''})`;
+                                    else if (d.status === 'submitted_to_manager') badgeStr = '⚡ Submitted by Employee (Needs Review)';
+                                    else if (dLock.isLocked) badgeStr = '🔒 Locked (Future)';
+                                    else badgeStr = '📄 Open';
+
                                     return (
                                       <option key={d.dayIndex} value={d.dayIndex}>
-                                        {icon}{d.dayLabel} — {dApproved ? 'Approved' : dSubmitted ? 'Submitted (Review)' : 'Pending'}
+                                        {d.dayLabel} — {badgeStr}
                                       </option>
                                     );
                                   })}
                                 </select>
-                                <ChevronDownIcon className="w-4 h-4 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2 text-xs">
-                              {pendingSubmittedDayRec && (
+                            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
+                              <button
+                                type="button"
+                                disabled={activeMgrYearlyDailyIndex <= minDayIndex}
+                                onClick={() => {
+                                  const sortedIndices = curDailyRecords.map(d => d.dayIndex).sort((a, b) => a - b);
+                                  const curPos = sortedIndices.indexOf(activeMgrYearlyDailyIndex);
+                                  const prevIndex = curPos > 0 ? sortedIndices[curPos - 1] : sortedIndices[0];
+                                  switchMgrYearlyDay(prevIndex);
+                                  const rec = curDailyRecords.find(d => d.dayIndex === prevIndex);
+                                  if (rec && rec.date) {
+                                    const mKey = rec.date.slice(0, 7);
+                                    if (monthsMap.has(mKey)) setMgrDailyMonthFilter(mKey);
+                                  }
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                                title="Previous Day"
+                              >
+                                ◀ Prev
+                              </button>
+                              <button
+                                type="button"
+                                disabled={activeMgrYearlyDailyIndex >= maxDayIndex}
+                                onClick={() => {
+                                  const sortedIndices = curDailyRecords.map(d => d.dayIndex).sort((a, b) => a - b);
+                                  const curPos = sortedIndices.indexOf(activeMgrYearlyDailyIndex);
+                                  const nextIndex = curPos >= 0 && curPos < sortedIndices.length - 1 ? sortedIndices[curPos + 1] : sortedIndices[sortedIndices.length - 1];
+                                  switchMgrYearlyDay(nextIndex);
+                                  const rec = curDailyRecords.find(d => d.dayIndex === nextIndex);
+                                  if (rec && rec.date) {
+                                    const mKey = rec.date.slice(0, 7);
+                                    if (monthsMap.has(mKey)) setMgrDailyMonthFilter(mKey);
+                                  }
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                                title="Next Day"
+                              >
+                                Next ▶
+                              </button>
+
+                              {pendingSubmittedDayRec && pendingSubmittedDayRec.dayIndex !== activeMgrYearlyDailyIndex && (
                                 <button
                                   type="button"
-                                  onClick={() => switchMgrYearlyDay(pendingSubmittedDayRec.dayIndex)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-bold text-xs shadow-2xs transition cursor-pointer"
+                                  onClick={() => {
+                                    switchMgrYearlyDay(pendingSubmittedDayRec.dayIndex);
+                                    if (pendingSubmittedDayRec.date) {
+                                      const mKey = pendingSubmittedDayRec.date.slice(0, 7);
+                                      if (monthsMap.has(mKey)) setMgrDailyMonthFilter(mKey);
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-2xs transition flex items-center gap-1.5 cursor-pointer animate-pulse"
+                                  title="Jump to the milestone waiting for review"
                                 >
-                                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-                                  <span>Jump to Submitted: {pendingSubmittedDayRec.dayLabel}</span>
+                                  <SparklesIcon className="w-3.5 h-3.5" />
+                                  <span>Review {pendingSubmittedDayRec.dayLabel}</span>
                                 </button>
                               )}
-                              <span className="text-slate-500 font-medium">
-                                Approved: <strong className="text-emerald-700 font-bold">{approvedDays.length}/{curDailyRecords.length} Days</strong>
-                              </span>
                             </div>
                           </div>
 
-                          {/* Stepper Navigation bar */}
-                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                            <button
-                              type="button"
-                              onClick={() => prevDay && switchMgrYearlyDay(prevDay.dayIndex)}
-                              disabled={!prevDay}
-                              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                            >
-                              <ArrowLeftIcon className="w-3.5 h-3.5" />
-                              <span>Prev Day</span>
-                            </button>
-
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-black text-slate-800">
-                                {curDayLabel} ({curDayRec?.date})
-                              </span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                curDayRec?.status === 'manager_approved'
-                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                  : curDayRec?.status === 'submitted_to_manager'
-                                    ? 'bg-amber-50 text-amber-800 border border-amber-200 animate-pulse'
-                                    : 'bg-slate-100 text-slate-600'
-                              }`}>
-                                {curDayRec?.status === 'manager_approved' ? 'Approved' : curDayRec?.status === 'submitted_to_manager' ? 'Ready for Review' : 'Pending Employee'}
-                              </span>
+                          {/* Active Day Milestone Status Banner */}
+                          <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${curDayRec?.status === 'manager_approved'
+                            ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                            : curDayRec?.status === 'submitted_to_manager'
+                              ? 'bg-amber-50/90 border-amber-300 text-amber-950'
+                              : 'bg-slate-50 border-slate-200 text-slate-700'
+                            }`}>
+                            <div className="flex items-center gap-2.5">
+                              {curDayRec?.status === 'manager_approved' ? (
+                                <CheckCircleIcon className="w-4 h-4 text-emerald-600 shrink-0" />
+                              ) : curDayRec?.status === 'submitted_to_manager' ? (
+                                <ClockIcon className="w-4 h-4 text-amber-600 shrink-0" />
+                              ) : (
+                                <LockClosedIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                              )}
+                              <div>
+                                <span className="font-bold block">
+                                  {curDayLabel} Review Status: {
+                                    curDayRec?.status === 'manager_approved'
+                                      ? `Approved (Manager Score: ${Number(curDayRec.managerScore).toFixed(1)}%)`
+                                      : curDayRec?.status === 'submitted_to_manager'
+                                        ? 'Submitted by Employee (Ready for Manager Scoring)'
+                                        : curDayLock.isLocked
+                                          ? `Locked — ${curDayLock.lockReason}`
+                                          : 'Awaiting Employee Submission'
+                                  }
+                                </span>
+                                {curDayRec?.employeeRemarks && (
+                                  <span className="text-[11px] text-slate-600 block mt-0.5">
+                                    Employee Self Remarks: "{curDayRec.employeeRemarks}"
+                                  </span>
+                                )}
+                              </div>
                             </div>
-
-                            <button
-                              type="button"
-                              onClick={() => nextDay && switchMgrYearlyDay(nextDay.dayIndex)}
-                              disabled={!nextDay}
-                              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                            >
-                              <span>Next Day</span>
-                              <ArrowRightIcon className="w-3.5 h-3.5" />
-                            </button>
+                            <span className={`px-2.5 py-1 rounded-lg font-bold text-[11px] shrink-0 ${curDayRec?.status === 'manager_approved'
+                              ? 'bg-emerald-100 text-emerald-900'
+                              : curDayRec?.status === 'submitted_to_manager'
+                                ? 'bg-amber-200 text-amber-950 ring-1 ring-amber-400'
+                                : 'bg-slate-200 text-slate-700'
+                              }`}>
+                              {curDayRec?.status === 'manager_approved' ? 'Approved' : curDayRec?.status === 'submitted_to_manager' ? 'Needs Review' : curDayLock.isLocked ? 'Locked' : 'Pending'}
+                            </span>
                           </div>
                         </div>
                       );
