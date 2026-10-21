@@ -167,19 +167,17 @@ def check_in():
         # First Shift (07:00 AM - 04:00 PM)
         if shift_name == "first shift":
 
-
             allowed_time = datetime.strptime(
                 "07:00",
                 "%H:%M"
             ).time()
 
-            if current_time < allowed_time:
-
-                return jsonify({
-                    "success": False,
-                    "message":
-                    "First Shift check-in allowed only after 07:00 AM"
-                }), 400
+            # if current_time < allowed_time:
+            #     return jsonify({
+            #         "success": False,
+            #         "message":
+            #         "First Shift check-in allowed only after 07:00 AM"
+            #     }), 400
 
         # General Shift (09:00 AM - 06:00 PM)
         elif shift_name == "general shift":
@@ -221,13 +219,12 @@ def check_in():
                 "%H:%M"
             ).time()
 
-            if current_time < allowed_time:
-
-                return jsonify({
-                    "success": False,
-                    "message":
-                    "You have a night shift"
-                }), 400
+            # if current_time < allowed_time:
+            #     return jsonify({
+            #         "success": False,
+            #         "message":
+            #         "You have a night shift"
+            #     }), 400
 
         # =====================================
         # APPROVED LEAVE CHECK — block check-in on approved leave days
@@ -280,16 +277,20 @@ def check_in():
             attendance.check_in = get_ist_now()
             attendance.check_in_ip = client_ip
             attendance.status = "Check In"
+            if approved_request and approved_request.requested_shift:
+                attendance.shift_timing = approved_request.requested_shift
         else:
             # =====================================
             # CREATE ATTENDANCE
             # =====================================
+            effective_shift = approved_request.requested_shift if (approved_request and approved_request.requested_shift) else (employee.shift_timing or "General Shift")
             attendance = Attendance(
                 user_id=user_id,
                 attendance_date=today,
                 check_in=get_ist_now(),
                 check_in_ip=client_ip,
-                status="Check In"
+                status="Check In",
+                shift_timing=effective_shift
             )
 
         db.session.add(attendance)
@@ -353,7 +354,7 @@ def check_in():
                 "working_hours": 0.0,
                 "lunch_minutes": attendance.lunch_minutes or 0,
                 "tea_minutes": attendance.tea_minutes or 0,
-                "shift": employee.shift_timing or "General Shift",
+                "shift": (approved_request.requested_shift if (approved_request and approved_request.requested_shift) else (attendance.shift_timing or employee.shift_timing or "General Shift")),
                 "manager_status": attendance.manager_status or "Pending",
                 "checked_in": True,
                 "lunch_break": False,

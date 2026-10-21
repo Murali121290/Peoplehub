@@ -422,8 +422,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       return;
     }
 
-    if (regCheckIn >= regCheckOut) {
-      toast.error("Check-in Time must be earlier than Check-out Time");
+    const hasCheckIn = !!(regularizingCell.checkIn && regularizingCell.checkIn !== "-" && regularizingCell.checkIn !== "—");
+    const hasCheckOut = !!(regularizingCell.checkOut && regularizingCell.checkOut !== "-" && regularizingCell.checkOut !== "—");
+    if (hasCheckIn && hasCheckOut) {
+      toast.error("This date already has check-in and check-out times recorded. Adjustment cannot be submitted.");
       return;
     }
 
@@ -478,6 +480,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
     if (permFromTime >= permToTime) {
       toast.error("From Time must be earlier than To Time");
+      return;
+    }
+
+    const [fh, fm] = permFromTime.split(":").map(Number);
+    const [th, tm] = permToTime.split(":").map(Number);
+    const requestedMinutes = (th * 60 + tm) - (fh * 60 + fm);
+    if (requestedMinutes !== 60) {
+      toast.error("Permission duration must be exactly 1 hour.");
       return;
     }
 
@@ -2157,23 +2167,42 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               />
             </div>
 
-            <div className="space-y-3">
-              <button
-                onClick={submitRegularizationRequest}
-                disabled={isSubmittingReg}
-                className="w-full text-center px-4 py-3 rounded-xl border border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 text-xs font-bold transition-all flex justify-center items-center cursor-pointer"
-              >
-                {isSubmittingReg ? "Submitting..." : "Submit Adjustment Request"}
-              </button>
+            {(() => {
+              const hasCheckIn = !!(regularizingCell.checkIn && regularizingCell.checkIn !== "-" && regularizingCell.checkIn !== "—");
+              const hasCheckOut = !!(regularizingCell.checkOut && regularizingCell.checkOut !== "-" && regularizingCell.checkOut !== "—");
+              const isAlreadyUpdated = hasCheckIn && hasCheckOut;
 
-              <button
-                onClick={() => setRegularizingCell(null)}
-                disabled={isSubmittingReg}
-                className="w-full text-center px-4 py-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-600 text-xs font-bold transition-all flex justify-center items-center cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
+              return (
+                <div className="space-y-3">
+                  {isAlreadyUpdated && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-semibold flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>This date already has check-in and check-out times recorded. Adjustment cannot be submitted.</span>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={submitRegularizationRequest}
+                    disabled={isSubmittingReg || isAlreadyUpdated}
+                    className={`w-full text-center px-4 py-3 rounded-xl border text-xs font-bold transition-all flex justify-center items-center ${
+                      isAlreadyUpdated
+                        ? "border-neutral-200 bg-neutral-100 text-neutral-400 cursor-not-allowed opacity-60"
+                        : "border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 cursor-pointer"
+                    }`}
+                  >
+                    {isSubmittingReg ? "Submitting..." : isAlreadyUpdated ? "Check-in & Check-out Already Recorded" : "Submit Adjustment Request"}
+                  </button>
+
+                  <button
+                    onClick={() => setRegularizingCell(null)}
+                    disabled={isSubmittingReg}
+                    className="w-full text-center px-4 py-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-600 text-xs font-bold transition-all flex justify-center items-center cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

@@ -293,7 +293,7 @@ def sync_postgres_kpi_to_store_and_back():
         try:
             daily_db_records = KpiEvaluation.query.filter(
                 or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None)),
-                KpiEvaluation.frequency.in_(["daily"])
+                KpiEvaluation.frequency.in_(["daily", "weekly"])
             ).all()
             if daily_db_records:
                 for rec in daily_db_records:
@@ -302,8 +302,11 @@ def sync_postgres_kpi_to_store_and_back():
                         continue
                     metrics = rec.metrics_data or {}
                     cats = metrics.get("categories", []) if isinstance(metrics, dict) else (metrics if isinstance(metrics, list) else [])
-                    milestone_freq = metrics.get("milestone_frequency", "daily") if isinstance(metrics, dict) else "daily"
+                    milestone_freq = metrics.get("milestone_frequency") if isinstance(metrics, dict) else None
+                    if rec.frequency in ["daily", "weekly"]:
+                        milestone_freq = None
                     daily_recs = metrics.get("daily_records", []) if isinstance(metrics, dict) else []
+                    weekly_recs = metrics.get("weekly_records", []) if isinstance(metrics, dict) else []
                     period_label = ""
                     if rec.description and "(" in rec.description and ")" in rec.description:
                         period_label = rec.description.split("(", 1)[1].rsplit(")", 1)[0].strip()
@@ -347,6 +350,7 @@ def sync_postgres_kpi_to_store_and_back():
                             "categories": cats,
                             "metrics_data": cats,
                             "daily_records": daily_recs,
+                            "weekly_records": weekly_recs,
                             "milestone_frequency": milestone_freq,
                             "kpiResponses": {},
                             "createdAt": rec.created_at.isoformat() if rec.created_at else None,
@@ -359,7 +363,7 @@ def sync_postgres_kpi_to_store_and_back():
                 db.session.commit()
         except Exception as migrate_err:
             db.session.rollback()
-            print(f"Non-blocking: daily Postgres→JSON migration error: {migrate_err}")
+            print(f"Non-blocking: daily/weekly Postgres→JSON migration error: {migrate_err}")
 
         # Clean legacy evaluations directory if present
         clean_legacy_evaluations_dir()
@@ -2337,6 +2341,7 @@ def assign_kpi_metrics():
                        ))
                 ), None)
 
+                milestone_freq_val = None if frequency in ["weekly", "daily"] else milestone_frequency
                 if existing_resp:
                     existing_resp["categories"] = categories_data
                     existing_resp["metrics_data"] = categories_data
@@ -2354,7 +2359,8 @@ def assign_kpi_metrics():
                     existing_resp["startDate"] = from_str
                     existing_resp["endDate"] = to_str
                     existing_resp["daily_records"] = data.get("daily_records") or []
-                    existing_resp["milestone_frequency"] = milestone_frequency
+                    existing_resp["weekly_records"] = []
+                    existing_resp["milestone_frequency"] = milestone_freq_val
                     existing_resp["status"] = "Assigned to Employee"
                     existing_resp["updatedAt"] = now.isoformat()
                     created_records.append(existing_resp)
@@ -2404,7 +2410,8 @@ def assign_kpi_metrics():
                         "categories": categories_data,
                         "metrics_data": categories_data,
                         "daily_records": data.get("daily_records") or [],
-                        "milestone_frequency": milestone_frequency,
+                        "weekly_records": [],
+                        "milestone_frequency": milestone_freq_val,
                         "kpiResponses": {},
                         "createdAt": now.isoformat(),
                         "updatedAt": now.isoformat()
