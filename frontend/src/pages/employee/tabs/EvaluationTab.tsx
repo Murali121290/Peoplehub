@@ -3354,13 +3354,15 @@ export const EvaluationTab: React.FC = () => {
     const rName = String(r.employeeName || r.employee_name || '').trim().toLowerCase();
 
     // 1. Strict employee_id match
-    if (targetEmpId && rEmpId && targetEmpId === rEmpId) return true;
+    if (targetEmpId && rEmpId) {
+      return targetEmpId === rEmpId;
+    }
 
-    // 2. Name match fallback
+    // 2. Exact Name match fallback (strictly exact normalized match, avoiding .includes false positives)
     if (rName && targetEmpName) {
       const cleanTarget = targetEmpName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
       const cleanR = rName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
-      if (cleanTarget === cleanR || cleanTarget.includes(cleanR) || cleanR.includes(cleanTarget)) {
+      if (cleanTarget === cleanR) {
         return true;
       }
     }
@@ -3368,16 +3370,27 @@ export const EvaluationTab: React.FC = () => {
     return false;
   };
 
-  // Helper to check if an employee currently has an active evaluation that is PENDING
+  // Helper to check if an employee currently has an active evaluation that is PENDING for this period
   // (either awaiting employee self-evaluation OR awaiting manager calibration & approval)
   const getEmpPendingEvaluation = (empId: string | any): EvaluationResponse | null => {
     if (!empId) return null;
 
+    // Use getEmpPeriodAssignmentInfo to see if this employee has an assigned or pending response for THIS specific period
+    const periodInfo = getEmpPeriodAssignmentInfo(empId);
+    if (periodInfo.matchingResp && !periodInfo.isCompleted) {
+      return periodInfo.matchingResp;
+    }
+
+    // Fallback: Check if there's any active, uncompleted response matching this employee strictly for the current cadence/frequency
     const pendingResp = responses.find(r => {
       if (!isEmpMatch(empId, r)) return false;
 
       // Ignore archived or soft-deleted records
       if ((r as any).is_archived || (r as any).status === 'Archived') return false;
+
+      // Check cadence match if cadence is selected
+      const rType = String(r.frequency || (r as any).periodType || '').toLowerCase();
+      if (mgrPeriodType && rType && mgrPeriodType !== rType) return false;
 
       const s = String(r.status || '').toLowerCase().trim();
       const smStatus = String((r as any).service_manager_approve_status || '').toLowerCase().trim();
