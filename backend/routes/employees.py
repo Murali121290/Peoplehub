@@ -1966,14 +1966,14 @@ def get_reporting_employees(user_id):
 
             hist = (attendance.clarification_history if (attendance and isinstance(attendance.clarification_history, list)) else [])
 
-            # Check if there is an approved or pending one day wages request for this date
+            # Check if there is an approved or pending one day wages request for this date (pick latest)
             from models.shift_request import ShiftRequest
             wages_req = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.from_date <= date_to_check,
                 ShiftRequest.to_date >= date_to_check
-            ).first()
+            ).order_by(ShiftRequest.id.desc()).first()
             wages_status = wages_req.status if wages_req else None
             is_one_day_wages_final = (wages_req is not None and wages_req.status == "Approved")
 

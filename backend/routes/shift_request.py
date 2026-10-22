@@ -119,7 +119,21 @@ def apply_shift():
                 }), 400
 
             # Check for existing approved Shift/WFH/Office requests in the date range
-            if data.get("request_type") != "One Day Wages":
+            if data.get("request_type") == "One Day Wages":
+                existing_odw = ShiftRequest.query.filter(
+                    ShiftRequest.employee_id.in_([employee.employee_id, employee.id]),
+                    ShiftRequest.request_type == "One Day Wages",
+                    ShiftRequest.status.in_(["Pending", "Approved"]),
+                    ShiftRequest.from_date <= req_to,
+                    ShiftRequest.to_date >= req_from
+                ).first()
+                if existing_odw:
+                    status_str = existing_odw.status.lower()
+                    return jsonify({
+                        "success": False,
+                        "message": f"You already have a {existing_odw.status} One Day Wages request for {existing_odw.from_date}. You cannot submit another request for the same date."
+                    }), 400
+            else:
                 new_req_type = data.get("request_type")
                 if new_req_type == "Shift":
                     category_filter = ShiftRequest.request_type == "Shift"
@@ -471,16 +485,6 @@ def approve_shift(id):
                 "message": f"Shift Request already {shift.status.lower()}"
             }), 400
 
-        # Check 3-day cutoff limit for One Day Wages requests
-        if shift.request_type == "One Day Wages":
-            if shift.created_at:
-                delta = datetime.utcnow() - shift.created_at
-                if delta.days > 3:
-                    return jsonify({
-                        "success": False,
-                        "message": "This One Day Wages request is Out of Date (older than 3 days) and cannot be approved."
-                    }), 400
-
         # Resolve user_id dynamically
         emp_code = str(shift.employee_id).strip()
         employee = Employee.query.filter(Employee.employee_id == emp_code).first()
@@ -640,16 +644,6 @@ def reject_shift(id):
                 "success": False,
                 "message": f"Shift Request already {shift.status.lower()}"
             }), 400
-
-        # Check 3-day cutoff limit for One Day Wages requests
-        if shift.request_type == "One Day Wages":
-            if shift.created_at:
-                delta = datetime.utcnow() - shift.created_at
-                if delta.days > 3:
-                    return jsonify({
-                        "success": False,
-                        "message": "This One Day Wages request is Out of Date (older than 3 days) and cannot be rejected."
-                    }), 400
 
         emp_code = str(shift.employee_id).strip()
         employee = Employee.query.filter(Employee.employee_id == emp_code).first()
