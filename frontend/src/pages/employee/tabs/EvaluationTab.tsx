@@ -19135,13 +19135,17 @@ export const EvaluationTab: React.FC = () => {
                                                 <span>Open Scorecard</span>
                                               </button>
                                             ) : (
-                                              <span
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs bg-slate-100 text-slate-500 border border-slate-200 select-none cursor-default"
-                                                title="Waiting for employee to submit self-evaluation."
+                                              <button
+                                                type="button"
+                                                onClick={() => handleSelectMgrResponse(member.response)}
+                                                className="group/btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs bg-slate-100 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700 text-slate-500 border border-slate-200 transition cursor-pointer"
+                                                title="View assigned employee metrics form"
                                               >
-                                                <ClockIcon className="w-3.5 h-3.5 text-slate-400" />
-                                                <span>Pending</span>
-                                              </span>
+                                                <ClockIcon className="w-3.5 h-3.5 text-slate-400 group-hover/btn:hidden" />
+                                                <EyeIcon className="w-3.5 h-3.5 text-teal-600 hidden group-hover/btn:inline-block" />
+                                                <span className="group-hover/btn:hidden">Pending</span>
+                                                <span className="hidden group-hover/btn:inline-block font-bold">View</span>
+                                              </button>
                                             )}
                                             {!isSubmittedPending && !member.isCalibrated && !hasYearlyApprovedMilestone && member.response.managerScore == null && !member.response.employeeSubmittedAt && (
                                               <button
@@ -19555,15 +19559,31 @@ export const EvaluationTab: React.FC = () => {
                                                       <button
                                                         type="button"
                                                         onClick={() => handleSelectMgrResponse(r)}
-                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer ${isCalibrated
+                                                        className={`group/btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer ${isCalibrated
                                                           ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
                                                           : isEmpSubmitted
                                                             ? 'bg-teal-700 hover:bg-teal-800 text-white'
-                                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                                                            : 'bg-slate-100 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700 text-slate-600 border border-slate-200'
                                                           }`}
                                                       >
-                                                        {isCalibrated ? <EyeIcon className="w-3.5 h-3.5" /> : isEmpSubmitted ? <SparklesIcon className="w-3.5 h-3.5 text-amber-300" /> : <ClockIcon className="w-3.5 h-3.5 text-slate-400" />}
-                                                        <span>{isCalibrated ? 'View Report' : isEmpSubmitted ? 'Review & Score' : 'Pending'}</span>
+                                                        {isCalibrated ? (
+                                                          <>
+                                                            <EyeIcon className="w-3.5 h-3.5" />
+                                                            <span>View Report</span>
+                                                          </>
+                                                        ) : isEmpSubmitted ? (
+                                                          <>
+                                                            <SparklesIcon className="w-3.5 h-3.5 text-amber-300" />
+                                                            <span>Review & Score</span>
+                                                          </>
+                                                        ) : (
+                                                          <>
+                                                            <ClockIcon className="w-3.5 h-3.5 text-slate-400 group-hover/btn:hidden" />
+                                                            <EyeIcon className="w-3.5 h-3.5 text-teal-600 hidden group-hover/btn:inline-block" />
+                                                            <span className="group-hover/btn:hidden">Pending</span>
+                                                            <span className="hidden group-hover/btn:inline-block font-bold">View</span>
+                                                          </>
+                                                        )}
                                                       </button>
                                                     );
                                                   })()}
@@ -19685,15 +19705,31 @@ export const EvaluationTab: React.FC = () => {
                                     <button
                                       type="button"
                                       onClick={() => handleSelectMgrResponse(r)}
-                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer ${isCalibrated
+                                      className={`group/btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer ${isCalibrated
                                         ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
                                         : isEmpSubmitted
                                           ? 'bg-teal-700 hover:bg-teal-800 text-white'
-                                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                                          : 'bg-slate-100 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700 text-slate-600 border border-slate-200'
                                         }`}
                                     >
-                                      {isCalibrated ? <EyeIcon className="w-3.5 h-3.5" /> : isEmpSubmitted ? <SparklesIcon className="w-3.5 h-3.5 text-amber-300" /> : <ClockIcon className="w-3.5 h-3.5 text-slate-400" />}
-                                      <span>{isCalibrated ? 'View Report' : isEmpSubmitted ? 'Review & Score' : 'Pending'}</span>
+                                      {isCalibrated ? (
+                                        <>
+                                          <EyeIcon className="w-3.5 h-3.5" />
+                                          <span>View Report</span>
+                                        </>
+                                      ) : isEmpSubmitted ? (
+                                        <>
+                                          <SparklesIcon className="w-3.5 h-3.5 text-amber-300" />
+                                          <span>Review & Score</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ClockIcon className="w-3.5 h-3.5 text-slate-400 group-hover/btn:hidden" />
+                                          <EyeIcon className="w-3.5 h-3.5 text-teal-600 hidden group-hover/btn:inline-block" />
+                                          <span className="group-hover/btn:hidden">Pending</span>
+                                          <span className="hidden group-hover/btn:inline-block font-bold">View</span>
+                                        </>
+                                      )}
                                     </button>
                                   </td>
                                 </tr>
