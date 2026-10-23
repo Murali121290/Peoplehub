@@ -1461,14 +1461,14 @@ def attendance_history(user_id):
                 attendance_date=current_date
             ).first()
 
-            # Check for One Day Wages request on this date
+            # Check for One Day Wages request on this date (pick latest)
             from models.shift_request import ShiftRequest
             wages_req = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.from_date <= current_date,
                 ShiftRequest.to_date >= current_date
-            ).first()
+            ).order_by(ShiftRequest.id.desc()).first()
             wages_status = wages_req.status if wages_req else None
             is_weekend_or_holiday = is_date_week_off(current_date) or (current_date in holiday_dict)
             is_one_day_wages = (wages_req is not None and wages_req.status == "Approved")
@@ -5604,7 +5604,7 @@ def get_pending_cycle_attendance(manager_user_id):
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.from_date <= rec.attendance_date,
                 ShiftRequest.to_date >= rec.attendance_date
-            ).first()
+            ).order_by(ShiftRequest.id.desc()).first()
             wages_status = wages_req.status if wages_req else None
             is_one_day_wages_final = (wages_req is not None)
 

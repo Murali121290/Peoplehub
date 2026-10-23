@@ -589,7 +589,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     } else if (
       !isManager &&
       isResolvable &&
-      (cell.status === "Weekly Off" || cell.status === "Holiday" || ((cell.isWeeklyOff || cell.isCompanyHoliday) && !cell.wagesStatus)) &&
+      (cell.status === "Weekly Off" || cell.status === "Holiday" || cell.isWeeklyOff || cell.isCompanyHoliday) &&
+      (!cell.wagesStatus || cell.wagesStatus === "Rejected" || cell.wagesStatus === "Cancelled") &&
       cell.dateStr <= todayKey
     ) {
       setResolvingWeekendCell(cell);
@@ -599,6 +600,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       cell.status !== "Future" &&
       cell.status !== "Not Joined" &&
       cell.status !== "Present" &&
+      cell.status !== "Weekly Off" &&
+      cell.status !== "Holiday" &&
+      !cell.isWeeklyOff &&
+      !cell.isCompanyHoliday &&
+      !cell.wagesStatus &&
       noLeaveOrHalf &&
       (!cell.badgeLabel || (!cell.badgeLabel.includes("Half Day Present") && !cell.badgeLabel.includes("Pending Reg")))
     ) {
@@ -1242,9 +1248,21 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   (!cell.badgeLabel || !cell.badgeLabel.includes("Half Day Present")) &&
                   cell.dateStr <= todayKey;
                 const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
-                  (cell.status === "Weekly Off" || cell.status === "Holiday") &&
+                  (cell.status === "Weekly Off" || cell.status === "Holiday" || cell.isWeeklyOff || cell.isCompanyHoliday) &&
+                  (!cell.wagesStatus || cell.wagesStatus === "Rejected" || cell.wagesStatus === "Cancelled") &&
                   cell.dateStr <= todayKey;
-                const isClickableRegularize = isCurrentPayrollMonthView && cell.dateStr < todayKey && cell.status !== "Future" && cell.status !== "Not Joined" && cell.status !== "Present" && (!cell.leaveType || cell.halfDayDuration) && (!cell.badgeLabel || (!cell.badgeLabel.includes("Half Day Present") && !cell.badgeLabel.includes("Pending Reg")));
+                const isClickableRegularize = isCurrentPayrollMonthView &&
+                  cell.dateStr < todayKey &&
+                  cell.status !== "Future" &&
+                  cell.status !== "Not Joined" &&
+                  cell.status !== "Present" &&
+                  cell.status !== "Weekly Off" &&
+                  cell.status !== "Holiday" &&
+                  !cell.isWeeklyOff &&
+                  !cell.isCompanyHoliday &&
+                  !cell.wagesStatus &&
+                  (!cell.leaveType || cell.halfDayDuration) &&
+                  (!cell.badgeLabel || (!cell.badgeLabel.includes("Half Day Present") && !cell.badgeLabel.includes("Pending Reg")));
                 const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
                 return (
                   <div
@@ -1743,9 +1761,21 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg"))) &&
                             dayObj.dateStr <= todayKey;
                           const isClickableWeekend = !isManager && isResolvable &&
-                            (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
+                            (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || dayObj.isWeeklyOff || dayObj.isCompanyHoliday) &&
+                            (!dayObj.wagesStatus || dayObj.wagesStatus === "Rejected" || dayObj.wagesStatus === "Cancelled") &&
                             dayObj.dateStr <= todayKey;
-                          const isClickableRegularize = isResolvable && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
+                          const isClickableRegularize = isResolvable &&
+                            dayObj.dateStr < todayKey &&
+                            dayObj.status !== "Future" &&
+                            dayObj.status !== "Not Joined" &&
+                            dayObj.status !== "Present" &&
+                            dayObj.status !== "Weekly Off" &&
+                            dayObj.status !== "Holiday" &&
+                            !dayObj.isWeeklyOff &&
+                            !dayObj.isCompanyHoliday &&
+                            !dayObj.wagesStatus &&
+                            (!dayObj.leaveType || dayObj.halfDayDuration) &&
+                            (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
                           if (isClickableAbsent || isClickableWeekend || isClickableRegularize) {
                             handleCellClick(dayObj);
                           }

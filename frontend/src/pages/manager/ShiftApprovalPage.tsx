@@ -298,15 +298,18 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
           "Authorization": `Bearer ${token}`
         }
       });
-      if (!response.ok) throw new Error("Failed to update status");
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null);
+        throw new Error(errData?.message || errData?.error || "Failed to update status");
+      }
 
       const label = isOdwOnly ? "ODW request" : "Shift request";
       toast.success(`${label} ${newStatus.toLowerCase()}`);
       fetchShiftRequests();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       const label = isOdwOnly ? "ODW request" : "shift request";
-      toast.error(`Failed to ${newStatus.toLowerCase()} ${label}`);
+      toast.error(error.message || `Failed to ${newStatus.toLowerCase()} ${label}`);
     } finally {
       setProcessingId(null);
     }
