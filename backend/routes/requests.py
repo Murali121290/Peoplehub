@@ -75,7 +75,7 @@ def email_action():
             req.approved_by = manager_email
             req.approved_at = datetime.utcnow()
             
-            # Apply Leave Specific Balances Deductions
+            # Apply Leave / Permission Specific Balances Deductions
             if req_type == "Leave":
                 leave_type = (req.leave_type or "").strip().lower()
                 leave_days = req.total_days or 0
@@ -86,6 +86,76 @@ def email_action():
                     employee.casual_leave = max(0, (employee.casual_leave or 0) - leave_days)
                 elif leave_type in ["earned leave", "privilege leave"]:
                     employee.privilege_leave = max(0, (employee.privilege_leave or 0) - leave_days)
+            elif req_type == "Permission":
+                from models.leave import EmployeeLeaveBalance
+                from routes.leaves import get_permission_cycle_range
+                from sqlalchemy import func
+                from datetime import timedelta
+
+                cycle_start, cycle_end = get_permission_cycle_range(req.permission_date)
+                emp_ids = [str(employee.employee_id)]
+                if employee.id:
+                    emp_ids.append(str(employee.id))
+
+                other_approved = LeaveRequest.query.filter(
+                    LeaveRequest.employee_id.in_(emp_ids),
+                    LeaveRequest.request_type == "Permission",
+                    LeaveRequest.permission_date >= cycle_start,
+                    LeaveRequest.permission_date <= cycle_end,
+                    LeaveRequest.status == "Approved",
+                    LeaveRequest.id != req.id
+                ).all()
+
+                already_approved_hours = 0.0
+                for o in other_approved:
+                    if o.from_time and o.to_time:
+                        o_from = datetime.combine(o.permission_date, o.from_time)
+                        o_to = datetime.combine(o.permission_date, o.to_time)
+                        if o_to < o_from:
+                            o_to += timedelta(days=1)
+                        already_approved_hours += (o_to - o_from).total_seconds() / 3600.0
+
+                this_perm_hours = 0.0
+                if req.from_time and req.to_time:
+                    dt_from = datetime.combine(req.permission_date, req.from_time)
+                    dt_to = datetime.combine(req.permission_date, req.to_time)
+                    if dt_to < dt_from:
+                        dt_to += timedelta(days=1)
+                    this_perm_hours = (dt_to - dt_from).total_seconds() / 3600.0
+
+                perm_bal = EmployeeLeaveBalance.query.filter(
+                    EmployeeLeaveBalance.employee_id == employee.id,
+                    func.lower(EmployeeLeaveBalance.leave_type) == "permission"
+                ).first()
+                if perm_bal:
+                    perm_bal.available = max(0.0, 2.0 - (already_approved_hours + this_perm_hours))
+
+            # Recalculate attendance status if attendance record exists for this date
+            from models.attendance import Attendance
+            from routes.attendance import calculate_attendance_status
+
+            target_dates = []
+            if req_type == "Permission" and req.permission_date:
+                target_dates = [req.permission_date]
+            elif req_type == "Leave" and req.from_date and req.to_date:
+                curr = req.from_date
+                from datetime import timedelta
+                while curr <= req.to_date:
+                    target_dates.append(curr)
+                    curr += timedelta(days=1)
+
+            # Commit request and balance changes first so attendance calculation sees the approved request
+            db.session.commit()
+
+            for t_date in target_dates:
+                att = Attendance.query.filter_by(
+                    user_id=employee.user_id,
+                    attendance_date=t_date
+                ).first()
+                if att:
+                    calculate_attendance_status(att)
+
+            db.session.commit()
                     
             # Save Notification for employee
             notification = Notification(
