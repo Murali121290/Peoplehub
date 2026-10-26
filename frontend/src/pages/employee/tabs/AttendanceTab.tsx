@@ -97,38 +97,143 @@ interface DayDetails {
 
 const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAttendanceProp = [], currentEmployee }) => {
   const today = new Date();
+
+  /**
+   * Computes the grace deadline date for the previous payroll month.
+   * Starting from the 25th of the cutoff month, we count forward until
+   * we have accumulated 2 working days (skipping Sundays, 2nd/4th Saturdays,
+   * and any company holiday present in the given schedule).
+   *
+   * @param cutoffYear  - Year of the month that just closed (e.g. 2026 for October)
+   * @param cutoffMonth - 1-indexed month that just closed (e.g. 10 for October)
+   * @param schedule    - Array of schedule entries from /employee/holidays API
+   * @returns Date object representing the last day on which previous-month corrections are allowed
+   */
+  const computeGraceDeadline = (cutoffYear: number, cutoffMonth: number, schedule: any[]): Date => {
+    // Build a set of holiday/weekly-off dates from the schedule
+    const nonWorkingDates = new Set<string>();
+    (schedule || []).forEach((entry: any) => {
+      const t = (entry.holiday_type || "").toLowerCase();
+      if (t === "weekly off" || t === "public holiday" || t === "optional holiday" || t === "company leave") {
+        nonWorkingDates.add(entry.date);
+      }
+    });
+
+    // Helper: is a given Date object a working day?
+    const isWorkingDay = (d: Date): boolean => {
+      const dayOfWeek = d.getDay(); // 0=Sun, 6=Sat
+      if (dayOfWeek === 0) return false; // Sunday — always off
+
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      if (nonWorkingDates.has(dateStr)) return false; // Published holiday or weekly off
+
+      // 2nd and 4th Saturdays are weekly offs — count Saturdays in the month
+      if (dayOfWeek === 6) {
+        const dayNum = d.getDate();
+        const satIndex = Math.ceil(dayNum / 7); // which Saturday of the month (1-indexed)
+        if (satIndex === 2 || satIndex === 4) return false;
+      }
+
+      return true;
+    };
+
+    // Walk forward from the 25th counting 2 working days
+    let cursor = new Date(cutoffYear, cutoffMonth - 1, 25); // 25th of cutoff month
+    let workingDaysFound = 0;
+    let deadline = cursor;
+
+    while (workingDaysFound < 2) {
+      if (isWorkingDay(cursor)) {
+        workingDaysFound++;
+        deadline = new Date(cursor);
+      }
+      if (workingDaysFound < 2) {
+        cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+      }
+    }
+
+    return deadline;
+  };
+
+  /**
+   * Returns the payroll month (1-12) whose attendance cycle is currently active.
+   * The cycle for month M covers the 25th of (M-1) through the 24th of M.
+   * During the 2-day grace window after the 24th we still remain on month M
+   * so employees can still correct records before the new month's payroll opens.
+   * We pass an empty schedule here for the initial render; once the schedule
+   * is fetched the isResolvablePayrollDate function uses the real schedule.
+   */
   const getInitialPayrollMonth = () => {
-    let m = today.getMonth() + 1;
-    if (today.getDate() >= 25) {
-      m += 1;
+    const d = today.getDate();
+    const m = today.getMonth() + 1; // 1-indexed
+    const y = today.getFullYear();
+
+    if (d <= 24) {
+      // Normal: still inside current month's cycle
+      return m;
     }
-    return m === 13 ? 1 : m;
+
+    // On or after the 25th — check if we are still within the grace window
+    // (grace deadline computed with empty schedule since schedule not loaded yet)
+    const graceDeadline = computeGraceDeadline(y, m, []);
+    const graceDeadlineStr = `${graceDeadline.getFullYear()}-${String(graceDeadline.getMonth() + 1).padStart(2, "0")}-${String(graceDeadline.getDate()).padStart(2, "0")}`;
+    const todayStr = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+    if (todayStr <= graceDeadlineStr) {
+      // Still in grace period — stay on current month view so employee can correct
+      return m;
+    }
+
+    // Grace period over — advance to next payroll month
+    const next = m + 1;
+    return next === 13 ? 1 : next;
   };
+
   const getInitialPayrollYear = () => {
-    let y = today.getFullYear();
-    let m = today.getMonth() + 1;
-    if (today.getDate() >= 25 && m === 12) {
-      y += 1;
-    }
-    return y;
+    const d = today.getDate();
+    const m = today.getMonth() + 1;
+    const y = today.getFullYear();
+
+    if (d <= 24) return y;
+
+    const graceDeadline = computeGraceDeadline(y, m, []);
+    const graceDeadlineStr = `${graceDeadline.getFullYear()}-${String(graceDeadline.getMonth() + 1).padStart(2, "0")}-${String(graceDeadline.getDate()).padStart(2, "0")}`;
+    const todayStr = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+    if (todayStr <= graceDeadlineStr) return y;
+
+    // Advance year only if we were in December
+    return m === 12 ? y + 1 : y;
   };
+
   const [selectedMonth, setSelectedMonth] = useState<number>(getInitialPayrollMonth());
   const [selectedYear, setSelectedYear] = useState<number>(getInitialPayrollYear());
   const currentPayrollMonth = getInitialPayrollMonth();
   const currentPayrollYear = getInitialPayrollYear();
   const isCurrentPayrollMonthView = selectedMonth === currentPayrollMonth && selectedYear === currentPayrollYear;
 
-  // Allow resolution for current payroll month OR a 1-day grace window for the 24th cutoff day (on 25th only)
+  /**
+   * Determines if a given attendance date can still be resolved/corrected.
+   * Rules:
+   *  1. Any date inside the currently viewed payroll month is always resolvable.
+   *  2. For a *previous* payroll month: the 24th (cutoff day) of that month is
+   *     still resolvable if today falls within the 2-working-day grace window
+   *     that starts on the 25th (skipping weekends and public holidays).
+   */
   const isResolvablePayrollDate = (dateStr: string) => {
     if (isCurrentPayrollMonthView) return true;
+
     const [y, m, d] = dateStr.split("-").map(Number);
-    const cellDate = new Date(y, m - 1, d);
-    const diffDays = Math.floor((today.getTime() - cellDate.getTime()) / (1000 * 60 * 60 * 24));
-    // If the date is 24th and we are within 1 day after (i.e. on 25th only)
-    if (d === 24 && diffDays >= 0 && diffDays <= 1) {
-      return true;
-    }
-    return false;
+
+    // Only the 24th of the closed month can be corrected during grace period
+    if (d !== 24) return false;
+
+    // Compute the grace deadline using the actual loaded schedule
+    const graceDeadline = computeGraceDeadline(y, m, monthlySchedule);
+    const graceDeadlineStr = `${graceDeadline.getFullYear()}-${String(graceDeadline.getMonth() + 1).padStart(2, "0")}-${String(graceDeadline.getDate()).padStart(2, "0")}`;
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+    return todayStr <= graceDeadlineStr;
   };
   const [viewMode, setViewMode] = useState<"calendar" | "grid">("grid");
   const [statusFilter, setStatusFilter] = useState<string>("All");
@@ -650,18 +755,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   };
 
   const handleTodayClick = () => {
-    const now = new Date();
-    let m = now.getMonth() + 1;
-    let y = now.getFullYear();
-    if (now.getDate() >= 25) {
-      m += 1;
-      if (m === 13) {
-        m = 1;
-        y += 1;
-      }
-    }
-    setSelectedMonth(m);
-    setSelectedYear(y);
+    // Reuse the same grace-aware logic as the initial state so that pressing
+    // "Today" always jumps to the correct payroll month (previous month during
+    // the 2-working-day grace window, next month once grace is over).
+    setSelectedMonth(getInitialPayrollMonth());
+    setSelectedYear(getInitialPayrollYear());
   };
 
   // Start date: 25th of previous month
@@ -1242,16 +1340,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     break;
                 }
 
-                const isClickableAbsent = isCurrentPayrollMonthView &&
+                const isClickableAbsent = isResolvablePayrollDate(cell.dateStr) &&
                   (cell.status === "Absent" || cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) &&
                   (!cell.leaveType || cell.halfDayDuration) &&
                   (!cell.badgeLabel || !cell.badgeLabel.includes("Half Day Present")) &&
                   cell.dateStr <= todayKey;
-                const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
+                const isClickableWeekend = !isManager && isResolvablePayrollDate(cell.dateStr) &&
                   (cell.status === "Weekly Off" || cell.status === "Holiday" || cell.isWeeklyOff || cell.isCompanyHoliday) &&
                   (!cell.wagesStatus || cell.wagesStatus === "Rejected" || cell.wagesStatus === "Cancelled") &&
                   cell.dateStr <= todayKey;
-                const isClickableRegularize = isCurrentPayrollMonthView &&
+                const isClickableRegularize = isResolvablePayrollDate(cell.dateStr) &&
                   cell.dateStr < todayKey &&
                   cell.status !== "Future" &&
                   cell.status !== "Not Joined" &&
