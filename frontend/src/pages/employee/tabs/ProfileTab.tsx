@@ -67,6 +67,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const { updateUser, logout } = useAuthStore();
   const [profile, setProfile] = useState<any>({});
+  const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(Boolean(initialEditing || employeeId));
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
@@ -392,6 +393,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
   };
 
   const fetchProfile = async () => {
+    setIsLoading(true);
     try {
       const activeEmpId = employeeId || localStorage.getItem("employee_id");
       if (!activeEmpId) return;
@@ -519,6 +521,8 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
       }
     } catch (err) {
       console.error("Fetch profile error:", err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1257,7 +1261,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
 
           {renderEditField("Employee Type", "employee_type", "select", "", ["Full-Time", "Part-Time", "Contract", "Intern"])}
           {renderEditField("Work Location", "work_location", "select", "", ["Office", "Remote", "Hybrid"])}
-          {renderEditField("Work Mode", "work_mode", "select", "", ["Office", "WFH", "Hybrid", "Flexible"])}
+          {renderEditField("Work Mode", "work_mode", "select", "", ["Office", "WFH", "Hybrid", "Flexible", "PM"])}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider">Shift Timing</label>
             {isHrOrAdmin ? (
@@ -1671,6 +1675,16 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
       </div>
     );
   };
+
+  if (isLoading) {
+    return (
+      <div className="py-24 flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-3 border-primary-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-sm font-bold text-neutral-700">Loading employee profile & work mode...</span>
+        <span className="text-xs text-neutral-400">Fetching latest database records</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto p-1 animate-in fade-in duration-300">

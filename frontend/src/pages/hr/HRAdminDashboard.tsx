@@ -139,9 +139,11 @@ export default function HRAdminDashboard() {
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [detailedEditOpen, setDetailedEditOpen] = useState(false);
   const [detailedEditEmployeeId, setDetailedEditEmployeeId] = useState<number | null>(null);
+  const [isEmployeesLoading, setIsEmployeesLoading] = useState(false);
 
   // --- API Calls ---
-  const fetchEmployees = async (force = false) => {
+  const fetchEmployees = async (force = true) => {
+    setIsEmployeesLoading(true);
     try {
       const dataList = await getEmployees(force);
       const nonAdmins = dataList.filter((emp: any) => {
@@ -151,6 +153,8 @@ export default function HRAdminDashboard() {
     } catch (error) {
       console.error(error);
       setEmployees([]);
+    } finally {
+      setIsEmployeesLoading(false);
     }
   };
 
@@ -270,7 +274,7 @@ export default function HRAdminDashboard() {
       setIsPageLoading(true);
       try {
         await Promise.all([
-          fetchEmployees(),
+          fetchEmployees(true),
           fetchAttendance(),
           fetchLeaveRequests(),
           fetchShiftRequests(),
@@ -803,7 +807,8 @@ export default function HRAdminDashboard() {
               setResetAllOpen(true);
             }}
             BASE_URL={BASE_URL}
-            onStatusChange={fetchEmployees}
+            onStatusChange={() => fetchEmployees(true)}
+            isLoading={isEmployeesLoading}
           />
         )}
         {nav === "attendance" && (

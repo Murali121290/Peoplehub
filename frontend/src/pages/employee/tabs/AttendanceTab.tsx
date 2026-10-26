@@ -10,7 +10,8 @@ import {
   ShieldCheckIcon,
   DocumentTextIcon,
   XMarkIcon,
-  ArrowRightIcon
+  ArrowRightIcon,
+  HomeIcon
 } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
 import StatCard from '../components/StatCard';
@@ -93,6 +94,7 @@ interface DayDetails {
   isWeeklyOff?: boolean;
   isCompanyHoliday?: boolean;
   used_weekly_grace?: boolean;
+  is_wfh?: boolean;
 }
 
 const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAttendanceProp = [], currentEmployee }) => {
@@ -1105,7 +1107,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       wagesStatus,
       isWeeklyOff,
       isCompanyHoliday,
-      used_weekly_grace: attRec?.used_weekly_grace || false
+      used_weekly_grace: attRec?.used_weekly_grace || false,
+      is_wfh: Boolean(attRec?.is_wfh || attRec?.is_wfh_day)
     });
 
     currentDate.setDate(currentDate.getDate() + 1);
@@ -1208,6 +1211,18 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 {`${startDate.getDate()} ${startDate.toLocaleDateString("en-IN", { month: "short" })} - ${endDate.getDate()} ${endDate.toLocaleDateString("en-IN", { month: "short" })}, ${endDate.getFullYear()}`}
               </h3>
             </div>
+            {currentEmployee?.work_mode && (
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold shadow-3xs ${
+                currentEmployee.work_mode === "WFH" ? "bg-blue-100 text-blue-700 border-blue-200"
+                : currentEmployee.work_mode === "Hybrid" ? "bg-green-100 text-green-700 border-green-200"
+                : currentEmployee.work_mode === "PM" ? "bg-violet-100 text-violet-800 border-violet-300 font-bold"
+                : currentEmployee.work_mode === "Flexible" ? "bg-purple-100 text-purple-700 border-purple-200"
+                : "bg-neutral-100 text-neutral-600 border-neutral-200"
+              }`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70 animate-pulse" />
+                Work Mode: {currentEmployee.work_mode}
+              </span>
+            )}
             {isLoading && (
               <span className="flex items-center text-xs text-neutral-400 gap-1">
                 <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> Syncing...
@@ -1217,6 +1232,20 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
           {/* Right: Navigation Controls & Filters */}
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Refresh Button */}
+            <button
+              onClick={() => {
+                fetchMonthData();
+                window.dispatchEvent(new Event("refreshAttendance"));
+              }}
+              disabled={isLoading}
+              title="Refresh attendance records & work mode from database"
+              className="px-3 py-1.5 text-xs font-bold text-neutral-700 bg-white border border-neutral-200 rounded-xl hover:bg-neutral-50 shadow-xs transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <ArrowPathIcon className={`w-3.5 h-3.5 text-neutral-600 ${isLoading ? "animate-spin" : ""}`} />
+              <span>Refresh</span>
+            </button>
+
             {/* Today Button */}
             <button
               onClick={handleTodayClick}
@@ -1288,6 +1317,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
         {/* Mode 1: Calendar View */}
         {viewMode === "calendar" ? (
+          isLoading ? (
+            <div className="p-16 text-center text-neutral-500 flex flex-col items-center justify-center gap-3">
+              <div className="w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm font-bold text-neutral-700">Loading attendance & work records...</span>
+              <span className="text-xs text-neutral-400">Fetching latest database records</span>
+            </div>
+          ) : (
           <div className="p-5 max-w-[1000px] mx-auto space-y-4 relative z-10">
             {/* 7-Column Weekday Header */}
             <div className="grid grid-cols-7 gap-2 mb-2">
@@ -1377,7 +1413,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           : "border-neutral-300 bg-white hover:border-neutral-400 hover:shadow-sm"
                       }`}
                   >
-                    {/* Top Row: Date Number */}
+                    {/* Top Row: Date Number & WFH indicator */}
                     <div className="flex justify-between items-center w-full">
                       <span className={`text-[12px] font-bold flex items-center justify-center rounded-full ${cell.isToday
                         ? "bg-primary-500 text-white w-6 h-6 shadow-sm"
@@ -1387,6 +1423,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         }`}>
                         {cell.dayNum}
                       </span>
+                      {cell.is_wfh && (
+                        <span
+                          title="Work From Home (Approved WFH)"
+                          className="inline-flex items-center justify-center bg-blue-50 text-blue-600 p-0.5 rounded border border-blue-200 shadow-2xs"
+                        >
+                          <HomeIcon className="w-3 h-3" />
+                        </span>
+                      )}
                     </div>
 
                     {/* Status Tag */}
@@ -1726,6 +1770,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-white border-2 border-primary-500"></div> Today</span>
             </div>
           </div>
+          )
         ) : (
           /* Mode 2: Grid View */
           <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
@@ -1765,7 +1810,17 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-300 text-xs font-semibold text-neutral-700 bg-white">
-                {filteredGridDays.length === 0 ? (
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={12} className="p-14 text-center text-neutral-500 bg-neutral-50/20">
+                      <div className="flex flex-col items-center justify-center gap-3">
+                        <div className="w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin" />
+                        <span className="text-sm font-bold text-neutral-700">Loading attendance & work records...</span>
+                        <span className="text-xs text-neutral-400">Fetching latest database records</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredGridDays.length === 0 ? (
                   <tr>
                     <td colSpan={12} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
                       No attendance records matching status filter "{statusFilter}".
@@ -1777,7 +1832,19 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       key={dayObj.dateStr}
                       className="hover:bg-primary-500/5 transition-colors border-b border-neutral-300"
                     >
-                      <td className="p-3 pl-6 font-bold text-neutral-900 border-r border-neutral-300">{formatDateStr(dayObj.dateStr)}</td>
+                      <td className="p-3 pl-6 font-bold text-neutral-900 border-r border-neutral-300">
+                        <div className="inline-flex items-center gap-1.5">
+                          <span>{formatDateStr(dayObj.dateStr)}</span>
+                          {dayObj.is_wfh && (
+                            <span
+                              title="Work From Home (Approved WFH)"
+                              className="inline-flex items-center justify-center bg-blue-50 text-blue-600 p-0.5 rounded border border-blue-200 shadow-2xs"
+                            >
+                              <HomeIcon className="w-3.5 h-3.5" />
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="p-3 text-neutral-500 border-r border-neutral-300 font-bold">{dayObj.dayName}</td>
 
                       {/* Web Site Entry */}
