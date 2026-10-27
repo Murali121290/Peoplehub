@@ -1583,9 +1583,43 @@ def attendance_history(user_id):
                     gross_hours = 0.0
                 gross_hours = int(gross_hours * 100) / 100
 
+                # Determine if employee is in PM mode
+                emp_work_mode = (employee.work_mode or "Office").strip().upper()
+                rec_work_mode = (getattr(record, "work_mode", None) or "").strip().upper()
+                is_pm_emp = (emp_work_mode == "PM") or (rec_work_mode == "PM")
+                is_pm_wfh = is_pm_emp and (rec_work_mode == "WFH")
+
                 # Derive display status
                 display_status = record.status
-                if not display_status or display_status in ("Checked Out", "Check In"):
+                card_hrs_val = record.card_working_hours or 0.0
+
+                if is_pm_emp and not is_pm_wfh:
+                    # PM Mode - Office / WFO: Biometric is strictly preferred
+                    # If card check-in exists, base status primarily on biometric hours
+                    if record.card_check_in or card_hrs_val > 0:
+                        if card_hrs_val < 6.0:
+                            display_status = "Half Day"
+                        else:
+                            display_status = "Present"
+                    elif not display_status or display_status in ("Checked Out", "Check In"):
+                        if gross_hours < 4.0:
+                            display_status = "Absent"
+                        elif gross_hours < 6.0:
+                            display_status = "Half Day"
+                        else:
+                            display_status = "Present"
+                elif is_pm_wfh:
+                    # PM Mode - WFH: Follows normal 8h/9h web checkin logic
+                    if not display_status or display_status in ("Checked Out", "Check In"):
+                        is_weekend = record.attendance_date.weekday() >= 5
+                        req_hours = 8.0 if is_weekend else 9.0
+                        if gross_hours < 4.0:
+                            display_status = "Absent"
+                        elif gross_hours < req_hours:
+                            display_status = "Half Day"
+                        else:
+                            display_status = "Present"
+                elif not display_status or display_status in ("Checked Out", "Check In"):
                     is_weekend = record.attendance_date.weekday() >= 5
                     is_holiday = False
                     if override_dict.get(record.attendance_date) and override_dict.get(record.attendance_date)[0] == "Holiday":
@@ -1613,12 +1647,11 @@ def attendance_history(user_id):
 
                 # Override: if the day is a weekend or holiday and no check-in exists,
                 # show the correct label instead of a stale "Absent" stored in DB.
-                if not record.check_in:
+                if not record.check_in and not record.card_check_in:
                     override = override_dict.get(current_date)
                     if override:
                         if override[0] == "Holiday":
                             display_status = "Holiday"
-                        # If override is "Working Day", keep whatever was computed
                     elif current_date in holiday_dict:
                         display_status = "Holiday"
                     elif is_date_week_off(current_date):
@@ -1656,26 +1689,42 @@ def attendance_history(user_id):
                     effective_gross_hours = gross_hours + perm_hours
                     permission_label = ", ".join(perm_labels)
 
-                    # Re-evaluate status considering permission credit
-                    is_weekend = current_date.weekday() >= 5
-                    is_holiday = False
-                    if override_dict.get(current_date) and override_dict.get(current_date)[0] == "Holiday":
-                        is_holiday = True
-                    elif current_date in holiday_dict:
-                        is_holiday = True
-
-                    is_weekoff = is_date_week_off(current_date)
-                    if is_holiday or is_weekoff:
-                        req_hours = 7.0
-                    elif current_date.weekday() == 5:
-                        req_hours = 8.0
+                    if is_pm_emp and not is_pm_wfh:
+                        # In PM WFO mode, approved permission hours add directly to biometric hours
+                        effective_card_hours = card_hrs_val + perm_hours
+                        if effective_card_hours >= 6.0:
+                            display_status = "Present"
+                        elif effective_card_hours >= 3.0 and display_status == "Absent":
+                            display_status = "Half Day"
+                    elif is_pm_wfh:
+                        # In PM WFH mode, approved permission hours add to web hours against normal 8h/9h
+                        is_weekend = current_date.weekday() >= 5
+                        req_hours = 8.0 if is_weekend else 9.0
+                        if effective_gross_hours >= req_hours:
+                            display_status = "Present"
+                        elif effective_gross_hours >= 4.0 and display_status == "Absent":
+                            display_status = "Half Day"
                     else:
-                        req_hours = 9.0
-                    eff_h = max(virtual_working_hours, effective_gross_hours)
-                    if eff_h >= req_hours:
-                        display_status = "Present"
-                    elif eff_h >= 4.0 and display_status == "Absent":
-                        display_status = "Half Day"
+                        # Standard employee re-evaluation
+                        is_weekend = current_date.weekday() >= 5
+                        is_holiday = False
+                        if override_dict.get(current_date) and override_dict.get(current_date)[0] == "Holiday":
+                            is_holiday = True
+                        elif current_date in holiday_dict:
+                            is_holiday = True
+
+                        is_weekoff = is_date_week_off(current_date)
+                        if is_holiday or is_weekoff:
+                            req_hours = 7.0
+                        elif current_date.weekday() == 5:
+                            req_hours = 8.0
+                        else:
+                            req_hours = 9.0
+                        eff_h = max(virtual_working_hours, effective_gross_hours)
+                        if eff_h >= req_hours:
+                            display_status = "Present"
+                        elif eff_h >= 4.0 and display_status == "Absent":
+                            display_status = "Half Day"
 
                 leave_details = [
                     {

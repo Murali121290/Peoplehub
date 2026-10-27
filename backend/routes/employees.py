@@ -2165,13 +2165,17 @@ def get_reporting_employees(user_id):
                         print("Error parsing card_check_in time:", err)
                         pm_card_checkin_late = True
 
-                # 2. Biometric total hours >= 6.0
+                # 2. Biometric total hours >= 6.0 (approved permissions add directly to card hours in PM WFO)
                 card_hours = (attendance.card_working_hours or 0.0) if attendance else 0.0
-                if card_hours < 6.0:
+                effective_pm_card_hours = card_hours + (permission_hours if not att_work_mode or att_work_mode.upper() != "WFH" else 0.0)
+                if effective_pm_card_hours < 6.0:
                     pm_card_hours_short = True
 
-                # 3. Website check-in / working hours >= 9.0
-                if working_hours_val < 9.0:
+                # 3. Website check-in / working hours >= 8h weekend or 9h weekday
+                effective_pm_web_hours = working_hours_val
+                is_weekend = date_to_check.weekday() >= 5
+                pm_req_web_hours = 8.0 if is_weekend else 9.0
+                if effective_pm_web_hours < pm_req_web_hours:
                     pm_web_hours_short = True
 
                 if pm_card_checkin_late or pm_card_hours_short or pm_web_hours_short:
@@ -2179,12 +2183,14 @@ def get_reporting_employees(user_id):
 
             # AUTO-APPROVE LOGIC (Don't show Present w/o short hours, or Leave Approved)
             should_auto_approve = False
-            if is_pm_mode and pm_rule_failed:
+            if status == "Leave" and leave and leave.status == "Approved":
+                should_auto_approve = True
+            elif status == "Half Day" and leave and leave.status == "Approved" and leave.total_days == 0.5:
+                should_auto_approve = True
+            elif is_pm_mode and pm_rule_failed:
                 # If any PM condition is missing/failed, DO NOT auto-approve
                 should_auto_approve = False
             elif status == "Present" and not highlight_short_hours:
-                should_auto_approve = True
-            elif status == "Leave" and leave and leave.status == "Approved":
                 should_auto_approve = True
             elif status == "Half Day" and not highlight_short_hours and leave and leave.status == "Approved" and leave.total_days == 0.5:
                 should_auto_approve = True
