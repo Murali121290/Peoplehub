@@ -67,6 +67,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const { updateUser, logout } = useAuthStore();
   const [profile, setProfile] = useState<any>({});
+  const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(Boolean(initialEditing || employeeId));
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
@@ -392,6 +393,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
   };
 
   const fetchProfile = async () => {
+    setIsLoading(true);
     try {
       const activeEmpId = employeeId || localStorage.getItem("employee_id");
       if (!activeEmpId) return;
@@ -519,6 +521,8 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
       }
     } catch (err) {
       console.error("Fetch profile error:", err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1257,7 +1261,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
 
           {renderEditField("Employee Type", "employee_type", "select", "", ["Full-Time", "Part-Time", "Contract", "Intern"])}
           {renderEditField("Work Location", "work_location", "select", "", ["Office", "Remote", "Hybrid"])}
-          {renderEditField("Work Mode", "work_mode", "select", "", ["Office", "WFH", "Hybrid", "Flexible"])}
+          {renderEditField("Work Mode", "work_mode", "select", "", ["Office", "WFH", "Hybrid", "Flexible", "PM"])}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider">Shift Timing</label>
             {isHrOrAdmin ? (
@@ -1672,6 +1676,16 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
     );
   };
 
+  if (isLoading) {
+    return (
+      <div className="py-24 flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-3 border-primary-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-sm font-bold text-neutral-700">Loading employee profile & work mode...</span>
+        <span className="text-xs text-neutral-400">Fetching latest database records</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto p-1 animate-in fade-in duration-300">
       
@@ -1732,6 +1746,24 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
                     <span className="font-semibold text-neutral-400">Tenure:</span>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-primary-50 text-primary-700 border border-primary-100/80">
                       {getTenure(profile.joining_date)}
+                    </span>
+                  </div>
+                </>
+              )}
+              {(profile.work_mode || user.work_mode) && (
+                <>
+                  <span className="hidden sm:inline text-neutral-200">|</span>
+                  <div className="flex items-center gap-1">
+                    <span className="font-semibold text-neutral-400">Work Mode:</span>
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border shadow-3xs ${
+                      (profile.work_mode || user.work_mode) === "WFH" ? "bg-blue-100 text-blue-700 border-blue-200"
+                      : (profile.work_mode || user.work_mode) === "Hybrid" ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                      : (profile.work_mode || user.work_mode) === "PM" ? "bg-violet-100 text-violet-800 border-violet-300 font-bold"
+                      : (profile.work_mode || user.work_mode) === "Flexible" ? "bg-purple-100 text-purple-700 border-purple-200"
+                      : "bg-neutral-100 text-neutral-600 border-neutral-200"
+                    }`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-75 animate-pulse" />
+                      {profile.work_mode || user.work_mode}
                     </span>
                   </div>
                 </>

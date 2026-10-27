@@ -302,9 +302,9 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [birthdayEmployees, anniversaryEmployees, user]);
 
-  // Show attendance summary modal when navigating to Team Management
+  // Show attendance summary modal when navigating to Team Management / Manager Dashboard
   useEffect(() => {
-    if (location.pathname === "/manager-dashboard") {
+    if (location.pathname === "/manager-dashboard" || location.pathname.startsWith("/manager/")) {
       setShowPopup(true);
     }
   }, [location.pathname]);
@@ -450,6 +450,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         `${BASE_URL}/employees/reporting-employees/${uid}`,
       );
       const data = await response.json();
+      console.log("loadReportingEmployees received:", data);
       setReportingEmployees(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load reporting employees", err);
@@ -473,9 +474,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   useEffect(() => {
-    if (reportingEmployees.length > 0 && !sessionStorage.getItem(popupKey)) {
+    if (reportingEmployees.length > 0) {
       setShowPopup(true);
-      sessionStorage.setItem(popupKey, "true");
     }
   }, [reportingEmployees]);
 

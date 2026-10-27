@@ -449,7 +449,13 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                     return (
                       <tr
                         key={emp.employee_id || emp.id}
-                        className={`transition-colors ${emp.highlight_short_hours ? "bg-rose-50/40 hover:bg-rose-50/60" : "hover:bg-neutral-50/60"}`}
+                        className={`transition-colors ${
+                          emp.is_pm_mode
+                            ? "bg-violet-50/25 hover:bg-violet-50/45 border-b border-violet-100"
+                            : emp.highlight_short_hours
+                            ? "bg-rose-50/40 hover:bg-rose-50/60"
+                            : "hover:bg-neutral-50/60"
+                        }`}
                       >
                         {/* Employee Info */}
                         <td className="py-3.5 px-4 border-r border-neutral-100">
@@ -460,9 +466,16 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                               className="w-8 h-8 rounded-full object-cover border border-neutral-200 shadow-sm bg-neutral-50"
                             />
                             <div>
-                              <p className="font-semibold text-neutral-800 text-xs">
-                                {emp.employee_name}
-                              </p>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="font-semibold text-neutral-800 text-xs">
+                                  {emp.employee_name}
+                                </p>
+                                {emp.is_pm_mode && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wide uppercase bg-violet-100/80 text-violet-700 border border-violet-300">
+                                    PM MODE
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-[10px] text-neutral-400 font-mono mt-0.5">
                                 {emp.employee_code || `EMP${emp.employee_id}`}
                               </p>
@@ -502,21 +515,55 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                           {emp.permission_hours ? `${emp.permission_hours} hr${emp.permission_hours !== 1 ? "s" : ""}` : "—"}
                         </td>
 
-                        <td className={`py-3.5 px-3 bg-blue-50/5 text-xs font-bold border-r border-blue-100/50 ${emp.highlight_short_hours ? "text-rose-600 bg-rose-50/50" : "text-neutral-800"}`}>
-                          {formatWorkingHours(emp.working_hours)}
-                        </td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-400 border-r-2 border-blue-200/50">
-                          {formatWorkingHours(
-                            (emp.working_hours || 0) +
-                            (emp.total_break_minutes || 0) / 60
+                        <td className={`py-3.5 px-3 bg-blue-50/5 text-xs font-bold border-r border-blue-100/50 text-center align-middle whitespace-nowrap min-w-[95px] ${emp.pm_web_hours_short || emp.highlight_short_hours ? "text-rose-600 bg-rose-50/50" : "text-neutral-800"}`}>
+                          <div className="whitespace-nowrap">{formatWorkingHours(emp.working_hours)}</div>
+                          {emp.is_pm_mode && emp.pm_web_hours_short && (
+                            <div className="mt-1 flex justify-center">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold text-rose-700 bg-rose-50/90 border border-rose-300 shadow-2xs whitespace-nowrap">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                                &lt; 9 hrs
+                              </span>
+                            </div>
                           )}
+                        </td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-400 border-r-2 border-blue-200/50 text-center align-middle whitespace-nowrap min-w-[85px]">
+                          <div className="whitespace-nowrap">
+                            {formatWorkingHours(
+                              (emp.working_hours || 0) +
+                              (emp.total_break_minutes || 0) / 60
+                            )}
+                          </div>
                         </td>
 
                         {/* Card Entry Columns */}
-                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r border-purple-100/50">{emp.card_check_in || "—"}</td>
-                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r border-purple-100/50">{emp.card_check_out || "—"}</td>
-                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r-2 border-purple-200/50">
-                          {formatWorkingHours(emp.card_working_hours)}
+                        <td className="py-3 px-2 text-xs border-r border-neutral-100 text-center align-middle">
+                          <div className="font-semibold text-neutral-700">
+                            {emp.card_check_in || "—"}
+                          </div>
+                          {emp.is_pm_mode && emp.pm_card_checkin_late && (
+                            <div className="mt-1 flex justify-center">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold text-amber-700 bg-amber-50/90 border border-amber-300 shadow-2xs whitespace-nowrap">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                                {emp.card_check_in && emp.card_check_in !== "-" ? "> 10:30" : "Missing"}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-2 text-xs border-r border-neutral-100 text-center text-neutral-500 font-medium align-middle">
+                          {emp.card_check_out || "—"}
+                        </td>
+                        <td className="py-3 px-2 text-xs border-r-2 border-neutral-200 text-center align-middle">
+                          <div className="font-semibold text-neutral-800">
+                            {formatWorkingHours(emp.card_working_hours)}
+                          </div>
+                          {emp.is_pm_mode && emp.pm_card_hours_short && (
+                            <div className="mt-1 flex justify-center">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold text-rose-700 bg-rose-50/90 border border-rose-300 shadow-2xs whitespace-nowrap">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                                &lt; 6 hrs
+                              </span>
+                            </div>
+                          )}
                         </td>
 
                         {/* Status */}
@@ -615,7 +662,16 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                       const isClarificationDisabled = isActionLoading || isApproved || isNeedClarification;
 
                       return (
-                        <tr key={`${emp.id || emp.employee_id}-${emp.summary_date}`} className={`transition-all duration-150 border-b border-neutral-100 ${emp.highlight_short_hours ? "bg-rose-50/40 hover:bg-rose-50/60" : "hover:bg-neutral-50/50"}`}>
+                        <tr
+                          key={`${emp.id || emp.employee_id}-${emp.summary_date}`}
+                          className={`transition-all duration-150 border-b ${
+                            emp.is_pm_mode
+                              ? "bg-violet-50/25 hover:bg-violet-50/45 border-violet-100"
+                              : emp.highlight_short_hours
+                              ? "bg-rose-50/40 hover:bg-rose-50/60 border-neutral-100"
+                              : "hover:bg-neutral-50/50 border-neutral-100"
+                          }`}
+                        >
                           {/* Employee info */}
                           <td className="py-3.5 px-4 border-r border-neutral-100">
                             <div className="flex items-center gap-3">
@@ -628,7 +684,14 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                                 }}
                               />
                               <div>
-                                <span className="font-extrabold text-neutral-800 block text-xs tracking-tight">{emp.employee_name}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-extrabold text-neutral-800 block text-xs tracking-tight">{emp.employee_name}</span>
+                                  {emp.is_pm_mode && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wide uppercase bg-violet-100/80 text-violet-700 border border-violet-300">
+                                      PM MODE
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="text-[10px] text-neutral-400 font-semibold mt-0.5 block">{emp.employee_code || "—"}</span>
                               </div>
                             </div>
@@ -654,21 +717,55 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                             ) : "—"}
                           </td>
 
-                          <td className={`py-3.5 px-3 bg-blue-50/5 text-xs font-bold border-r border-blue-100/50 ${emp.highlight_short_hours ? "text-rose-600 bg-rose-50/50" : "text-neutral-800"}`}>
-                            {formatWorkingHours(emp.working_hours)}
-                          </td>
-                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r-2 border-blue-200/50">
-                            {formatWorkingHours(
-                              (emp.working_hours || 0) +
-                              (emp.total_break_minutes || 0) / 60
+                          <td className={`py-3.5 px-3 bg-blue-50/5 text-xs font-bold border-r border-blue-100/50 text-center align-middle whitespace-nowrap min-w-[95px] ${emp.pm_web_hours_short || emp.highlight_short_hours ? "text-rose-600 bg-rose-50/50" : "text-neutral-800"}`}>
+                            <div className="whitespace-nowrap">{formatWorkingHours(emp.working_hours)}</div>
+                            {emp.is_pm_mode && emp.pm_web_hours_short && (
+                              <div className="mt-1 flex justify-center">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold text-rose-700 bg-rose-50/90 border border-rose-300 shadow-2xs whitespace-nowrap">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                                  &lt; 9 hrs
+                                </span>
+                              </div>
                             )}
+                          </td>
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r-2 border-blue-200/50 align-middle whitespace-nowrap min-w-[85px]">
+                            <div className="whitespace-nowrap">
+                              {formatWorkingHours(
+                                (emp.working_hours || 0) +
+                                (emp.total_break_minutes || 0) / 60
+                              )}
+                            </div>
                           </td>
 
                           {/* Card Entry Columns */}
-                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r border-purple-100/50">{emp.card_check_in || "—"}</td>
-                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r border-purple-100/50">{emp.card_check_out || "—"}</td>
-                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r-2 border-purple-200/50">
-                            {formatWorkingHours(emp.card_working_hours)}
+                          <td className="py-3 px-2 text-xs border-r border-neutral-100 text-center align-middle">
+                            <div className="font-semibold text-neutral-700">
+                              {emp.card_check_in || "—"}
+                            </div>
+                            {emp.is_pm_mode && emp.pm_card_checkin_late && (
+                              <div className="mt-1 flex justify-center">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold text-amber-700 bg-amber-50/90 border border-amber-300 shadow-2xs whitespace-nowrap">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                                  {emp.card_check_in && emp.card_check_in !== "-" ? "> 10:30" : "Missing"}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-2 text-xs border-r border-neutral-100 text-center text-neutral-500 font-medium align-middle">
+                            {emp.card_check_out || "—"}
+                          </td>
+                          <td className="py-3 px-2 text-xs border-r-2 border-neutral-200 text-center align-middle">
+                            <div className="font-semibold text-neutral-800">
+                              {formatWorkingHours(emp.card_working_hours)}
+                            </div>
+                            {emp.is_pm_mode && emp.pm_card_hours_short && (
+                              <div className="mt-1 flex justify-center">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold text-rose-700 bg-rose-50/90 border border-rose-300 shadow-2xs whitespace-nowrap">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                                  &lt; 6 hrs
+                                </span>
+                              </div>
+                            )}
                           </td>
 
                           {/* Status */}

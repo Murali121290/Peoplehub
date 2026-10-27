@@ -818,7 +818,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
     setIsActionLoading(true);
 
     const empMode = (currentEmployee?.work_mode || "").toLowerCase();
-    const isHybrid = empMode === "hybrid";
+    const isHybrid = empMode === "hybrid" || empMode === "pm";
     const isFlexible = empMode === "flexible";
 
     const targetShift = cleanShiftName(selectedCheckInShift);
@@ -2549,8 +2549,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const userId = localStorage.getItem("user_id");
 
       // 1. Load employees first to extract employee_id
-      const empRes = await fetch(`${BASE_URL}/employees/`);
-      const empData = await empRes.json();
+      const empData = await getEmployees(true);
       setEmployees(empData);
 
       const loggedEmp = Array.isArray(empData)
@@ -3110,7 +3109,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                     onCheckInOut={() => isCheckedIn ? handleCheckOutAction() : handleCheckInClick()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}
-                    isHybrid={["hybrid", "flexible"].includes((currentEmployee?.work_mode || "").toLowerCase())}
+                    isHybrid={["hybrid", "flexible", "pm"].includes((currentEmployee?.work_mode || "").toLowerCase())}
                     isPaused={isPaused}
                     pausedTimer={pausedTimer}
                     onPauseToggle={handlePauseToggle}
@@ -3231,7 +3230,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             {/* Conditionally render content based on employee's work mode */}
             {(() => {
               const empMode = (currentEmployee?.work_mode || "").toLowerCase();
-              const isHybrid = empMode === "hybrid";
+              const isHybrid = empMode === "hybrid" || empMode === "pm";
               const isFlexible = empMode === "flexible";
 
               // 1. Flexible Mode: Show WFO vs WFH stacked vertically (one below the other)

@@ -17,6 +17,7 @@ interface DirectoryTabProps {
   onResetAllPasswords: () => void;
   BASE_URL: string;
   onStatusChange?: () => void;
+  isLoading?: boolean;
 }
 
 // Custom Premium Scrollable Dropdown Selector
@@ -86,7 +87,8 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
   onResetPassword,
   onResetAllPasswords,
   BASE_URL,
-  onStatusChange
+  onStatusChange,
+  isLoading = false
 }) => {
   // Local Filter States
   const [desigFilter, setDesigFilter] = useState("All");
@@ -260,6 +262,17 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
               className="w-[250px] border-none bg-transparent text-[13px] text-neutral-800 outline-none placeholder:text-neutral-400"
             />
           </div>
+          {onStatusChange && (
+            <button
+              onClick={onStatusChange}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3.5 py-2 text-[13px] font-semibold text-neutral-700 transition-all hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-60 shadow-xs"
+              title="Refresh employee directory & work modes from database"
+            >
+              <ArrowPathIcon className={`h-3.5 w-3.5 text-neutral-600 ${isLoading ? "animate-spin" : ""}`} />
+              {isLoading ? "Refreshing..." : "Refresh"}
+            </button>
+          )}
           <button 
             onClick={onResetAllPasswords} 
             className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-[13px] font-medium text-white transition-all hover:bg-red-700 active:bg-red-800"
@@ -373,13 +386,23 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
             </tr>
           </thead>
           <tbody>
-            {displayedEmps.map((emp, index) => (
-             <tr
-                key={emp.id}
-                className={`border-b border-neutral-200 transition-colors duration-150 hover:bg-primary-50 ${
-                  index % 2 === 0 ? "bg-neutral-100" : "bg-white"
-                }`}
-              >
+            {isLoading ? (
+              <tr>
+                <td colSpan={10} className="py-20 text-center text-neutral-500">
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    <div className="w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm font-bold text-neutral-700">Loading updated employees & work modes...</span>
+                    <span className="text-xs text-neutral-400">Fetching latest database records</span>
+                  </div>
+                </td>
+              </tr>
+            ) : displayedEmps.map((emp, index) => (
+               <tr
+                  key={emp.id}
+                  className={`border-b border-neutral-200 transition-colors duration-150 hover:bg-primary-50 ${
+                    index % 2 === 0 ? "bg-neutral-100" : "bg-white"
+                  }`}
+                >
                 <td className="px-4 py-3.5 cursor-pointer" onClick={() => onEditEmployee(emp)}>
                   <span className="text-[13px] font-medium text-neutral-800">{emp.employee_id || "—"}</span>
                 </td>
@@ -404,6 +427,7 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
                   <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
                     emp.work_mode === "WFH" ? "bg-blue-100 text-blue-700 border-blue-200"
                     : emp.work_mode === "Hybrid" ? "bg-green-100 text-green-700 border-green-200"
+                    : emp.work_mode === "PM" ? "bg-violet-100 text-violet-800 border-violet-300 font-bold"
                     : emp.work_mode === "Flexible" ? "bg-purple-100 text-purple-700 border-purple-200"
                     : "bg-neutral-100 text-neutral-600 border-neutral-200"
                   }`}>
@@ -524,7 +548,7 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
             ))}
           </tbody>
         </table>
-        {displayedEmps.length === 0 && (
+        {!isLoading && displayedEmps.length === 0 && (
           <div className="px-5 py-12 text-center text-neutral-500">
             <div className="mb-1.5 text-[15px] font-semibold text-neutral-800">No employees found</div>
             <div className="mb-4 text-[13px]">Try adjusting your search or filter terms</div>
