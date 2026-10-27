@@ -1060,6 +1060,9 @@ const ManagerDashboardPage = () => {
         permission_to: att.permission_to,
         is_permission: att.is_permission,
         permission_hours: att.permission_hours,
+        is_pm_mode: att.is_pm_mode || (att.work_mode || "").toUpperCase() === "PM",
+        pm_weekly_office_days: att.pm_weekly_office_days ?? 0,
+        pm_weekly_office_target: att.pm_weekly_office_target ?? 3,
       };
     });
 
@@ -2565,6 +2568,50 @@ const ManagerDashboardPage = () => {
                                         <span>People Manager ({member.report_count || 0})</span>
                                       </span>
                                     )}
+                                    {member.is_pm_mode && (
+                                      <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                                        <span
+                                          style={{
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            padding: "2px 8px",
+                                            borderRadius: "999px",
+                                            background: "#f3e8ff",
+                                            border: "1px solid #d8b4fe",
+                                            color: "#6b21a8",
+                                            fontSize: "9px",
+                                            fontWeight: 800,
+                                            letterSpacing: "0.03em",
+                                            textTransform: "uppercase",
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          PM MODE
+                                        </span>
+                                        <span
+                                          title="Compulsory PM Mode Office Requirement: 3 Days per week (resets every Monday)"
+                                          style={{
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: "4px",
+                                            padding: "2px 8px",
+                                            borderRadius: "999px",
+                                            background: member.pm_weekly_office_days >= 3 ? "#ecfdf5" : "#fef3c7",
+                                            border: member.pm_weekly_office_days >= 3 ? "1px solid #a7f3d0" : "1px solid #fde68a",
+                                            color: member.pm_weekly_office_days >= 3 ? "#065f46" : "#92400e",
+                                            fontSize: "10px",
+                                            fontWeight: 700,
+                                            flexShrink: 0,
+                                            whiteSpace: "nowrap",
+                                          }}
+                                        >
+                                          <span>🏢</span>
+                                          <span>
+                                            {member.pm_weekly_office_days}/3 Office Days
+                                          </span>
+                                        </span>
+                                      </div>
+                                    )}
                                     {member.isWfh && (
                                       <span
                                         title={member.isPermanentWfh ? "Permanent Work From Home" : "Work From Home (WFH)"}
@@ -2989,8 +3036,17 @@ const ManagerDashboardPage = () => {
                         // Only "HR Admin" role can edit Leave/LOP/Present records
                         const isNonEditable = !isHrAdminOnly && (badgeStr.toLowerCase().includes("leave") || badgeStr.toLowerCase().includes("lop") || badgeStr.toLowerCase().includes("present"));
 
+                        // Check PM mode status for this employee
+                        const isPmEmp = !!(historyModalUser?.is_pm_mode || (historyModalUser?.work_mode || "").toUpperCase() === "PM");
+
                         return (
-                          <tr key={record.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <tr
+                            key={record.id}
+                            style={{
+                              borderBottom: "1px solid #f1f5f9",
+                              background: isPmEmp ? "rgba(243, 232, 255, 0.28)" : undefined,
+                            }}
+                          >
                             <td
                               onClick={isNonEditable ? undefined : () => handleEditClick(record)}
                               title={isNonEditable ? "Cannot edit attendance for this status" : "Click to edit attendance"}
@@ -3004,7 +3060,27 @@ const ManagerDashboardPage = () => {
                                 textDecoration: isNonEditable ? "none" : "underline",
                               }}
                             >
-                              {formattedDate}
+                              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                                <span>{formattedDate}</span>
+                                {(record.is_wfh || record.is_wfh_day) && (
+                                  <span
+                                    title="Work From Home (Approved WFH)"
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      background: "#eff6ff",
+                                      color: "#2563eb",
+                                      padding: "3px",
+                                      borderRadius: "6px",
+                                      border: "1px solid #bfdbfe",
+                                      boxShadow: "0 1px 2px rgba(0,0,0,0.04)"
+                                    }}
+                                  >
+                                    <HomeIcon style={{ width: "13px", height: "13px" }} />
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td style={{ padding: "12px 16px", borderRight: "2px solid #e2e8f0" }}>
                               <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
@@ -3233,15 +3309,56 @@ const ManagerDashboardPage = () => {
                               );
                             })()}
                             {/* Biometric Card entry */}
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>
-                              {record.cardCheckIn}
-                            </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckOut !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>
-                              {record.cardCheckOut || record.card_check_out || "-"}
-                            </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff", textAlign: "center" }}>
-                              {formatWorkingHours(record.cardWorkingHours)}
-                            </td>
+                            {(() => {
+                              const cardIn = (record.cardCheckIn || record.card_check_in || "").trim();
+                              let isCardCheckInLate = false;
+                              if (cardIn && cardIn !== "-" && cardIn !== "—") {
+                                const match = cardIn.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+                                if (match) {
+                                  let hrs = parseInt(match[1], 10);
+                                  const mins = parseInt(match[2], 10);
+                                  const ampm = (match[3] || "").toUpperCase();
+                                  if (ampm === "PM" && hrs < 12) hrs += 12;
+                                  if (ampm === "AM" && hrs === 12) hrs = 0;
+                                  if (hrs > 10 || (hrs === 10 && mins > 30)) {
+                                    isCardCheckInLate = true;
+                                  }
+                                }
+                              }
+
+                              const cardWorked = Number(record.cardWorkingHours) || Number(record.card_working_hours) || 0;
+                              const isCardHoursShort = cardWorked > 0 && cardWorked < 6.0;
+
+                              return (
+                                <>
+                                  <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>
+                                    <div>{record.cardCheckIn}</div>
+                                    {isPmEmp && isCardCheckInLate && (
+                                      <div style={{ marginTop: "4px", display: "flex", justifyContent: "center" }}>
+                                        <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 700, color: "#92400e", background: "#fef3c7", border: "1px solid #fde68a", whiteSpace: "nowrap" }}>
+                                          <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: "#f59e0b" }} />
+                                          &gt; 10:30
+                                        </span>
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckOut !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>
+                                    {record.cardCheckOut || record.card_check_out || "-"}
+                                  </td>
+                                  <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff", textAlign: "center" }}>
+                                    <div>{formatWorkingHours(record.cardWorkingHours)}</div>
+                                    {isPmEmp && isCardHoursShort && (
+                                      <div style={{ marginTop: "4px", display: "flex", justifyContent: "center" }}>
+                                        <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 700, color: "#991b1b", background: "#fee2e2", border: "1px solid #fecaca", whiteSpace: "nowrap" }}>
+                                          <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: "#ef4444" }} />
+                                          &lt; 6 hrs
+                                        </span>
+                                      </div>
+                                    )}
+                                  </td>
+                                </>
+                              );
+                            })()}
                           </tr>
                         );
                       })}

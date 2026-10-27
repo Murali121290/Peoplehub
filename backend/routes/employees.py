@@ -296,9 +296,14 @@ def create_employee():
 @employees_bp.route("/", methods=["GET"])
 def get_employees():
     import json
+    fresh = (
+        request.args.get("fresh") == "true"
+        or request.args.get("force") == "true"
+        or request.headers.get("Cache-Control") == "no-cache"
+    )
     r = _get_redis()
     cache_key = "peoplehub:api:employees:active:v2"
-    if r:
+    if r and not fresh:
         try:
             cached = r.get(cache_key)
             if cached:
@@ -307,7 +312,7 @@ def get_employees():
         except Exception:
             pass
 
-    employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
+    employees = [e for e in get_all_employees_cached(force=fresh) if (e.status or "").lower() != "inactive"]
 
     # Build a fast lookup map of manager full name -> employee_id from active employees
     manager_id_map = {}
@@ -1365,16 +1370,23 @@ def get_my_team(user_id):
             (Employee.email == user.company_email) |
             (Employee.email == user.email)
         ).first()
-    if not manager:
-        manager = Employee.query.filter_by(id=user_id).first()
+    is_admin = False
+    if user:
+        role_name = (user.role.name or "").lower() if user.role else ""
+        access_level = (user.access_level or "").lower()
+        combined = f"{role_name} {access_level}"
+        if any(k in combined for k in ["admin", "hr", "human resource"]):
+            is_admin = True
 
-    if not manager:
-        return jsonify([])
-
-    manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
     all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
 
-    reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
+    if is_admin:
+        reporting_list = [e for e in all_employees if e.user_id != user_id]
+    else:
+        if not manager:
+            return jsonify([])
+        manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
+        reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
 
     result = []
     for employee in reporting_list:
@@ -1466,10 +1478,15 @@ def get_team_attendance(user_id):
         if user:
             role_name = (user.role.name or "").lower() if user.role else ""
             access_level = (user.access_level or "").lower()
-            if "admin" in role_name or "admin" in access_level:
+            combined = f"{role_name} {access_level}"
+            if any(k in combined for k in ["admin", "hr", "human resource"]):
                 is_admin = True
 
-        today = date.today()
+        try:
+            from models.attendance import get_ist_today
+            today = get_ist_today()
+        except Exception:
+            today = date.today()
         all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
         result = []
 
@@ -1519,15 +1536,14 @@ def get_team_attendance(user_id):
                 leave_by_employee[emp_key] = []
             leave_by_employee[emp_key].append(lr)
 
-        # BATCH FETCH: All shift requests for reporting employees today
-        # Note: ShiftRequest.employee_id is INTEGER in DB, so only pass valid integers
+        # ShiftRequest.employee_id stores the numeric employee code (e.g. 842, 1919)
         numeric_shift_emp_ids = []
         for e in reporting_list:
             if e.employee_id is not None:
                 try:
                     numeric_shift_emp_ids.append(int(e.employee_id))
                 except (ValueError, TypeError):
-                    pass
+                    pass  # skip non-numeric employee codes
 
         from models.shift_request import ShiftRequest
         shift_requests_batch = ShiftRequest.query.filter(
@@ -1544,6 +1560,137 @@ def get_team_attendance(user_id):
         for sr in shift_requests_batch:
             emp_key = str(sr.employee_id)
             shifts_by_employee.setdefault(emp_key, []).append(sr)
+
+        # Weekly Office Days Calculation for PM Mode:
+        # Physical office days = dates this week where biometric card was punched/updated.
+        # Web-only attendance (WFH) is strictly not counted as an office day.
+        pm_office_days_count = {}
+        try:
+            week_start = today - timedelta(days=today.weekday())
+            week_end = max(today, week_start + timedelta(days=6))
+            pm_reporting_emps = [
+                e for e in reporting_list
+                if (getattr(e, "work_mode", "") or "").strip().upper() == "PM"
+            ]
+
+            # Fast lookup of employee STRICTLY by user_id
+            # Attendance.user_id is foreign key referencing users.id (which equals employee.user_id).
+            # It NEVER references employee.id (which is the employee table's primary key).
+            emp_by_uid = {}
+            for e in pm_reporting_emps:
+                uid = e.user_id
+                if uid is None and e.email:
+                    u = User.query.filter(
+                        (User.email == e.email) | (User.company_email == e.email)
+                    ).first()
+                    if u:
+                        uid = u.id
+                if uid is not None:
+                    emp_by_uid[uid] = e
+
+            # Approved WFH requests for PM employees during the current week
+            pm_emp_codes = []
+            for e in pm_reporting_emps:
+                if e.employee_id is not None:
+                    try:
+                        pm_emp_codes.append(int(e.employee_id))
+                    except (ValueError, TypeError):
+                        pass
+                if e.id is not None:
+                    pm_emp_codes.append(e.id)
+
+            wfh_dates_by_emp = {}
+            if pm_emp_codes:
+                from models.shift_request import ShiftRequest
+                wfh_reqs = ShiftRequest.query.filter(
+                    ShiftRequest.employee_id.in_(pm_emp_codes),
+                    ShiftRequest.status == "Approved",
+                    ShiftRequest.from_date <= week_end,
+                    ShiftRequest.to_date >= week_start
+                ).all()
+                for w in wfh_reqs:
+                    req_type = (w.request_type or "").strip().upper()
+                    req_mode = (w.requested_work_mode or "").strip().upper()
+                    if req_type == "WFH" or req_mode == "WFH":
+                        w_from = w.from_date
+                        w_to = w.to_date or w.from_date
+                        if hasattr(w_from, "date") and callable(getattr(w_from, "date")):
+                            w_from = w_from.date()
+                        if hasattr(w_to, "date") and callable(getattr(w_to, "date")):
+                            w_to = w_to.date()
+                        if w_from and w_to:
+                            cur_w = max(week_start, w_from)
+                            end_w = min(week_end, w_to)
+                            while cur_w <= end_w:
+                                wfh_dates_by_emp.setdefault(str(w.employee_id), set()).add(cur_w)
+                                cur_w += timedelta(days=1)
+
+            # Attendance records for PM employees for the current week
+            pm_week_attendances = Attendance.query.filter(
+                Attendance.user_id.in_(list(emp_by_uid.keys())),
+                Attendance.attendance_date >= week_start,
+                Attendance.attendance_date <= week_end
+            ).all() if emp_by_uid else []
+
+            # Track valid office dates per employee (unique by employee id)
+            pm_valid_dates_by_emp = {}
+
+            for att in pm_week_attendances:
+                emp_obj = emp_by_uid.get(att.user_id)
+                if not emp_obj:
+                    continue
+
+                # Normalize att.attendance_date to date object
+                att_dt = att.attendance_date
+                if hasattr(att_dt, "date") and callable(getattr(att_dt, "date")):
+                    att_dt = att_dt.date()
+                elif isinstance(att_dt, str):
+                    try:
+                        att_dt = datetime.strptime(att_dt.strip().split()[0], "%Y-%m-%d").date()
+                    except Exception:
+                        pass
+
+                c_in = att.card_check_in
+                c_out = att.card_check_out
+                c_hrs = 0.0
+                try:
+                    c_hrs = float(att.card_working_hours or 0.0)
+                except Exception:
+                    c_hrs = 0.0
+
+                has_card_in = bool(c_in and str(c_in).strip() not in ("-", "—", "", "None"))
+                has_card_out = bool(c_out and str(c_out).strip() not in ("-", "—", "", "None"))
+                has_card_hrs = c_hrs > 0
+
+                # Check if this date was an approved WFH date for this employee
+                emp_code_str = str(emp_obj.employee_id) if emp_obj.employee_id else ""
+                emp_id_str = str(emp_obj.id) if emp_obj.id else ""
+                is_wfh_approved = (
+                    att_dt in wfh_dates_by_emp.get(emp_code_str, set()) or
+                    att_dt in wfh_dates_by_emp.get(emp_id_str, set())
+                )
+
+                # Approved WFH days cannot count as office days unless physical card punch exists with hours >= 4.0
+                if is_wfh_approved:
+                    if not (has_card_in and (c_hrs >= 4.0 or has_card_out)):
+                        continue
+
+                # Biometric presence check: any biometric card punch/update proves physical office presence
+                if has_card_in or has_card_out or has_card_hrs:
+                    pm_valid_dates_by_emp.setdefault(emp_obj.id, set()).add(att_dt)
+
+            for emp_item in pm_reporting_emps:
+                cnt = len(pm_valid_dates_by_emp.get(emp_item.id, set()))
+                if emp_item.user_id is not None:
+                    pm_office_days_count[emp_item.user_id] = cnt
+                if emp_item.id is not None:
+                    pm_office_days_count[emp_item.id] = cnt
+                if emp_item.employee_id:
+                    pm_office_days_count[str(emp_item.employee_id)] = cnt
+        except Exception as pm_err:
+            import traceback
+            traceback.print_exc()
+            print("PM weekly office calculation error:", pm_err)
 
         # Build manager lookup: manager_name -> list of employees who report to them
         manager_lookup = {}
@@ -1597,6 +1744,7 @@ def get_team_attendance(user_id):
             ]
 
             # Pre-fetched approved shift/WFH requests for today (no query!)
+            # shifts_by_employee is keyed by str(employee_id numeric code)
             emp_requests_today = shifts_by_employee.get(emp_key, []) if emp_key else []
 
             # The latest request takes precedence
@@ -1732,6 +1880,12 @@ def get_team_attendance(user_id):
                 "permission_from": permission_from,
                 "permission_to": permission_to,
                 "permission_hours": permission_hours,
+                "is_pm_mode": (emp.work_mode or "").strip().upper() == "PM",
+                "pm_weekly_office_days": pm_office_days_count.get(
+                    emp.user_id,
+                    pm_office_days_count.get(emp.id, pm_office_days_count.get(str(emp.employee_id), 0))
+                ),
+                "pm_weekly_office_target": 3,
             })
 
         return jsonify(result)
@@ -1822,8 +1976,10 @@ def get_reporting_employees(user_id):
         print("Manager Name:", manager_name)
 
         target_date = get_last_working_day()
+        print(f"[get_reporting_employees] user_id={user_id}, target_date={target_date}")
 
-        all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
+        invalidate_employee_cache()
+        all_employees = [e for e in Employee.query.filter(Employee.is_active != False).all()]
 
         def _get_last_msg(history_list, role_name):
             if not isinstance(history_list, list):
@@ -1977,9 +2133,56 @@ def get_reporting_employees(user_id):
             wages_status = wages_req.status if wages_req else None
             is_one_day_wages_final = (wages_req is not None and wages_req.status == "Approved")
 
+            # Effective Work Mode check (PM mode support)
+            effective_work_mode = (employee.work_mode or "Office").strip()
+            att_work_mode = getattr(attendance, "work_mode", None)
+            if att_work_mode:
+                effective_work_mode = att_work_mode.strip()
+            
+            is_pm_mode = effective_work_mode.upper() == "PM"
+            pm_card_checkin_late = False
+            pm_card_hours_short = False
+            pm_web_hours_short = False
+            pm_rule_failed = False
+
+            if is_pm_mode and status in ("Present", "Half Day"):
+                # 1. Biometric check-in before or at 10:30 AM
+                if not attendance or not attendance.card_check_in:
+                    pm_card_checkin_late = True
+                else:
+                    try:
+                        c_in = attendance.card_check_in
+                        if hasattr(c_in, "time"):
+                            card_in_time = c_in.time()
+                        elif isinstance(c_in, str):
+                            card_in_time = datetime.strptime(c_in.split()[-1], "%H:%M:%S").time()
+                        else:
+                            card_in_time = None
+                        
+                        if card_in_time and (card_in_time.hour > 10 or (card_in_time.hour == 10 and card_in_time.minute > 30)):
+                            pm_card_checkin_late = True
+                    except Exception as err:
+                        print("Error parsing card_check_in time:", err)
+                        pm_card_checkin_late = True
+
+                # 2. Biometric total hours >= 6.0
+                card_hours = (attendance.card_working_hours or 0.0) if attendance else 0.0
+                if card_hours < 6.0:
+                    pm_card_hours_short = True
+
+                # 3. Website check-in / working hours >= 9.0
+                if working_hours_val < 9.0:
+                    pm_web_hours_short = True
+
+                if pm_card_checkin_late or pm_card_hours_short or pm_web_hours_short:
+                    pm_rule_failed = True
+
             # AUTO-APPROVE LOGIC (Don't show Present w/o short hours, or Leave Approved)
             should_auto_approve = False
-            if status == "Present" and not highlight_short_hours:
+            if is_pm_mode and pm_rule_failed:
+                # If any PM condition is missing/failed, DO NOT auto-approve
+                should_auto_approve = False
+            elif status == "Present" and not highlight_short_hours:
                 should_auto_approve = True
             elif status == "Leave" and leave and leave.status == "Approved":
                 should_auto_approve = True
@@ -2013,6 +2216,24 @@ def get_reporting_employees(user_id):
 
                 "department":
                     employee.department or "General",
+
+                "work_mode":
+                    effective_work_mode,
+
+                "is_pm_mode":
+                    is_pm_mode,
+
+                "pm_rule_failed":
+                    pm_rule_failed,
+
+                "pm_card_checkin_late":
+                    pm_card_checkin_late,
+
+                "pm_card_hours_short":
+                    pm_card_hours_short,
+
+                "pm_web_hours_short":
+                    pm_web_hours_short,
 
                 "profile_image":
                     get_profile_image_url(employee),
@@ -2178,12 +2399,9 @@ def get_reporting_employees(user_id):
         return jsonify(result)
 
     except Exception as e:
-
-        print(
-            "Reporting Employees Error:",
-            str(e)
-        )
-
+        import traceback
+        traceback.print_exc()
+        print("Reporting Employees Error:", str(e))
         return jsonify({
             "error": str(e)
         }), 500

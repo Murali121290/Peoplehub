@@ -127,35 +127,47 @@ def check_in():
         payload_ip = (data.get("client_ip") or "").strip()
         client_ip = payload_ip if payload_ip else get_client_ip()
 
-        work_mode = (employee.work_mode or "Office").strip().lower()
-        if work_mode == "office":
-            if not is_office_network(client_ip):
-                return jsonify({
-                    "success": False,
-                    "message": "Check-in is only allowed from the office network for employees in Office mode."
-                }), 400
-
-
         # =====================================
-        # SHIFT VALIDATION
+        # SHIFT & WORK MODE VALIDATION
         # =====================================
         from models.shift_request import ShiftRequest
         from sqlalchemy import or_
         today_date = get_ist_today()
 
-        # Check if there is an approved shift request for today
-        emp_ids = [employee.employee_id] if employee.employee_id else []
+        # Check if there is an approved shift or WFH request for today
+        emp_ids = []
+        if employee.employee_id:
+            emp_ids.append(employee.employee_id)
+        if employee.id:
+            emp_ids.append(employee.id)
 
         approved_request = ShiftRequest.query.filter(
             ShiftRequest.employee_id.in_(emp_ids),
             ShiftRequest.status == "Approved",
             ShiftRequest.from_date <= today_date,
             ShiftRequest.to_date >= today_date
-        ).first()
+        ).order_by(ShiftRequest.created_at.desc()).first()
 
+        # Determine effective work mode for today:
+        # If manager approved a WFH request, allow check-in from home!
+        effective_work_mode = (employee.work_mode or "Office").strip()
         if approved_request:
-            shift_name = (approved_request.requested_shift or "").strip().lower()
+            if approved_request.requested_work_mode:
+                effective_work_mode = approved_request.requested_work_mode.strip()
+            elif (approved_request.request_type or "").strip().upper() == "WFH":
+                effective_work_mode = "WFH"
+            elif (approved_request.request_type or "").strip().upper() == "OFFICE":
+                effective_work_mode = "Office"
 
+        if effective_work_mode.lower() == "office":
+            if not is_office_network(client_ip):
+                return jsonify({
+                    "success": False,
+                    "message": "Check-in is only allowed from the office network for employees in Office mode."
+                }), 400
+
+        if approved_request and approved_request.requested_shift:
+            shift_name = (approved_request.requested_shift or "").strip().lower()
         else:
             shift_name = (
                 employee.shift_timing or ""
@@ -356,6 +368,7 @@ def check_in():
                 "tea_minutes": attendance.tea_minutes or 0,
                 "shift": (approved_request.requested_shift if (approved_request and approved_request.requested_shift) else (attendance.shift_timing or employee.shift_timing or "General Shift")),
                 "manager_status": attendance.manager_status or "Pending",
+                "work_mode": effective_work_mode,
                 "checked_in": True,
                 "lunch_break": False,
                 "tea_break": False,
@@ -1447,6 +1460,49 @@ def attendance_history(user_id):
         LR.to_date >= start_date_val
     ).all()
 
+    from models.shift_request import ShiftRequest
+    emp_ids_filter = []
+    if employee.id:
+        try:
+            emp_ids_filter.append(int(employee.id))
+        except (ValueError, TypeError):
+            pass
+    if employee.employee_id:
+        try:
+            emp_ids_filter.append(int(employee.employee_id))
+        except (ValueError, TypeError):
+            pass
+
+    wfh_dates_set = set()
+    try:
+        wfh_query = ShiftRequest.query.filter(
+            ShiftRequest.employee_id.in_(emp_ids_filter),
+            ShiftRequest.status == "Approved"
+        )
+        all_shift_reqs = wfh_query.all()
+        for w in all_shift_reqs:
+            req_type = (w.request_type or "").strip().upper()
+            req_mode = (w.requested_work_mode or "").strip().upper()
+            if req_type == "WFH" or req_mode == "WFH":
+                w_from = w.from_date
+                w_to = w.to_date or w.from_date
+                if hasattr(w_from, "date"):
+                    w_from = w_from.date()
+                if hasattr(w_to, "date"):
+                    w_to = w_to.date()
+                if w_from and w_to:
+                    w_start = max(start_date_val, w_from)
+                    w_end = min(end_date, w_to)
+                    cur_w = w_start
+                    while cur_w <= w_end:
+                        wfh_dates_set.add(cur_w)
+                        cur_w += timedelta(days=1)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+    is_permanent_wfh = (getattr(employee, "work_mode", None) == "WFH")
+
     if end_date >= start_date_val:
         num_days = (end_date - start_date_val).days + 1
         for i in range(num_days):
@@ -1461,10 +1517,10 @@ def attendance_history(user_id):
                 attendance_date=current_date
             ).first()
 
-            # Check for One Day Wages request on this date (pick latest)
+            # Check for One Day Wages request covering this date (pick latest)
             from models.shift_request import ShiftRequest
             wages_req = ShiftRequest.query.filter(
-                ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
+                ShiftRequest.employee_id.in_(emp_ids_filter),
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.from_date <= current_date,
                 ShiftRequest.to_date >= current_date
@@ -1476,7 +1532,7 @@ def attendance_history(user_id):
             # Determine the effective shift for this date:
             # Priority: approved ShiftRequest covering date > record.shift_timing > employee.shift_timing
             approved_shift_req = ShiftRequest.query.filter(
-                ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
+                ShiftRequest.employee_id.in_(emp_ids_filter),
                 ShiftRequest.request_type == "Shift",
                 ShiftRequest.status == "Approved",
                 ShiftRequest.from_date <= current_date,
@@ -1691,6 +1747,8 @@ def attendance_history(user_id):
                     "leave_details": leave_details,
                     "is_holiday": rec_is_holiday,
                     "is_week_off": rec_is_weekoff,
+                    "is_wfh": (current_date in wfh_dates_set) or is_permanent_wfh,
+                    "is_wfh_day": (current_date in wfh_dates_set) or is_permanent_wfh,
                 })
 
             else:
@@ -1796,7 +1854,9 @@ def attendance_history(user_id):
                     "regularization_check_out": "-",
                     "regularization_total_hours": 0.0,
                     "is_holiday": status == "Holiday",
-                    "is_week_off": status == "Week Off"
+                    "is_week_off": status == "Week Off",
+                    "is_wfh": (current_date in wfh_dates_set) or is_permanent_wfh,
+                    "is_wfh_day": (current_date in wfh_dates_set) or is_permanent_wfh
                 })
 
     return jsonify(result)
@@ -3113,6 +3173,22 @@ def export_monthly_attendance():
 
         ws_bio = wb.create_sheet(title="Biometric")
 
+        def fmt_clock_hours(val):
+            try:
+                f_val = float(val or 0.0)
+            except (ValueError, TypeError):
+                return "0h"
+            if f_val <= 0:
+                return "0h"
+            total_minutes = int(round(f_val * 60))
+            h = total_minutes // 60
+            m = total_minutes % 60
+            if m == 0:
+                return f"{h}h"
+            if h == 0:
+                return f"{m}m"
+            return f"{h}h {m}m"
+
         # Fills & Fonts for Biometric Sheet
         bio_present_fill = PatternFill(fill_type="solid", fgColor="DCFCE7")  # Soft Green
         bio_late_fill = PatternFill(fill_type="solid", fgColor="FEF3C7")     # Soft Amber
@@ -3137,6 +3213,7 @@ def export_monthly_attendance():
         while cur_d <= effective_end_date:
             cycle_dates.append(cur_d)
             cur_d += timedelta(days=1)
+
 
         # Base header columns
         base_cols = ["S.No", "Emp Code", "Emp Name", "Department", "Designation", "Work Mode"]
@@ -3345,7 +3422,7 @@ def export_monthly_attendance():
                     if punch_in:
                         in_s = punch_in.strftime("%I:%M %p")
                         out_s = punch_out.strftime("%I:%M %p") if punch_out else "No Out"
-                        c.value = f"{in_s} - {out_s}\n[ODW / Present - {hours}h]"
+                        c.value = f"{in_s} - {out_s}\n[ODW / Present - {fmt_clock_hours(hours)}]"
                         c.font = bio_present_font
                         c.fill = bio_holiday_work_fill
                         total_present_count += 1
@@ -3371,19 +3448,19 @@ def export_monthly_attendance():
                         is_short_hours = (wfh_hours < 6.0)
 
                         if is_short_hours:
-                            c.value = f"{in_s} - {out_s}\n[WFH Absent (<6h) - {wfh_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[WFH Absent (<6h) - {fmt_clock_hours(wfh_hours)}]"
                             c.font = bio_absent_font
                             c.fill = bio_absent_fill
                             total_absent_count += 1
                         elif is_late:
-                            c.value = f"{in_s} - {out_s}\n[WFH Late - {wfh_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[WFH Late - {fmt_clock_hours(wfh_hours)}]"
                             c.font = bio_late_font
                             c.fill = bio_late_fill
                             total_late_count += 1
                             total_present_count += 1
                             total_wfh_count += 1
                         else:
-                            c.value = f"{in_s} - {out_s}\n[WFH Present - {wfh_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[WFH Present - {fmt_clock_hours(wfh_hours)}]"
                             c.font = bio_wfh_font
                             c.fill = bio_wfh_fill
                             total_present_count += 1
@@ -3402,18 +3479,18 @@ def export_monthly_attendance():
                         is_short_hours = (card_hours < 6.0)
 
                         if is_short_hours:
-                            c.value = f"{in_s} - {out_s}\n[Absent (<6h) - {card_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[Absent (<6h) - {fmt_clock_hours(card_hours)}]"
                             c.font = bio_absent_font
                             c.fill = bio_absent_fill
                             total_absent_count += 1
                         elif is_late:
-                            c.value = f"{in_s} - {out_s}\n[Late - {card_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[Late - {fmt_clock_hours(card_hours)}]"
                             c.font = bio_late_font
                             c.fill = bio_late_fill
                             total_late_count += 1
                             total_present_count += 1
                         else:
-                            c.value = f"{in_s} - {out_s}\n[Present - {card_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[Present - {fmt_clock_hours(card_hours)}]"
                             c.font = bio_present_font
                             c.fill = bio_present_fill
                             total_present_count += 1

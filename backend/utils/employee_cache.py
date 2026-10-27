@@ -98,7 +98,7 @@ def _deserialize(rows):
     return result
 
 
-def get_all_employees_cached():
+def get_all_employees_cached(force=False):
     """Read-only substitute for Employee.query.all(). Returns detached
     objects on a cache hit (SimpleNamespace, plain columns only) or real
     ORM instances on a cache miss/Redis-unavailable fallback - either way,
@@ -107,7 +107,7 @@ def get_all_employees_cached():
     from models.employee import Employee
 
     client = _get_redis()
-    if client is not None:
+    if client is not None and not force:
         try:
             cached = client.get(CACHE_KEY)
             if cached:
@@ -132,5 +132,6 @@ def invalidate_employee_cache():
         return
     try:
         client.delete(CACHE_KEY)
+        client.delete("peoplehub:api:employees:active:v2")
     except Exception:
         pass
