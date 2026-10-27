@@ -1503,18 +1503,6 @@ def attendance_history(user_id):
 
     is_permanent_wfh = (getattr(employee, "work_mode", None) == "WFH")
 
-    extra_3hr_claim = ShiftRequest.query.filter(
-        ShiftRequest.employee_id.in_(emp_ids_filter),
-        ShiftRequest.request_type == "One Day Wages",
-        ShiftRequest.cycle_start != None,
-        ShiftRequest.qualifying_dates != None,
-        ShiftRequest.from_date <= end_date,
-        ShiftRequest.to_date >= start_date_val
-    ).order_by(ShiftRequest.id.desc()).first()
-
-    cycle_extra_3hr_days = float(extra_3hr_claim.wages_days or 0.0) if extra_3hr_claim else 0.0
-    cycle_extra_3hr_status = extra_3hr_claim.status if extra_3hr_claim else None
-
     if end_date >= start_date_val:
         num_days = (end_date - start_date_val).days + 1
         for i in range(num_days):
@@ -1529,18 +1517,14 @@ def attendance_history(user_id):
                 attendance_date=current_date
             ).first()
 
-            # Check ONLY for full-day one day wages request on this date (working on weekend/holiday)
-            # Cycle-wide 12-hour work benefit claims are cycle-level, NOT a daily Wages: Pending on all dates
+            # Check for One Day Wages request covering this date (pick latest)
             from models.shift_request import ShiftRequest
-            full_day_wages_candidates = ShiftRequest.query.filter(
+            wages_req = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_(emp_ids_filter),
                 ShiftRequest.request_type == "One Day Wages",
-                ShiftRequest.cycle_start == None,
-                ShiftRequest.qualifying_dates == None,
                 ShiftRequest.from_date <= current_date,
                 ShiftRequest.to_date >= current_date
-            ).order_by(ShiftRequest.id.desc()).all()
-            wages_req = next((w for w in full_day_wages_candidates if w.applies_to_date(current_date)), None)
+            ).order_by(ShiftRequest.id.desc()).first()
             wages_status = wages_req.status if wages_req else None
             is_weekend_or_holiday = is_date_week_off(current_date) or (current_date in holiday_dict)
             is_one_day_wages = (wages_req is not None and wages_req.status == "Approved")
@@ -3189,6 +3173,22 @@ def export_monthly_attendance():
 
         ws_bio = wb.create_sheet(title="Biometric")
 
+        def fmt_clock_hours(val):
+            try:
+                f_val = float(val or 0.0)
+            except (ValueError, TypeError):
+                return "0h"
+            if f_val <= 0:
+                return "0h"
+            total_minutes = int(round(f_val * 60))
+            h = total_minutes // 60
+            m = total_minutes % 60
+            if m == 0:
+                return f"{h}h"
+            if h == 0:
+                return f"{m}m"
+            return f"{h}h {m}m"
+
         # Fills & Fonts for Biometric Sheet
         bio_present_fill = PatternFill(fill_type="solid", fgColor="DCFCE7")  # Soft Green
         bio_late_fill = PatternFill(fill_type="solid", fgColor="FEF3C7")     # Soft Amber
@@ -3213,6 +3213,7 @@ def export_monthly_attendance():
         while cur_d <= effective_end_date:
             cycle_dates.append(cur_d)
             cur_d += timedelta(days=1)
+
 
         # Base header columns
         base_cols = ["S.No", "Emp Code", "Emp Name", "Department", "Designation", "Work Mode"]
@@ -3421,7 +3422,7 @@ def export_monthly_attendance():
                     if punch_in:
                         in_s = punch_in.strftime("%I:%M %p")
                         out_s = punch_out.strftime("%I:%M %p") if punch_out else "No Out"
-                        c.value = f"{in_s} - {out_s}\n[ODW / Present - {hours}h]"
+                        c.value = f"{in_s} - {out_s}\n[ODW / Present - {fmt_clock_hours(hours)}]"
                         c.font = bio_present_font
                         c.fill = bio_holiday_work_fill
                         total_present_count += 1
@@ -3447,19 +3448,19 @@ def export_monthly_attendance():
                         is_short_hours = (wfh_hours < 6.0)
 
                         if is_short_hours:
-                            c.value = f"{in_s} - {out_s}\n[WFH Absent (<6h) - {wfh_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[WFH Absent (<6h) - {fmt_clock_hours(wfh_hours)}]"
                             c.font = bio_absent_font
                             c.fill = bio_absent_fill
                             total_absent_count += 1
                         elif is_late:
-                            c.value = f"{in_s} - {out_s}\n[WFH Late - {wfh_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[WFH Late - {fmt_clock_hours(wfh_hours)}]"
                             c.font = bio_late_font
                             c.fill = bio_late_fill
                             total_late_count += 1
                             total_present_count += 1
                             total_wfh_count += 1
                         else:
-                            c.value = f"{in_s} - {out_s}\n[WFH Present - {wfh_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[WFH Present - {fmt_clock_hours(wfh_hours)}]"
                             c.font = bio_wfh_font
                             c.fill = bio_wfh_fill
                             total_present_count += 1
@@ -3478,18 +3479,18 @@ def export_monthly_attendance():
                         is_short_hours = (card_hours < 6.0)
 
                         if is_short_hours:
-                            c.value = f"{in_s} - {out_s}\n[Absent (<6h) - {card_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[Absent (<6h) - {fmt_clock_hours(card_hours)}]"
                             c.font = bio_absent_font
                             c.fill = bio_absent_fill
                             total_absent_count += 1
                         elif is_late:
-                            c.value = f"{in_s} - {out_s}\n[Late - {card_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[Late - {fmt_clock_hours(card_hours)}]"
                             c.font = bio_late_font
                             c.fill = bio_late_fill
                             total_late_count += 1
                             total_present_count += 1
                         else:
-                            c.value = f"{in_s} - {out_s}\n[Present - {card_hours}h]"
+                            c.value = f"{in_s} - {out_s}\n[Present - {fmt_clock_hours(card_hours)}]"
                             c.font = bio_present_font
                             c.fill = bio_present_fill
                             total_present_count += 1

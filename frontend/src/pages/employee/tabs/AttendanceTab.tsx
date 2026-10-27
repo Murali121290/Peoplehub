@@ -162,31 +162,18 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
    * The cycle for month M covers the 25th of (M-1) through the 24th of M.
    * During the 2-day grace window after the 24th we still remain on month M
    * so employees can still correct records before the new month's payroll opens.
-   * We pass an empty schedule here for the initial render; once the schedule
-   * is fetched the isResolvablePayrollDate function uses the real schedule.
+   * On or after the 25th, the cycle is for the following month (e.g. Oct 25 - Nov 24 is November cycle).
    */
   const getInitialPayrollMonth = () => {
     const d = today.getDate();
     const m = today.getMonth() + 1; // 1-indexed
-    const y = today.getFullYear();
 
     if (d <= 24) {
-      // Normal: still inside current month's cycle
+      // Still inside current month's cycle (e.g., up to Oct 24 is October)
       return m;
     }
 
-    // On or after the 25th — check if we are still within the grace window
-    // (grace deadline computed with empty schedule since schedule not loaded yet)
-    const graceDeadline = computeGraceDeadline(y, m, []);
-    const graceDeadlineStr = `${graceDeadline.getFullYear()}-${String(graceDeadline.getMonth() + 1).padStart(2, "0")}-${String(graceDeadline.getDate()).padStart(2, "0")}`;
-    const todayStr = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-
-    if (todayStr <= graceDeadlineStr) {
-      // Still in grace period — stay on current month view so employee can correct
-      return m;
-    }
-
-    // Grace period over — advance to next payroll month
+    // On or after the 25th: advance immediately to next payroll month (e.g., Oct 25+ is November)
     const next = m + 1;
     return next === 13 ? 1 : next;
   };
@@ -198,13 +185,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
     if (d <= 24) return y;
 
-    const graceDeadline = computeGraceDeadline(y, m, []);
-    const graceDeadlineStr = `${graceDeadline.getFullYear()}-${String(graceDeadline.getMonth() + 1).padStart(2, "0")}-${String(graceDeadline.getDate()).padStart(2, "0")}`;
-    const todayStr = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-
-    if (todayStr <= graceDeadlineStr) return y;
-
-    // Advance year only if we were in December
+    // Advance year only if we were in December on or after the 25th
     return m === 12 ? y + 1 : y;
   };
 
@@ -217,21 +198,23 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   /**
    * Determines if a given attendance date can still be resolved/corrected.
    * Rules:
-   *  1. Any date inside the currently viewed payroll month is always resolvable.
-   *  2. For a *previous* payroll month: the 24th (cutoff day) of that month is
+   *  1. Any date inside the currently viewed payroll month is always resolvable (if within current cycle up to today).
+   *  2. For the *previous* payroll month: any date in that cycle (e.g. Sept 25 - Oct 24) is
    *     still resolvable if today falls within the 2-working-day grace window
-   *     that starts on the 25th (skipping weekends and public holidays).
+   *     that starts on the 25th of the cutoff month (skipping weekends and public holidays).
    */
   const isResolvablePayrollDate = (dateStr: string) => {
     if (isCurrentPayrollMonthView) return true;
 
-    const [y, m, d] = dateStr.split("-").map(Number);
+    // Check if the selected month is immediately preceding the current payroll month
+    const isPrevPayrollMonth =
+      (currentPayrollMonth === 1 && selectedMonth === 12 && selectedYear === currentPayrollYear - 1) ||
+      (selectedMonth === currentPayrollMonth - 1 && selectedYear === currentPayrollYear);
 
-    // Only the 24th of the closed month can be corrected during grace period
-    if (d !== 24) return false;
+    if (!isPrevPayrollMonth) return false;
 
-    // Compute the grace deadline using the actual loaded schedule
-    const graceDeadline = computeGraceDeadline(y, m, monthlySchedule);
+    // Compute the grace deadline from the 25th of the previous month's cutoff
+    const graceDeadline = computeGraceDeadline(selectedYear, selectedMonth, monthlySchedule);
     const graceDeadlineStr = `${graceDeadline.getFullYear()}-${String(graceDeadline.getMonth() + 1).padStart(2, "0")}-${String(graceDeadline.getDate()).padStart(2, "0")}`;
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
@@ -1194,35 +1177,21 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
 
       {/* Dynamic Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-3xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
         <StatCard icon={CheckCircleIcon} title="Present Days" value={totalPresentDays} subtitle="" trend="normal" color="green" />
         <StatCard icon={UserMinusIcon} title="Absent Days (LOP)" value={absentCount} subtitle="" trend="normal" color="red" />
         <StatCard icon={CalendarDaysIcon} title="Paid Leave" value={leaveCount} subtitle="" trend="normal" color="purple" />
       </div>
 
       {/* Main Content Card */}
-      <Card padding="none" className="border border-neutral-200 shadow-sm rounded-2xl bg-white">
-        {/* Toolbar Header */}
-        <div className="p-5 border-b border-neutral-200 bg-neutral-50/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 rounded-t-2xl">
+      <Card padding="none" className="border border-neutral-200/90 shadow-sm rounded-2xl bg-white">
+        {/* Toolbar Header - Fully Responsive */}
+        <div className="p-4 sm:p-5 border-b border-neutral-200 bg-neutral-50/60 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 sm:gap-4 rounded-t-2xl">
           {/* Left: Active Month Title */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold text-neutral-850">
-                {`${startDate.getDate()} ${startDate.toLocaleDateString("en-IN", { month: "short" })} - ${endDate.getDate()} ${endDate.toLocaleDateString("en-IN", { month: "short" })}, ${endDate.getFullYear()}`}
-              </h3>
-            </div>
-            {currentEmployee?.work_mode && (
-              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold shadow-3xs ${
-                currentEmployee.work_mode === "WFH" ? "bg-blue-100 text-blue-700 border-blue-200"
-                : currentEmployee.work_mode === "Hybrid" ? "bg-green-100 text-green-700 border-green-200"
-                : currentEmployee.work_mode === "PM" ? "bg-violet-100 text-violet-800 border-violet-300 font-bold"
-                : currentEmployee.work_mode === "Flexible" ? "bg-purple-100 text-purple-700 border-purple-200"
-                : "bg-neutral-100 text-neutral-600 border-neutral-200"
-              }`}>
-                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70 animate-pulse" />
-                Work Mode: {currentEmployee.work_mode}
-              </span>
-            )}
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            <h3 className="text-base sm:text-lg font-bold text-neutral-850 tracking-tight">
+              {`${startDate.getDate()} ${startDate.toLocaleDateString("en-IN", { month: "short" })} - ${endDate.getDate()} ${endDate.toLocaleDateString("en-IN", { month: "short" })}, ${endDate.getFullYear()}`}
+            </h3>
             {isLoading && (
               <span className="flex items-center text-xs text-neutral-400 gap-1">
                 <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> Syncing...
@@ -1231,56 +1200,58 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
           </div>
 
           {/* Right: Navigation Controls & Filters */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Refresh Button */}
-            <button
-              onClick={() => {
-                fetchMonthData();
-                window.dispatchEvent(new Event("refreshAttendance"));
-              }}
-              disabled={isLoading}
-              title="Refresh attendance records & work mode from database"
-              className="px-3 py-1.5 text-xs font-bold text-neutral-700 bg-white border border-neutral-200 rounded-xl hover:bg-neutral-50 shadow-xs transition-colors disabled:opacity-50 flex items-center gap-1.5"
-            >
-              <ArrowPathIcon className={`w-3.5 h-3.5 text-neutral-600 ${isLoading ? "animate-spin" : ""}`} />
-              <span>Refresh</span>
-            </button>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+            {/* Quick Actions */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  fetchMonthData();
+                  window.dispatchEvent(new Event("refreshAttendance"));
+                }}
+                disabled={isLoading}
+                title="Refresh attendance records & work mode from database"
+                className="px-3 py-1.5 text-xs font-bold text-neutral-700 bg-white border border-neutral-200 rounded-xl hover:bg-neutral-50 shadow-xs transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <ArrowPathIcon className={`w-3.5 h-3.5 text-neutral-600 ${isLoading ? "animate-spin" : ""}`} />
+                <span className="hidden sm:inline">Refresh</span>
+              </button>
 
-            {/* Today Button */}
-            <button
-              onClick={handleTodayClick}
-              className="px-3.5 py-1.5 text-xs font-bold text-neutral-700 bg-white border border-neutral-200 rounded-xl hover:bg-neutral-50 shadow-xs transition-colors"
-            >
-              Today
-            </button>
+              <button
+                onClick={handleTodayClick}
+                className="px-3 py-1.5 text-xs font-bold text-neutral-700 bg-white border border-neutral-200 rounded-xl hover:bg-neutral-50 shadow-xs transition-colors"
+              >
+                Today
+              </button>
+            </div>
 
-            {/* Month Selector */}
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
-            >
-              {MONTH_NAMES.map((mName, idx) => (
-                <option key={idx + 1} value={idx + 1}>{mName}</option>
-              ))}
-            </select>
+            {/* Month & Year Pickers */}
+            <div className="flex items-center gap-1.5">
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="bg-white border border-neutral-200 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs cursor-pointer"
+              >
+                {MONTH_NAMES.map((mName, idx) => (
+                  <option key={idx + 1} value={idx + 1}>{mName}</option>
+                ))}
+              </select>
 
-            {/* Year Selector */}
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
-            >
-              {[today.getFullYear() - 1, today.getFullYear(), today.getFullYear() + 1].map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="bg-white border border-neutral-200 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs cursor-pointer"
+              >
+                {[today.getFullYear() - 1, today.getFullYear(), today.getFullYear() + 1].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
 
-            {/* Status Filter (for Grid view & highlighting) */}
+            {/* Status Filter */}
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
+              className="bg-white border border-neutral-200 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs cursor-pointer"
             >
               <option value="All">All Status</option>
               <option value="Present">🟢 Present</option>
@@ -1295,21 +1266,21 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             <div className="flex items-center bg-neutral-100 border border-neutral-200/60 p-1 rounded-xl text-xs font-bold shrink-0">
               <button
                 onClick={() => setViewMode("calendar")}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all ${viewMode === "calendar"
-                  ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${viewMode === "calendar"
+                  ? "bg-white text-primary-500 shadow-xs border border-neutral-200/80 font-extrabold"
                   : "text-neutral-600 hover:text-neutral-900"
                   }`}
               >
-                <CalendarIcon className="w-4 h-4" /> Calendar View
+                <CalendarIcon className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Calendar View</span><span className="sm:hidden">Calendar</span>
               </button>
               <button
                 onClick={() => setViewMode("grid")}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all ${viewMode === "grid"
-                  ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${viewMode === "grid"
+                  ? "bg-white text-primary-500 shadow-xs border border-neutral-200/80 font-extrabold"
                   : "text-neutral-600 hover:text-neutral-900"
                   }`}
               >
-                <ListBulletIcon className="w-4 h-4" /> Grid View
+                <ListBulletIcon className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Grid View</span><span className="sm:hidden">Grid</span>
               </button>
             </div>
           </div>
@@ -1324,9 +1295,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <span className="text-xs text-neutral-400">Fetching latest database records</span>
             </div>
           ) : (
-          <div className="p-5 max-w-[1000px] mx-auto space-y-4 relative z-10">
-            {/* 7-Column Weekday Header */}
-            <div className="grid grid-cols-7 gap-2 mb-2">
+          <div className="p-3 sm:p-5 w-full max-w-[1100px] mx-auto space-y-4 relative z-10 overflow-x-auto sm:overflow-visible">
+            <div className="min-w-[620px]">
+              {/* 7-Column Weekday Header */}
+              <div className="grid grid-cols-7 gap-2 mb-2">
               {WEEKDAYS.map((wd) => (
                 <div key={wd} className="py-2 text-center text-[12px] font-bold text-neutral-700 uppercase tracking-widest">
                   {wd}
@@ -1455,7 +1427,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${pClass.includes("emerald") ? "bg-emerald-500" : pClass.includes("teal") ? "bg-teal-500" : pClass.includes("rose") ? "bg-rose-500" : pClass.includes("amber") ? "bg-amber-500" : pClass.includes("blue") ? "bg-blue-500" : pClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
                               <span className="truncate">
                                 {displayText}
-                                {idx === 0 && cell.wagesStatus && " (Wages)"}
+                                {idx === 0 && cell.wagesStatus && (cell.isWeeklyOff || cell.isCompanyHoliday || cell.status === "Weekly Off" || cell.status === "Holiday") && " (Wages)"}
                               </span>
                             </div>
                           );
@@ -1469,19 +1441,44 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     )}
 
                     {/* Advanced Light Theme Hover Card Tooltip */}
-                    {cell.status !== "Future" && (
-                      <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 scale-95 group-hover:scale-100 absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 w-64 bg-white text-neutral-800 rounded-2xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-neutral-200 z-[100]">
-                        {/* Tooltip Tail */}
-                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white rotate-45 border-r border-b border-neutral-200" />
+                    {cell.status !== "Future" && (() => {
+                      const isTopRow = idx < 7;
+                      const colIdx = idx % 7;
+                      const horizontalPos = colIdx === 0
+                        ? "left-0 translate-x-0"
+                        : colIdx === 6
+                        ? "right-0 translate-x-0"
+                        : "left-1/2 -translate-x-1/2";
+                      const tailHorizontalPos = colIdx === 0
+                        ? "left-6 -translate-x-1/2"
+                        : colIdx === 6
+                        ? "right-6 translate-x-1/2"
+                        : "left-1/2 -translate-x-1/2";
 
-                        {/* Header */}
-                        <div className="flex items-center justify-between pb-3 border-b border-neutral-100 mb-3">
-                          <div>
-                            <h5 className="text-[13px] font-extrabold text-neutral-800">
-                              {parseInt(cell.dateStr.split('-')[2])} {MONTH_NAMES[parseInt(cell.dateStr.split('-')[1]) - 1]} {cell.dateStr.split('-')[0]}
-                            </h5>
-                            <p className="text-[10px] text-neutral-500 font-semibold uppercase tracking-wider mt-0.5">{cell.fullDayName}</p>
-                          </div>
+                      return (
+                        <div
+                          className={`pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 scale-95 group-hover:scale-100 absolute w-64 bg-white text-neutral-800 rounded-2xl p-4 shadow-[0_12px_36px_rgba(0,0,0,0.18)] border border-neutral-200 z-[100] ${
+                            isTopRow
+                              ? `top-[calc(100%+8px)] ${horizontalPos}`
+                              : `bottom-[calc(100%+8px)] ${horizontalPos}`
+                          }`}
+                        >
+                          {/* Tooltip Tail */}
+                          {isTopRow ? (
+                            <div className={`absolute -top-2 ${tailHorizontalPos} w-3.5 h-3.5 bg-white rotate-45 border-l border-t border-neutral-200`} />
+                          ) : (
+                            <div className={`absolute -bottom-2 ${tailHorizontalPos} w-3.5 h-3.5 bg-white rotate-45 border-r border-b border-neutral-200`} />
+                          )}
+
+                          {/* Header */}
+                          <div className="flex items-center justify-between pb-3 border-b border-neutral-100 mb-3">
+                            <div>
+                              <h5 className="text-[13px] font-extrabold text-neutral-800">
+                                {parseInt(cell.dateStr.split('-')[2])} {MONTH_NAMES[parseInt(cell.dateStr.split('-')[1]) - 1]} {cell.dateStr.split('-')[0]}
+                              </h5>
+                              <p className="text-[10px] text-neutral-500 font-semibold uppercase tracking-wider mt-0.5">{cell.fullDayName}</p>
+                            </div>
+
                           <div className="flex flex-col gap-1 items-end">
                             {(cell.badgeLabel || cell.status).split(" & ").map((part, idx) => {
                               let pClass = badgeClass;
@@ -1493,7 +1490,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               return (
                                 <span key={idx} className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg ${pClass}`}>
                                   {part}
-                                  {idx === 0 && cell.wagesStatus && " (Wages)"}
+                                  {idx === 0 && cell.wagesStatus && (cell.isWeeklyOff || cell.isCompanyHoliday || cell.status === "Weekly Off" || cell.status === "Holiday") && " (Wages)"}
                                 </span>
                               );
                             })}
@@ -1506,7 +1503,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         </div>
 
                         {/* Details Breakdown */}
-                        {cell.wagesStatus && (
+                        {cell.wagesStatus && (cell.isWeeklyOff || cell.isCompanyHoliday || cell.status === "Weekly Off" || cell.status === "Holiday") && (
                           <div className="space-y-1 bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-amber-700 mb-3">
                             <span className="text-[9px] uppercase font-bold text-amber-500 block">One Day Wages</span>
                             <p className="font-extrabold text-[12px]">
@@ -1753,7 +1750,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           </div>
                         )}
                       </div>
-                    )}
+                    );})()}
                   </div>
                 );
               })}
@@ -1770,11 +1767,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-white border-2 border-primary-500"></div> Today</span>
             </div>
           </div>
+        </div>
           )
         ) : (
           /* Mode 2: Grid View */
-          <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto overflow-y-auto max-h-[600px] scrollbar-thin scrollbar-thumb-neutral-300">
+            <table className="w-full text-left border-collapse min-w-[1050px]">
               <thead className="sticky top-0 z-20 bg-white shadow-xs">
                 {/* Group Headers */}
                 <tr className="border-b border-neutral-300 text-neutral-500 text-[10px] font-extrabold uppercase tracking-widest bg-neutral-50/40">
@@ -2029,7 +2027,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               ℹ️ 15m Grace
                             </span>
                           )}
-                          {dayObj.wagesStatus && (
+                          {dayObj.wagesStatus && (dayObj.isWeeklyOff || dayObj.isCompanyHoliday || dayObj.status === "Weekly Off" || dayObj.status === "Holiday") && (
                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold border ${dayObj.wagesStatus === "Approved"
                               ? "bg-amber-50 text-amber-700 border-amber-200"
                               : "bg-neutral-50 text-neutral-600 border-neutral-200"

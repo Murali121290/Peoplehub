@@ -1750,6 +1750,24 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
                   </div>
                 </>
               )}
+              {(profile.work_mode || user.work_mode) && (
+                <>
+                  <span className="hidden sm:inline text-neutral-200">|</span>
+                  <div className="flex items-center gap-1">
+                    <span className="font-semibold text-neutral-400">Work Mode:</span>
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border shadow-3xs ${
+                      (profile.work_mode || user.work_mode) === "WFH" ? "bg-blue-100 text-blue-700 border-blue-200"
+                      : (profile.work_mode || user.work_mode) === "Hybrid" ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                      : (profile.work_mode || user.work_mode) === "PM" ? "bg-violet-100 text-violet-800 border-violet-300 font-bold"
+                      : (profile.work_mode || user.work_mode) === "Flexible" ? "bg-purple-100 text-purple-700 border-purple-200"
+                      : "bg-neutral-100 text-neutral-600 border-neutral-200"
+                    }`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-75 animate-pulse" />
+                      {profile.work_mode || user.work_mode}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
