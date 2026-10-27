@@ -609,6 +609,7 @@ def calculate_attendance_status(attendance):
             from models.leave import LeaveRequest
             from sqlalchemy import or_ as sql_or
 
+            total_perm_hours = 0.0
             emp = None
             if att_user_id:
                 emp = Employee.query.filter_by(user_id=att_user_id).first()
@@ -629,6 +630,7 @@ def calculate_attendance_status(attendance):
                         f_sec = f_time.hour * 3600 + f_time.minute * 60 + getattr(f_time, 'second', 0)
                         t_sec = t_time.hour * 3600 + t_time.minute * 60 + getattr(t_time, 'second', 0)
                         permission_hours = max(t_sec - f_sec, 0) / 3600.0
+                        total_perm_hours += permission_hours
                         status_calc_hours += permission_hours
         except Exception as e:
             print("Error calculating permission hours in attendance status:", e)
@@ -735,6 +737,27 @@ def calculate_attendance_status(attendance):
             if hasattr(attendance, 'used_weekly_grace'):
                 attendance.used_weekly_grace = False
             attendance.status = "Present"
+
+    # 3. PM Mode Biometric Priority Rule:
+    # In PM WFO mode, biometric is strictly preferred.
+    # If card check-in exists, base status primarily on effective biometric hours (card hours + approved permissions).
+    try:
+        emp_work_mode = (emp.work_mode or "Office").strip().upper() if emp and hasattr(emp, 'work_mode') else "OFFICE"
+        rec_work_mode = (getattr(attendance, 'work_mode', None) or "").strip().upper()
+        is_pm_emp = (emp_work_mode == "PM") or (rec_work_mode == "PM")
+        is_pm_wfh = is_pm_emp and (rec_work_mode == "WFH")
+
+        if is_pm_emp and not is_pm_wfh and attendance.status in ("Present", "Half Day"):
+            card_hrs_val = attendance.card_working_hours or 0.0
+            perm_hrs_val = locals().get('total_perm_hours', 0.0)
+            if attendance.card_check_in or card_hrs_val > 0:
+                effective_card_hours = card_hrs_val + perm_hrs_val
+                if effective_card_hours < 6.0:
+                    attendance.status = "Half Day"
+                else:
+                    attendance.status = "Present"
+    except Exception as e:
+        print("Error evaluating PM mode biometric status in calculate_attendance_status:", e)
 
 
 def sync_biometric_to_web_entry(attendance):
@@ -5211,17 +5234,8 @@ def upload_attendance_excel():
                 else:
                     attendance.card_working_hours = 0.0
                     
-                # Recalculate Status
-                web_hrs = attendance.total_hours or 0.0
-                card_hrs = attendance.card_working_hours or 0.0
-                max_hrs = max(web_hrs, card_hrs)
-                
-                if max_hrs < 4.0:
-                    attendance.status = "Absent"
-                elif max_hrs < 8.0:
-                    attendance.status = "Half Day"
-                else:
-                    attendance.status = "Present"
+                # Recalculate Status using standard engine (respecting PM Mode rules)
+                calculate_attendance_status(attendance)
                     
                 processed_count += 1
                 
@@ -5374,6 +5388,13 @@ def update_attendance_record():
             attendance.total_break_minutes = lunch_minutes + tea_minutes
             attendance.manager_status = "Approved"
 
+        # Calculate card working hours first so status calculation knows biometric hours
+        if attendance.card_check_in and attendance.card_check_out:
+            diff_seconds = (attendance.card_check_out - attendance.card_check_in).total_seconds()
+            attendance.card_working_hours = max(0.0, round(diff_seconds / 3600.0, 2))
+        else:
+            attendance.card_working_hours = 0.0
+
         # Calculate working hours if both check-in and check-out are present
         if attendance.check_in and attendance.check_out:
             diff_seconds = (attendance.check_out - attendance.check_in).total_seconds()
@@ -5392,12 +5413,6 @@ def update_attendance_record():
             attendance.total_hours = raw_total_hours
         else:
             calculate_attendance_status(attendance)
-
-        if attendance.card_check_in and attendance.card_check_out:
-            diff_seconds = (attendance.card_check_out - attendance.card_check_in).total_seconds()
-            attendance.card_working_hours = max(0.0, round(diff_seconds / 3600.0, 2))
-        else:
-            attendance.card_working_hours = 0.0
             
         db.session.commit()
         return jsonify({"success": True, "message": "Attendance record updated successfully"})

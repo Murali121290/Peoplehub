@@ -2178,22 +2178,36 @@ def get_reporting_employees(user_id):
                 if effective_pm_web_hours < pm_req_web_hours:
                     pm_web_hours_short = True
 
+                if pm_card_hours_short and (attendance.card_check_in or (attendance.card_working_hours or 0) > 0):
+                    status = "Half Day"
+                    if attendance and attendance.status != "Half Day":
+                        attendance.status = "Half Day"
+                        has_any_updates = True
+
                 if pm_card_checkin_late or pm_card_hours_short or pm_web_hours_short:
                     pm_rule_failed = True
 
-            # AUTO-APPROVE LOGIC (Don't show Present w/o short hours, or Leave Approved)
+            # AUTO-APPROVE LOGIC
             should_auto_approve = False
-            if status == "Leave" and leave and leave.status == "Approved":
-                should_auto_approve = True
-            elif status == "Half Day" and leave and leave.status == "Approved" and leave.total_days == 0.5:
-                should_auto_approve = True
-            elif is_pm_mode and pm_rule_failed:
-                # If any PM condition is missing/failed, DO NOT auto-approve
-                should_auto_approve = False
-            elif status == "Present" and not highlight_short_hours:
-                should_auto_approve = True
-            elif status == "Half Day" and not highlight_short_hours and leave and leave.status == "Approved" and leave.total_days == 0.5:
-                should_auto_approve = True
+            if is_pm_mode:
+                # PM Mode Auto-Approve strictly requires:
+                # 1. No PM rule failed
+                # 2. Card check-in exists and effective card hours >= 6.0
+                # 3. Web hours >= required (9h weekday / 8h weekend)
+                has_card_punch = bool(attendance and attendance.card_check_in)
+                if not pm_rule_failed and has_card_punch and effective_pm_card_hours >= 6.0 and effective_pm_web_hours >= pm_req_web_hours:
+                    should_auto_approve = True
+                else:
+                    should_auto_approve = False
+            else:
+                if status == "Leave" and leave and leave.status == "Approved":
+                    should_auto_approve = True
+                elif status == "Half Day" and leave and leave.status == "Approved" and leave.total_days == 0.5:
+                    should_auto_approve = True
+                elif status == "Present" and not highlight_short_hours:
+                    should_auto_approve = True
+                elif status == "Half Day" and not highlight_short_hours and leave and leave.status == "Approved" and leave.total_days == 0.5:
+                    should_auto_approve = True
 
             if should_auto_approve:
                 if attendance and (attendance.manager_status or "").strip().lower() in ("pending", ""):
