@@ -2179,16 +2179,18 @@ def get_reporting_employees(user_id):
                         print("Error parsing card_check_in time:", err)
                         pm_card_checkin_late = True
 
-                # 2. Biometric total hours >= 6.0 (approved permissions add directly to card hours in PM WFO)
+                # 2. Biometric total hours: >= 6.0 for full day, or >= 4.0 if on half-day leave
                 card_hours = (attendance.card_working_hours or 0.0) if attendance else 0.0
                 effective_pm_card_hours = card_hours + (permission_hours if not att_work_mode or att_work_mode.upper() != "WFH" else 0.0)
-                if effective_pm_card_hours < 6.0:
+                is_half_day_leave = bool(leave and (leave.total_days or 0) <= 0.5)
+                pm_req_card_hours = 4.0 if is_half_day_leave else 6.0
+                if effective_pm_card_hours < pm_req_card_hours:
                     pm_card_hours_short = True
 
-                # 3. Website check-in / working hours >= 8h weekend or 9h weekday
+                # 3. Website check-in / working hours >= 8h weekend or 9h weekday (or >= 4h if half day leave)
                 effective_pm_web_hours = working_hours_val
                 is_weekend = date_to_check.weekday() >= 5
-                pm_req_web_hours = 8.0 if is_weekend else 9.0
+                pm_req_web_hours = 4.0 if is_half_day_leave else (8.0 if is_weekend else 9.0)
                 if effective_pm_web_hours < pm_req_web_hours:
                     pm_web_hours_short = True
 

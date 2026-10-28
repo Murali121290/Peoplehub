@@ -3382,7 +3382,11 @@ const ManagerDashboardPage = () => {
                               }
 
                               const cardWorked = Number(record.cardWorkingHours) || Number(record.card_working_hours) || 0;
-                              const isCardHoursShort = cardWorked > 0 && cardWorked < 6.0;
+                              const permWorked = Number(record.permission_hours) || Number(record.permissionHours) || 0;
+                              const effectiveCardWorked = cardWorked + permWorked;
+                              const hasHalfLeave = (record.leave_details || []).some((l: any) => l.total_days != null && Number(l.total_days) <= 0.5);
+                              const reqCardLimit = hasHalfLeave ? 4.0 : 6.0;
+                              const isCardHoursShort = cardWorked > 0 && effectiveCardWorked < reqCardLimit;
 
                               return (
                                 <>
@@ -3406,7 +3410,7 @@ const ManagerDashboardPage = () => {
                                       <div style={{ marginTop: "4px", display: "flex", justifyContent: "center" }}>
                                         <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 700, color: "#991b1b", background: "#fee2e2", border: "1px solid #fecaca", whiteSpace: "nowrap" }}>
                                           <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: "#ef4444" }} />
-                                          &lt; 6 hrs
+                                          &lt; {reqCardLimit} hrs
                                         </span>
                                       </div>
                                     )}

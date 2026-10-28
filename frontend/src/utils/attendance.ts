@@ -7,14 +7,15 @@ export const isHalfDayPresent = (
   const effectiveHours = totalHours + (permissionHours || 0);
   const effectiveCardHours = cardHours + (permissionHours || 0);
 
-  // In PM mode, if biometric card entry exists, card hours have top priority (>= 6.0 hours is Present)
+  // In PM mode, if biometric card entry exists:
+  // For a half-day shift, >= 4.0 hours (card hours + permission) is Half Day Present!
   if (isPmMode && cardHours > 0) {
-    if (Math.round(effectiveCardHours * 60) >= 360) {
+    if (Math.round(effectiveCardHours * 60) >= 240) {
       return true;
     }
   }
 
-  // Standard or fallback rule: >= 4.0 hours (240 min) is Half Day Present
+  // Standard web check-in rule: >= 4.0 hours (240 min) is Half Day Present
   return Math.round(effectiveHours * 60) >= 240;
 };
 
