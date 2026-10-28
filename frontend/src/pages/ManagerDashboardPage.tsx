@@ -384,13 +384,51 @@ const ManagerDashboardPage = () => {
       computedStatus = "Half Day";
     }
 
+    // PM Mode Priority: if employee is PM mode, check biometric card entry first:
+    // 1. If card entry exists:
+    //    - If card hours < 6.0 hrs -> "Half Day" (overrides web hours!)
+    //    - If card hours >= 6.0 hrs -> "Present"
+    // 2. If NO card entry exists:
+    //    - Fall back to web site entry hours calculation (effectiveHours >= reqHours -> Present, etc.)
+    const isPmEmployee = Boolean(
+      historyModalUser?.is_pm_mode ||
+      (historyModalUser?.work_mode || "").trim().toUpperCase() === "PM" ||
+      editingRecord?.is_pm_mode ||
+      (editingRecord?.work_mode || "").trim().toUpperCase() === "PM"
+    );
+
+    if (isPmEmployee) {
+      const cardInStr = editForm.cardCheckIn;
+      const cardOutStr = editForm.cardCheckOut;
+      const hasCardTimes = Boolean(
+        cardInStr && cardOutStr &&
+        cardInStr.trim() !== "" && cardInStr !== "-" && cardInStr !== "—" &&
+        cardOutStr.trim() !== "" && cardOutStr !== "-" && cardOutStr !== "—"
+      );
+
+      if (hasCardTimes) {
+        const [cInH, cInM] = cardInStr.split(":").map(Number);
+        const [cOutH, cOutM] = cardOutStr.split(":").map(Number);
+        if (!isNaN(cInH) && !isNaN(cInM) && !isNaN(cOutH) && !isNaN(cOutM)) {
+          let cardDiffMin = (cOutH * 60 + cOutM) - (cInH * 60 + cInM);
+          if (cardDiffMin < 0) cardDiffMin += 24 * 60;
+          const cardHours = cardDiffMin / 60.0;
+          if (cardHours < 6.0) {
+            computedStatus = "Half Day";
+          } else {
+            computedStatus = "Present";
+          }
+        }
+      }
+    }
+
     setEditForm(prev => {
       if (prev.status !== computedStatus) {
         return { ...prev, status: computedStatus };
       }
       return prev;
     });
-  }, [editForm.checkIn, editForm.checkOut, editForm.lunchMinutes, editForm.teaMinutes, editForm.addedMinutes, editingRecord]);
+  }, [editForm.checkIn, editForm.checkOut, editForm.lunchMinutes, editForm.teaMinutes, editForm.addedMinutes, editForm.cardCheckIn, editForm.cardCheckOut, editingRecord, historyModalUser]);
 
   const convertTo24Hour = (time12: string) => {
     if (!time12 || time12 === "-" || time12 === "—") return "";

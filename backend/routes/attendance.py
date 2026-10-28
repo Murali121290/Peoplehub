@@ -1821,6 +1821,8 @@ def attendance_history(user_id):
                     "is_week_off": rec_is_weekoff,
                     "is_wfh": (current_date in wfh_dates_set) or is_permanent_wfh,
                     "is_wfh_day": (current_date in wfh_dates_set) or is_permanent_wfh,
+                    "work_mode": getattr(employee, "work_mode", "") or "",
+                    "is_pm_mode": bool((getattr(employee, "work_mode", "") or "").upper() == "PM"),
                 })
 
             else:
