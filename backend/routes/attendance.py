@@ -3045,7 +3045,7 @@ def export_monthly_attendance():
                             is_half_present = False
                             if att and has_punches:
                                 if emp_work_mode == "PM" and (att.card_check_in or card_hrs > 0):
-                                    is_half_present = (effective_card_hrs >= 4.0) or (effective_worked_hrs >= 4.0)
+                                    is_half_present = (effective_card_hrs >= 4.0)
                                 else:
                                     is_half_present = (effective_worked_hrs >= 4.0)
 
