@@ -2138,8 +2138,13 @@ def get_reporting_employees(user_id):
             att_work_mode = getattr(attendance, "work_mode", None)
             if att_work_mode:
                 effective_work_mode = att_work_mode.strip()
-            
-            is_pm_mode = effective_work_mode.upper() == "PM"
+
+            # is_pm_mode: True if EITHER the employee's base work_mode is PM
+            # OR the attendance record's work_mode is PM.
+            # We always use employee.work_mode as the source of truth for PM rules
+            # so that a missing/null attendance.work_mode cannot bypass PM biometric requirements.
+            is_employee_pm_mode = bool(employee and (employee.work_mode or "").strip().upper() == "PM")
+            is_pm_mode = effective_work_mode.upper() == "PM" or is_employee_pm_mode
             pm_card_checkin_late = False
             pm_card_hours_short = False
             pm_web_hours_short = False
@@ -2190,16 +2195,25 @@ def get_reporting_employees(user_id):
             # AUTO-APPROVE LOGIC
             should_auto_approve = False
             if is_pm_mode:
-                # PM Mode Auto-Approve strictly requires:
-                # 1. No PM rule failed
-                # 2. Card check-in exists and effective card hours >= 6.0
-                # 3. Web hours >= required (9h weekday / 8h weekend)
+                # PM Mode Auto-Approve strictly requires ALL of:
+                # 1. No PM rule failed (no late biometric, no short card hours, no short web hours)
+                # 2. Biometric Card check-in must exist (card_check_in is NOT empty)
+                # 3. Effective card working hours >= 6.0
+                # 4. Web/portal working hours >= required (9h weekday / 8h weekend)
+                # If biometric card entry is empty for a PM employee -> NEVER auto-approve.
                 has_card_punch = bool(attendance and attendance.card_check_in)
-                if not pm_rule_failed and has_card_punch and effective_pm_card_hours >= 6.0 and effective_pm_web_hours >= pm_req_web_hours:
+                if (
+                    not pm_rule_failed
+                    and has_card_punch
+                    and effective_pm_card_hours >= 6.0
+                    and effective_pm_web_hours >= pm_req_web_hours
+                ):
                     should_auto_approve = True
                 else:
+                    # Missing biometric or any PM rule violation -> block auto-approve
                     should_auto_approve = False
             else:
+                # Standard mode auto-approve (only for non-PM employees)
                 if status == "Leave" and leave and leave.status == "Approved":
                     should_auto_approve = True
                 elif status == "Half Day" and leave and leave.status == "Approved" and leave.total_days == 0.5:
