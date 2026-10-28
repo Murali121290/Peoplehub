@@ -3058,6 +3058,14 @@ const ManagerDashboardPage = () => {
                     <tbody style={{ fontSize: "12px", color: THEME.text, fontWeight: 500 }}>
                       {historyRecords.map((record) => {
                         const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                        const isPmRec = Boolean(
+                          record.is_pm_mode ||
+                          (record.work_mode || "").trim().toUpperCase() === "PM" ||
+                          (historyModalUser as any)?.is_pm_mode ||
+                          ((historyModalUser as any)?.work_mode || "").trim().toUpperCase() === "PM"
+                        );
+                        const cardHrsRec = record.card_working_hours != null ? Number(record.card_working_hours) : (record.cardWorkingHours != null ? Number(record.cardWorkingHours) : 0);
+
                         const badgeStr = computeAttendanceBadgeLabel(
                           record.status || "Absent",
                           record.gross_hours || record.total_hours || record.working_hours || 0,
@@ -3066,7 +3074,9 @@ const ManagerDashboardPage = () => {
                           todayStr,
                           record.date > todayStr,
                           record.is_one_day_wages || false,
-                          record.permission_hours || 0
+                          record.permission_hours || 0,
+                          cardHrsRec,
+                          isPmRec
                         );
 
                         // Format date nicely
