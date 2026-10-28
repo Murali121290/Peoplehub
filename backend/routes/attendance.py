@@ -652,32 +652,35 @@ def calculate_attendance_status(attendance):
         attendance.status = "Absent"
         return
 
-    # Check for approved half-day leave on this attendance date
-    is_half_day_leave = False
+    # Check for approved leaves on this attendance date
     if (att_user_id or att_emp_id) and attendance.attendance_date:
         try:
             from models.leave import LeaveRequest
 
-            half_leave_filters = [
+            leave_filters = [
                 LeaveRequest.request_type == "Leave",
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= attendance.attendance_date,
-                LeaveRequest.to_date >= attendance.attendance_date,
-                LeaveRequest.total_days <= 0.5
+                LeaveRequest.to_date >= attendance.attendance_date
             ]
             if emp_code_str:
-                half_leave_filters.append(LeaveRequest.employee_id == emp_code_str)
+                leave_filters.append(LeaveRequest.employee_id == emp_code_str)
 
-            half_leave = LeaveRequest.query.filter(*half_leave_filters).first()
-            if half_leave:
-                is_half_day_leave = True
+            day_approved_leaves = LeaveRequest.query.filter(*leave_filters).all()
+            if day_approved_leaves:
+                total_leave_days = sum(l.total_days or 0.0 for l in day_approved_leaves)
+                if total_leave_days >= 1.0:
+                    # Full day covered by approved leave(s) (e.g. 1 full day OR First Half + Second Half)
+                    attendance.status = "Leave"
+                    attendance.leave_type = day_approved_leaves[0].leave_type
+                    return
+                elif total_leave_days > 0.0:
+                    # Single half day leave
+                    attendance.status = "Half Day"
+                    attendance.leave_type = day_approved_leaves[0].leave_type
+                    return
         except Exception as e:
-            print("Error checking half day leave in calculate_attendance_status:", e)
-
-    if is_half_day_leave:
-        # If half-day leave is applied, always mark as "Half Day" (don't upgrade to "Present")
-        attendance.status = "Half Day"
-        return
+            print("Error checking approved leaves in calculate_attendance_status:", e)
 
     if status_calc_hours < 4.0:
         attendance.status = "Absent"
@@ -2879,6 +2882,15 @@ def export_monthly_attendance():
                 ShiftRequest.to_date >= start_date
             ).all()
 
+            # Map approved permissions for this employee within the period
+            emp_permissions = LeaveRequest.query.filter(
+                LeaveRequest.employee_id.in_(valid_emp_ids),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.request_type == "Permission",
+                LeaveRequest.permission_date <= effective_end_date,
+                LeaveRequest.permission_date >= start_date
+            ).all()
+
             emp_effective_end = effective_end_date
             if employee.is_active is False and employee.last_working_date:
                 lwd = employee.last_working_date.date() if isinstance(employee.last_working_date, datetime) else employee.last_working_date
@@ -2992,27 +3004,52 @@ def export_monthly_attendance():
                     effective_status = att.status if att else None
                     if total_day_leave_val > 0.0:
                         # Prioritize approved leave(s)
+                        # If total leaves on this day equal 1.0 (e.g. First Half + Second Half), mark is_day_half as False
+                        is_day_half = (total_day_leave_val < 1.0)
                         for item in day_leave_breakdown:
                             item_val = item["val"]
-                            is_half = item["is_half"]
+                            item_is_half = is_day_half if total_day_leave_val >= 1.0 else item["is_half"]
                             if item["is_lop"]:
                                 lop_leave_taken += item_val
-                                if (d, is_half) not in lop_dates:
-                                    lop_dates.append((d, is_half))
+                                if (d, item_is_half) not in lop_dates:
+                                    lop_dates.append((d, item_is_half))
                             elif item["is_cl_sl"]:
                                 cl_sl_taken += item_val
-                                if (d, is_half) not in leave_dates:
-                                    leave_dates.append((d, is_half))
+                                if (d, item_is_half) not in leave_dates:
+                                    leave_dates.append((d, item_is_half))
                             elif item["is_pl"]:
                                 pl_taken += item_val
-                                if (d, is_half) not in leave_dates:
-                                    leave_dates.append((d, is_half))
+                                if (d, item_is_half) not in leave_dates:
+                                    leave_dates.append((d, item_is_half))
                         
                         # Process remaining day portion with attendance
                         remaining_day = max(0.0, 1.0 - total_day_leave_val)
                         if remaining_day > 0.0:
+                            worked_hrs = (getattr(att, "total_hours", 0.0) or 0.0) if att else 0.0
+                            # Calculate any approved permission hours for this date
+                            day_perm_hrs = 0.0
+                            for p in emp_permissions:
+                                if p.permission_date == d and p.from_time and p.to_time:
+                                    f_sec = p.from_time.hour * 3600 + p.from_time.minute * 60 + getattr(p.from_time, 'second', 0)
+                                    t_sec = p.to_time.hour * 3600 + p.to_time.minute * 60 + getattr(p.to_time, 'second', 0)
+                                    day_perm_hrs += max(t_sec - f_sec, 0) / 3600.0
+
+                            effective_worked_hrs = worked_hrs + day_perm_hrs
+                            # For PM mode employee, check card hours if available
+                            emp_work_mode = (getattr(employee, "work_mode", None) or "").strip().upper()
+                            card_hrs = (getattr(att, "card_working_hours", 0.0) or 0.0) if att else 0.0
+                            effective_card_hrs = card_hrs + day_perm_hrs
                             has_punches = bool(att and (att.check_in or att.card_check_in or att.check_out or att.card_check_out))
-                            if att and (effective_status in ["Present", "Half Day", "Half Day Present"] or has_punches):
+                            
+                            # A half-day worked portion requires at least 4.0 hours (worked + permission) to be counted as present
+                            is_half_present = False
+                            if att and has_punches:
+                                if emp_work_mode == "PM" and (att.card_check_in or card_hrs > 0):
+                                    is_half_present = (effective_card_hrs >= 6.0) or (effective_worked_hrs >= 4.0)
+                                else:
+                                    is_half_present = (effective_worked_hrs >= 4.0)
+
+                            if is_half_present:
                                 total_working_days += remaining_day
                             else:
                                 unauthorized_absences += remaining_day

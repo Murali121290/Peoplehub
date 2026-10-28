@@ -2026,20 +2026,29 @@ def get_reporting_employees(user_id):
 
             from models.leave import LeaveRequest
             from sqlalchemy import or_ as sql_or
-            leave = LeaveRequest.query.filter(
+            day_leaves = LeaveRequest.query.filter(
                 LeaveRequest.employee_id == employee.employee_id,
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= date_to_check,
                 LeaveRequest.to_date >= date_to_check
-            ).first()
+            ).all()
+
+            leave = day_leaves[0] if day_leaves else None
+            total_leave_days = sum(l.total_days or 0.0 for l in day_leaves)
+            is_full_day_leave = (total_leave_days >= 1.0)
 
             status = "Absent"
             employee_category = "absent"
             total_hours = attendance.total_hours if attendance else 0.0
 
-            if attendance:
+            if is_full_day_leave:
+                status = "Leave"
+                employee_category = "leave"
+                if attendance and attendance.status != "Leave":
+                    attendance.status = "Leave"
+                    has_any_updates = True
+            elif attendance:
                 status = attendance.status
-
 
                 if status in ("Present", "Half Day"):
                     employee_category = "present"
@@ -2194,7 +2203,11 @@ def get_reporting_employees(user_id):
 
             # AUTO-APPROVE LOGIC
             should_auto_approve = False
-            if is_pm_mode:
+            if is_full_day_leave:
+                # Employee has approved full-day leave (1 full day OR both First Half + Second Half approved)
+                # Biometric is NOT expected on an approved full day leave -> Auto-approve!
+                should_auto_approve = True
+            elif is_pm_mode:
                 # PM Mode Auto-Approve strictly requires ALL of:
                 # 1. No PM rule failed (no late biometric, no short card hours, no short web hours)
                 # 2. Biometric Card check-in must exist (card_check_in is NOT empty)
@@ -2215,8 +2228,6 @@ def get_reporting_employees(user_id):
             else:
                 # Standard mode auto-approve (only for non-PM employees)
                 if status == "Leave" and leave and leave.status == "Approved":
-                    should_auto_approve = True
-                elif status == "Half Day" and leave and leave.status == "Approved" and leave.total_days == 0.5:
                     should_auto_approve = True
                 elif status == "Present" and not highlight_short_hours:
                     should_auto_approve = True
@@ -2386,7 +2397,17 @@ def get_reporting_employees(user_id):
                     is_one_day_wages_final,
 
                 "wages_status":
-                    wages_status
+                    wages_status,
+
+                "leave_details": [
+                    {
+                        "leave_type": l.leave_type,
+                        "reason": l.reason,
+                        "status": l.status,
+                        "total_days": l.total_days
+                    }
+                    for l in day_leaves
+                ]
             }
 
         for employee in reporting_list:

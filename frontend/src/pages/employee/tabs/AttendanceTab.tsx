@@ -969,8 +969,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         }
 
         let otherHalfStatusStr = "";
+        const isPmTab = Boolean(
+          (currentEmployee?.work_mode || "").trim().toUpperCase() === "PM" ||
+          (currentEmployee as any)?.is_pm_mode ||
+          (attRec?.work_mode || "").trim().toUpperCase() === "PM" ||
+          attRec?.is_pm_mode
+        );
         if (isHalfDay && dateStr <= todayKey && !isFuture) {
-          if (isHalfDayPresent(totalHours, permissionHours)) {
+          if (isHalfDayPresent(totalHours, permissionHours, cardWorkingHours, isPmTab)) {
             otherHalfStatusStr = "Half Day Present & ";
           } else {
             otherHalfStatusStr = "Half Day Absent & ";

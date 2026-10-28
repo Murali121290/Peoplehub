@@ -2749,6 +2749,11 @@ const ManagerDashboardPage = () => {
                                 <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" }}>
                                   {(() => {
                                     const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                                    const isPmMem = Boolean(
+                                      (member as any).is_pm_mode ||
+                                      ((member as any).work_mode || "").trim().toUpperCase() === "PM"
+                                    );
+                                    const cardHrsMem = (member as any).card_working_hours != null ? Number((member as any).card_working_hours) : 0;
                                     const badgeStr = computeAttendanceBadgeLabel(
                                       status,
                                       (member as any).gross_hours || 0,
@@ -2757,7 +2762,9 @@ const ManagerDashboardPage = () => {
                                       todayStr,
                                       false,
                                       false,
-                                      (member as any).permission_hours || 0
+                                      (member as any).permission_hours || 0,
+                                      cardHrsMem,
+                                      isPmMem
                                     );
                                     return badgeStr.split(" & ").map((part: string, idx: number) => {
                                       const s = part.toLowerCase();
