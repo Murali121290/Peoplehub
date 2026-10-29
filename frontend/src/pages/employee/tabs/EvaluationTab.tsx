@@ -6484,7 +6484,12 @@ export const EvaluationTab: React.FC = () => {
     }
 
     // 2. If current employee has no more pending milestones, check for another employee in Direct Reviews with pending reviews
-    const pendingOtherResp = (responses || []).find(r => {
+    // Strictly search within the logged-in manager's direct reports (or active scoped responses) rather than the entire global responses list
+    const candidatePool = (activeScopedResponsesForCards && activeScopedResponsesForCards.length > 0)
+      ? activeScopedResponsesForCards
+      : (responses || []).filter(isResponseUnderMyDirectReview);
+
+    const pendingOtherResp = candidatePool.find(r => {
       if (r.id === currentResp.id) return false;
       const rawSt = String(r.status || '').toLowerCase();
       const isDirectlyPending = rawSt === 'submitted_to_manager' || rawSt === 'submitted to manager' || rawSt === 'manager_review' || rawSt.includes('submitted');

@@ -92,14 +92,30 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
     return `${hours.toString().padStart(2, "0")}:${minutes.padStart(2, "0")}`;
   };
 
+  React.useEffect(() => {
+    if (activeItem) {
+      const cardIn = activeItem.card_check_in || activeItem.cardCheckIn;
+      const cardOut = activeItem.card_check_out || activeItem.cardCheckOut;
+      if (cardIn && cardIn !== "-" && cardIn !== "—") {
+        setCheckInTime(convertTo24h(cardIn));
+      }
+      if (cardOut && cardOut !== "-" && cardOut !== "—") {
+        setCheckOutTime(convertTo24h(cardOut));
+      }
+    }
+  }, [currentIndex, activeItem]);
+
   const isForgotCheckoutRequest = React.useMemo(() => {
     const hasCheckIn = !!checkIn && checkIn !== "—" && checkIn !== "-";
     const hasCheckOut = !!checkOut && checkOut !== "—" && checkOut !== "-";
     return hasCheckIn && !hasCheckOut;
   }, [checkIn, checkOut]);
 
-  // For absent days: show regularization/leave/lop options instead of generic comment
-  const isAbsentDay = status === "Absent";
+  // For absent days OR days with no web site entry (no check-in):
+  // Show resolution options ("I Was Present / Regularization", Apply Leave, Accept LOP)
+  // so the employee can provide their punch times instead of just a generic comment!
+  const hasNoWebCheckIn = !checkIn || checkIn === "—" || checkIn === "-";
+  const isAbsentDay = status === "Absent" || hasNoWebCheckIn;
 
   const handleResolve = async (mode: 'regularization' | 'leave' | 'lop') => {
     if (isSubmitting) return;
