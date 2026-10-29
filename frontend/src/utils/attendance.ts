@@ -1,5 +1,20 @@
-export const isHalfDayPresent = (totalHours: number, permissionHours: number = 0): boolean => {
+export const isHalfDayPresent = (
+  totalHours: number,
+  permissionHours: number = 0,
+  cardHours: number = 0,
+  isPmMode: boolean = false
+): boolean => {
   const effectiveHours = totalHours + (permissionHours || 0);
+  const effectiveCardHours = cardHours + (permissionHours || 0);
+
+  // In PM mode, if biometric card entry exists, Biometric Card Entry is STRICT FIRST PRIORITY:
+  // Card Hours + Permission >= 4.0 hours -> Half Day Present
+  // Card Hours + Permission < 4.0 hours  -> Half Day Absent (Web hours cannot override short biometric card!)
+  if (isPmMode && cardHours > 0) {
+    return Math.round(effectiveCardHours * 60) >= 240;
+  }
+
+  // Fallback / Standard web check-in rule (for non-PM or PM with NO card punch): >= 4.0 hours is Half Day Present
   return Math.round(effectiveHours * 60) >= 240;
 };
 
@@ -11,7 +26,9 @@ export const computeAttendanceBadgeLabel = (
   todayStr: string,
   isFuture: boolean,
   isOneDayWages: boolean = false,
-  permissionHours: number = 0
+  permissionHours: number = 0,
+  cardHours: number = 0,
+  isPmMode: boolean = false
 ): string => {
   if (leaveDetails && leaveDetails.length > 0 && !isOneDayWages) {
     if (leaveDetails.length === 2 && leaveDetails.every((l: any) => l.total_days != null && Number(l.total_days) <= 0.5)) {
@@ -41,7 +58,7 @@ export const computeAttendanceBadgeLabel = (
 
       let otherHalfStatusStr = "";
       if (isHalfDay && dateStr <= todayStr && !isFuture) {
-        if (isHalfDayPresent(totalHours, permissionHours)) {
+        if (isHalfDayPresent(totalHours, permissionHours, cardHours, isPmMode)) {
           otherHalfStatusStr = "Half Day Present & ";
         } else {
           otherHalfStatusStr = "Half Day Absent & ";

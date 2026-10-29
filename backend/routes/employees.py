@@ -2026,20 +2026,29 @@ def get_reporting_employees(user_id):
 
             from models.leave import LeaveRequest
             from sqlalchemy import or_ as sql_or
-            leave = LeaveRequest.query.filter(
+            day_leaves = LeaveRequest.query.filter(
                 LeaveRequest.employee_id == employee.employee_id,
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= date_to_check,
                 LeaveRequest.to_date >= date_to_check
-            ).first()
+            ).all()
+
+            leave = day_leaves[0] if day_leaves else None
+            total_leave_days = sum(l.total_days or 0.0 for l in day_leaves)
+            is_full_day_leave = (total_leave_days >= 1.0)
 
             status = "Absent"
             employee_category = "absent"
             total_hours = attendance.total_hours if attendance else 0.0
 
-            if attendance:
+            if is_full_day_leave:
+                status = "Leave"
+                employee_category = "leave"
+                if attendance and attendance.status != "Leave":
+                    attendance.status = "Leave"
+                    has_any_updates = True
+            elif attendance:
                 status = attendance.status
-
 
                 if status in ("Present", "Half Day"):
                     employee_category = "present"
@@ -2138,8 +2147,13 @@ def get_reporting_employees(user_id):
             att_work_mode = getattr(attendance, "work_mode", None)
             if att_work_mode:
                 effective_work_mode = att_work_mode.strip()
-            
-            is_pm_mode = effective_work_mode.upper() == "PM"
+
+            # is_pm_mode: True if EITHER the employee's base work_mode is PM
+            # OR the attendance record's work_mode is PM.
+            # We always use employee.work_mode as the source of truth for PM rules
+            # so that a missing/null attendance.work_mode cannot bypass PM biometric requirements.
+            is_employee_pm_mode = bool(employee and (employee.work_mode or "").strip().upper() == "PM")
+            is_pm_mode = effective_work_mode.upper() == "PM" or is_employee_pm_mode
             pm_card_checkin_late = False
             pm_card_hours_short = False
             pm_web_hours_short = False
@@ -2165,29 +2179,62 @@ def get_reporting_employees(user_id):
                         print("Error parsing card_check_in time:", err)
                         pm_card_checkin_late = True
 
-                # 2. Biometric total hours >= 6.0
+                # 2. Biometric total hours: >= 6.0 for full day, or >= 4.0 if on half-day leave
                 card_hours = (attendance.card_working_hours or 0.0) if attendance else 0.0
-                if card_hours < 6.0:
+                effective_pm_card_hours = card_hours + (permission_hours if not att_work_mode or att_work_mode.upper() != "WFH" else 0.0)
+                is_half_day_leave = bool(leave and (leave.total_days or 0) <= 0.5)
+                pm_req_card_hours = 4.0 if is_half_day_leave else 6.0
+                if effective_pm_card_hours < pm_req_card_hours:
                     pm_card_hours_short = True
 
-                # 3. Website check-in / working hours >= 9.0
-                if working_hours_val < 9.0:
+                # 3. Website check-in / working hours >= 8h weekend or 9h weekday (or >= 4h if half day leave)
+                effective_pm_web_hours = working_hours_val
+                is_weekend = date_to_check.weekday() >= 5
+                pm_req_web_hours = 4.0 if is_half_day_leave else (8.0 if is_weekend else 9.0)
+                if effective_pm_web_hours < pm_req_web_hours:
                     pm_web_hours_short = True
+
+                if pm_card_hours_short and (attendance.card_check_in or (attendance.card_working_hours or 0) > 0):
+                    status = "Half Day"
+                    if attendance and attendance.status != "Half Day":
+                        attendance.status = "Half Day"
+                        has_any_updates = True
 
                 if pm_card_checkin_late or pm_card_hours_short or pm_web_hours_short:
                     pm_rule_failed = True
 
-            # AUTO-APPROVE LOGIC (Don't show Present w/o short hours, or Leave Approved)
+            # AUTO-APPROVE LOGIC
             should_auto_approve = False
-            if is_pm_mode and pm_rule_failed:
-                # If any PM condition is missing/failed, DO NOT auto-approve
-                should_auto_approve = False
-            elif status == "Present" and not highlight_short_hours:
+            if is_full_day_leave:
+                # Employee has approved full-day leave (1 full day OR both First Half + Second Half approved)
+                # Biometric is NOT expected on an approved full day leave -> Auto-approve!
                 should_auto_approve = True
-            elif status == "Leave" and leave and leave.status == "Approved":
-                should_auto_approve = True
-            elif status == "Half Day" and not highlight_short_hours and leave and leave.status == "Approved" and leave.total_days == 0.5:
-                should_auto_approve = True
+            elif is_pm_mode:
+                # PM Mode Auto-Approve strictly requires ALL of:
+                # 1. No PM rule failed (no late biometric, no short card hours, no short web hours)
+                # 2. Biometric Card check-in must exist (card_check_in is NOT empty)
+                # 3. Effective card working hours >= 6.0
+                # 4. Web/portal working hours >= required (9h weekday / 8h weekend)
+                # If biometric card entry is empty for a PM employee -> NEVER auto-approve.
+                has_card_punch = bool(attendance and attendance.card_check_in)
+                if (
+                    not pm_rule_failed
+                    and has_card_punch
+                    and effective_pm_card_hours >= 6.0
+                    and effective_pm_web_hours >= pm_req_web_hours
+                ):
+                    should_auto_approve = True
+                else:
+                    # Missing biometric or any PM rule violation -> block auto-approve
+                    should_auto_approve = False
+            else:
+                # Standard mode auto-approve (only for non-PM employees)
+                if status == "Leave" and leave and leave.status == "Approved":
+                    should_auto_approve = True
+                elif status == "Present" and not highlight_short_hours:
+                    should_auto_approve = True
+                elif status == "Half Day" and not highlight_short_hours and leave and leave.status == "Approved" and leave.total_days == 0.5:
+                    should_auto_approve = True
 
             if should_auto_approve:
                 if attendance and (attendance.manager_status or "").strip().lower() in ("pending", ""):
@@ -2352,7 +2399,17 @@ def get_reporting_employees(user_id):
                     is_one_day_wages_final,
 
                 "wages_status":
-                    wages_status
+                    wages_status,
+
+                "leave_details": [
+                    {
+                        "leave_type": l.leave_type,
+                        "reason": l.reason,
+                        "status": l.status,
+                        "total_days": l.total_days
+                    }
+                    for l in day_leaves
+                ]
             }
 
         for employee in reporting_list:

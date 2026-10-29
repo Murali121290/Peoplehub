@@ -250,6 +250,12 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
   const getStatusBadge = (emp: any) => {
     const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+    const isPm = Boolean(
+      emp.is_pm_mode ||
+      (emp.work_mode || "").trim().toUpperCase() === "PM"
+    );
+    const cardHrs = emp.card_working_hours != null ? Number(emp.card_working_hours) : 0;
+
     const badgeStr = computeAttendanceBadgeLabel(
       emp.status,
       emp.gross_hours || 0,
@@ -258,7 +264,9 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
       todayStr,
       (emp.date || emp.attendance_date || todayStr) > todayStr,
       emp.is_one_day_wages || false,
-      emp.permission_hours || 0
+      emp.permission_hours || 0,
+      cardHrs,
+      isPm
     );
 
     return (

@@ -384,13 +384,51 @@ const ManagerDashboardPage = () => {
       computedStatus = "Half Day";
     }
 
+    // PM Mode Priority: if employee is PM mode, check biometric card entry first:
+    // 1. If card entry exists:
+    //    - If card hours < 6.0 hrs -> "Half Day" (overrides web hours!)
+    //    - If card hours >= 6.0 hrs -> "Present"
+    // 2. If NO card entry exists:
+    //    - Fall back to web site entry hours calculation (effectiveHours >= reqHours -> Present, etc.)
+    const isPmEmployee = Boolean(
+      historyModalUser?.is_pm_mode ||
+      (historyModalUser?.work_mode || "").trim().toUpperCase() === "PM" ||
+      editingRecord?.is_pm_mode ||
+      (editingRecord?.work_mode || "").trim().toUpperCase() === "PM"
+    );
+
+    if (isPmEmployee) {
+      const cardInStr = editForm.cardCheckIn;
+      const cardOutStr = editForm.cardCheckOut;
+      const hasCardTimes = Boolean(
+        cardInStr && cardOutStr &&
+        cardInStr.trim() !== "" && cardInStr !== "-" && cardInStr !== "—" &&
+        cardOutStr.trim() !== "" && cardOutStr !== "-" && cardOutStr !== "—"
+      );
+
+      if (hasCardTimes) {
+        const [cInH, cInM] = cardInStr.split(":").map(Number);
+        const [cOutH, cOutM] = cardOutStr.split(":").map(Number);
+        if (!isNaN(cInH) && !isNaN(cInM) && !isNaN(cOutH) && !isNaN(cOutM)) {
+          let cardDiffMin = (cOutH * 60 + cOutM) - (cInH * 60 + cInM);
+          if (cardDiffMin < 0) cardDiffMin += 24 * 60;
+          const cardHours = cardDiffMin / 60.0;
+          if (cardHours < 6.0) {
+            computedStatus = "Half Day";
+          } else {
+            computedStatus = "Present";
+          }
+        }
+      }
+    }
+
     setEditForm(prev => {
       if (prev.status !== computedStatus) {
         return { ...prev, status: computedStatus };
       }
       return prev;
     });
-  }, [editForm.checkIn, editForm.checkOut, editForm.lunchMinutes, editForm.teaMinutes, editForm.addedMinutes, editingRecord]);
+  }, [editForm.checkIn, editForm.checkOut, editForm.lunchMinutes, editForm.teaMinutes, editForm.addedMinutes, editForm.cardCheckIn, editForm.cardCheckOut, editingRecord, historyModalUser]);
 
   const convertTo24Hour = (time12: string) => {
     if (!time12 || time12 === "-" || time12 === "—") return "";
@@ -2711,6 +2749,11 @@ const ManagerDashboardPage = () => {
                                 <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" }}>
                                   {(() => {
                                     const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                                    const isPmMem = Boolean(
+                                      (member as any).is_pm_mode ||
+                                      ((member as any).work_mode || "").trim().toUpperCase() === "PM"
+                                    );
+                                    const cardHrsMem = (member as any).card_working_hours != null ? Number((member as any).card_working_hours) : 0;
                                     const badgeStr = computeAttendanceBadgeLabel(
                                       status,
                                       (member as any).gross_hours || 0,
@@ -2719,7 +2762,9 @@ const ManagerDashboardPage = () => {
                                       todayStr,
                                       false,
                                       false,
-                                      (member as any).permission_hours || 0
+                                      (member as any).permission_hours || 0,
+                                      cardHrsMem,
+                                      isPmMem
                                     );
                                     return badgeStr.split(" & ").map((part: string, idx: number) => {
                                       const s = part.toLowerCase();
@@ -3013,6 +3058,14 @@ const ManagerDashboardPage = () => {
                     <tbody style={{ fontSize: "12px", color: THEME.text, fontWeight: 500 }}>
                       {historyRecords.map((record) => {
                         const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                        const isPmRec = Boolean(
+                          record.is_pm_mode ||
+                          (record.work_mode || "").trim().toUpperCase() === "PM" ||
+                          (historyModalUser as any)?.is_pm_mode ||
+                          ((historyModalUser as any)?.work_mode || "").trim().toUpperCase() === "PM"
+                        );
+                        const cardHrsRec = record.card_working_hours != null ? Number(record.card_working_hours) : (record.cardWorkingHours != null ? Number(record.cardWorkingHours) : 0);
+
                         const badgeStr = computeAttendanceBadgeLabel(
                           record.status || "Absent",
                           record.gross_hours || record.total_hours || record.working_hours || 0,
@@ -3021,7 +3074,9 @@ const ManagerDashboardPage = () => {
                           todayStr,
                           record.date > todayStr,
                           record.is_one_day_wages || false,
-                          record.permission_hours || 0
+                          record.permission_hours || 0,
+                          cardHrsRec,
+                          isPmRec
                         );
 
                         // Format date nicely
@@ -3327,7 +3382,11 @@ const ManagerDashboardPage = () => {
                               }
 
                               const cardWorked = Number(record.cardWorkingHours) || Number(record.card_working_hours) || 0;
-                              const isCardHoursShort = cardWorked > 0 && cardWorked < 6.0;
+                              const permWorked = Number(record.permission_hours) || Number(record.permissionHours) || 0;
+                              const effectiveCardWorked = cardWorked + permWorked;
+                              const hasHalfLeave = (record.leave_details || []).some((l: any) => l.total_days != null && Number(l.total_days) <= 0.5);
+                              const reqCardLimit = hasHalfLeave ? 4.0 : 6.0;
+                              const isCardHoursShort = cardWorked > 0 && effectiveCardWorked < reqCardLimit;
 
                               return (
                                 <>
@@ -3351,7 +3410,7 @@ const ManagerDashboardPage = () => {
                                       <div style={{ marginTop: "4px", display: "flex", justifyContent: "center" }}>
                                         <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 700, color: "#991b1b", background: "#fee2e2", border: "1px solid #fecaca", whiteSpace: "nowrap" }}>
                                           <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: "#ef4444" }} />
-                                          &lt; 6 hrs
+                                          &lt; {reqCardLimit} hrs
                                         </span>
                                       </div>
                                     )}

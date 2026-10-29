@@ -818,8 +818,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
     setIsActionLoading(true);
 
     const empMode = (currentEmployee?.work_mode || "").toLowerCase();
-    const isHybrid = empMode === "hybrid" || empMode === "pm";
-    const isFlexible = empMode === "flexible";
+    const isHybrid = empMode === "hybrid";
+    const isFlexible = empMode === "flexible" || empMode === "pm";
 
     const targetShift = cleanShiftName(selectedCheckInShift);
 
@@ -3230,8 +3230,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
             {/* Conditionally render content based on employee's work mode */}
             {(() => {
               const empMode = (currentEmployee?.work_mode || "").toLowerCase();
-              const isHybrid = empMode === "hybrid" || empMode === "pm";
-              const isFlexible = empMode === "flexible";
+              const isHybrid = empMode === "hybrid";
+              const isFlexible = empMode === "flexible" || empMode === "pm";
 
               // 1. Flexible Mode: Show WFO vs WFH stacked vertically (one below the other)
               if (isFlexible) {

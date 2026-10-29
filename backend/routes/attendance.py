@@ -609,6 +609,7 @@ def calculate_attendance_status(attendance):
             from models.leave import LeaveRequest
             from sqlalchemy import or_ as sql_or
 
+            total_perm_hours = 0.0
             emp = None
             if att_user_id:
                 emp = Employee.query.filter_by(user_id=att_user_id).first()
@@ -629,6 +630,7 @@ def calculate_attendance_status(attendance):
                         f_sec = f_time.hour * 3600 + f_time.minute * 60 + getattr(f_time, 'second', 0)
                         t_sec = t_time.hour * 3600 + t_time.minute * 60 + getattr(t_time, 'second', 0)
                         permission_hours = max(t_sec - f_sec, 0) / 3600.0
+                        total_perm_hours += permission_hours
                         status_calc_hours += permission_hours
         except Exception as e:
             print("Error calculating permission hours in attendance status:", e)
@@ -650,32 +652,35 @@ def calculate_attendance_status(attendance):
         attendance.status = "Absent"
         return
 
-    # Check for approved half-day leave on this attendance date
-    is_half_day_leave = False
+    # Check for approved leaves on this attendance date
     if (att_user_id or att_emp_id) and attendance.attendance_date:
         try:
             from models.leave import LeaveRequest
 
-            half_leave_filters = [
+            leave_filters = [
                 LeaveRequest.request_type == "Leave",
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= attendance.attendance_date,
-                LeaveRequest.to_date >= attendance.attendance_date,
-                LeaveRequest.total_days <= 0.5
+                LeaveRequest.to_date >= attendance.attendance_date
             ]
             if emp_code_str:
-                half_leave_filters.append(LeaveRequest.employee_id == emp_code_str)
+                leave_filters.append(LeaveRequest.employee_id == emp_code_str)
 
-            half_leave = LeaveRequest.query.filter(*half_leave_filters).first()
-            if half_leave:
-                is_half_day_leave = True
+            day_approved_leaves = LeaveRequest.query.filter(*leave_filters).all()
+            if day_approved_leaves:
+                total_leave_days = sum(l.total_days or 0.0 for l in day_approved_leaves)
+                if total_leave_days >= 1.0:
+                    # Full day covered by approved leave(s) (e.g. 1 full day OR First Half + Second Half)
+                    attendance.status = "Leave"
+                    attendance.leave_type = day_approved_leaves[0].leave_type
+                    return
+                elif total_leave_days > 0.0:
+                    # Single half day leave
+                    attendance.status = "Half Day"
+                    attendance.leave_type = day_approved_leaves[0].leave_type
+                    return
         except Exception as e:
-            print("Error checking half day leave in calculate_attendance_status:", e)
-
-    if is_half_day_leave:
-        # If half-day leave is applied, always mark as "Half Day" (don't upgrade to "Present")
-        attendance.status = "Half Day"
-        return
+            print("Error checking approved leaves in calculate_attendance_status:", e)
 
     if status_calc_hours < 4.0:
         attendance.status = "Absent"
@@ -735,6 +740,27 @@ def calculate_attendance_status(attendance):
             if hasattr(attendance, 'used_weekly_grace'):
                 attendance.used_weekly_grace = False
             attendance.status = "Present"
+
+    # 3. PM Mode Biometric Priority Rule:
+    # In PM WFO mode, biometric is strictly preferred.
+    # If card check-in exists, base status primarily on effective biometric hours (card hours + approved permissions).
+    try:
+        emp_work_mode = (emp.work_mode or "Office").strip().upper() if emp and hasattr(emp, 'work_mode') else "OFFICE"
+        rec_work_mode = (getattr(attendance, 'work_mode', None) or "").strip().upper()
+        is_pm_emp = (emp_work_mode == "PM") or (rec_work_mode == "PM")
+        is_pm_wfh = is_pm_emp and (rec_work_mode == "WFH")
+
+        if is_pm_emp and not is_pm_wfh and attendance.status in ("Present", "Half Day"):
+            card_hrs_val = attendance.card_working_hours or 0.0
+            perm_hrs_val = locals().get('total_perm_hours', 0.0)
+            if attendance.card_check_in or card_hrs_val > 0:
+                effective_card_hours = card_hrs_val + perm_hrs_val
+                if effective_card_hours < 6.0:
+                    attendance.status = "Half Day"
+                else:
+                    attendance.status = "Present"
+    except Exception as e:
+        print("Error evaluating PM mode biometric status in calculate_attendance_status:", e)
 
 
 def sync_biometric_to_web_entry(attendance):
@@ -1583,9 +1609,43 @@ def attendance_history(user_id):
                     gross_hours = 0.0
                 gross_hours = int(gross_hours * 100) / 100
 
+                # Determine if employee is in PM mode
+                emp_work_mode = (employee.work_mode or "Office").strip().upper()
+                rec_work_mode = (getattr(record, "work_mode", None) or "").strip().upper()
+                is_pm_emp = (emp_work_mode == "PM") or (rec_work_mode == "PM")
+                is_pm_wfh = is_pm_emp and (rec_work_mode == "WFH")
+
                 # Derive display status
                 display_status = record.status
-                if not display_status or display_status in ("Checked Out", "Check In"):
+                card_hrs_val = record.card_working_hours or 0.0
+
+                if is_pm_emp and not is_pm_wfh:
+                    # PM Mode - Office / WFO: Biometric is strictly preferred
+                    # If card check-in exists, base status primarily on biometric hours
+                    if record.card_check_in or card_hrs_val > 0:
+                        if card_hrs_val < 6.0:
+                            display_status = "Half Day"
+                        else:
+                            display_status = "Present"
+                    elif not display_status or display_status in ("Checked Out", "Check In"):
+                        if gross_hours < 4.0:
+                            display_status = "Absent"
+                        elif gross_hours < 6.0:
+                            display_status = "Half Day"
+                        else:
+                            display_status = "Present"
+                elif is_pm_wfh:
+                    # PM Mode - WFH: Follows normal 8h/9h web checkin logic
+                    if not display_status or display_status in ("Checked Out", "Check In"):
+                        is_weekend = record.attendance_date.weekday() >= 5
+                        req_hours = 8.0 if is_weekend else 9.0
+                        if gross_hours < 4.0:
+                            display_status = "Absent"
+                        elif gross_hours < req_hours:
+                            display_status = "Half Day"
+                        else:
+                            display_status = "Present"
+                elif not display_status or display_status in ("Checked Out", "Check In"):
                     is_weekend = record.attendance_date.weekday() >= 5
                     is_holiday = False
                     if override_dict.get(record.attendance_date) and override_dict.get(record.attendance_date)[0] == "Holiday":
@@ -1613,12 +1673,11 @@ def attendance_history(user_id):
 
                 # Override: if the day is a weekend or holiday and no check-in exists,
                 # show the correct label instead of a stale "Absent" stored in DB.
-                if not record.check_in:
+                if not record.check_in and not record.card_check_in:
                     override = override_dict.get(current_date)
                     if override:
                         if override[0] == "Holiday":
                             display_status = "Holiday"
-                        # If override is "Working Day", keep whatever was computed
                     elif current_date in holiday_dict:
                         display_status = "Holiday"
                     elif is_date_week_off(current_date):
@@ -1656,26 +1715,42 @@ def attendance_history(user_id):
                     effective_gross_hours = gross_hours + perm_hours
                     permission_label = ", ".join(perm_labels)
 
-                    # Re-evaluate status considering permission credit
-                    is_weekend = current_date.weekday() >= 5
-                    is_holiday = False
-                    if override_dict.get(current_date) and override_dict.get(current_date)[0] == "Holiday":
-                        is_holiday = True
-                    elif current_date in holiday_dict:
-                        is_holiday = True
-
-                    is_weekoff = is_date_week_off(current_date)
-                    if is_holiday or is_weekoff:
-                        req_hours = 7.0
-                    elif current_date.weekday() == 5:
-                        req_hours = 8.0
+                    if is_pm_emp and not is_pm_wfh:
+                        # In PM WFO mode, approved permission hours add directly to biometric hours
+                        effective_card_hours = card_hrs_val + perm_hours
+                        if effective_card_hours >= 6.0:
+                            display_status = "Present"
+                        elif effective_card_hours >= 3.0 and display_status == "Absent":
+                            display_status = "Half Day"
+                    elif is_pm_wfh:
+                        # In PM WFH mode, approved permission hours add to web hours against normal 8h/9h
+                        is_weekend = current_date.weekday() >= 5
+                        req_hours = 8.0 if is_weekend else 9.0
+                        if effective_gross_hours >= req_hours:
+                            display_status = "Present"
+                        elif effective_gross_hours >= 4.0 and display_status == "Absent":
+                            display_status = "Half Day"
                     else:
-                        req_hours = 9.0
-                    eff_h = max(virtual_working_hours, effective_gross_hours)
-                    if eff_h >= req_hours:
-                        display_status = "Present"
-                    elif eff_h >= 4.0 and display_status == "Absent":
-                        display_status = "Half Day"
+                        # Standard employee re-evaluation
+                        is_weekend = current_date.weekday() >= 5
+                        is_holiday = False
+                        if override_dict.get(current_date) and override_dict.get(current_date)[0] == "Holiday":
+                            is_holiday = True
+                        elif current_date in holiday_dict:
+                            is_holiday = True
+
+                        is_weekoff = is_date_week_off(current_date)
+                        if is_holiday or is_weekoff:
+                            req_hours = 7.0
+                        elif current_date.weekday() == 5:
+                            req_hours = 8.0
+                        else:
+                            req_hours = 9.0
+                        eff_h = max(virtual_working_hours, effective_gross_hours)
+                        if eff_h >= req_hours:
+                            display_status = "Present"
+                        elif eff_h >= 4.0 and display_status == "Absent":
+                            display_status = "Half Day"
 
                 leave_details = [
                     {
@@ -1749,6 +1824,8 @@ def attendance_history(user_id):
                     "is_week_off": rec_is_weekoff,
                     "is_wfh": (current_date in wfh_dates_set) or is_permanent_wfh,
                     "is_wfh_day": (current_date in wfh_dates_set) or is_permanent_wfh,
+                    "work_mode": getattr(employee, "work_mode", "") or "",
+                    "is_pm_mode": bool((getattr(employee, "work_mode", "") or "").upper() == "PM"),
                 })
 
             else:
@@ -2805,6 +2882,15 @@ def export_monthly_attendance():
                 ShiftRequest.to_date >= start_date
             ).all()
 
+            # Map approved permissions for this employee within the period
+            emp_permissions = LeaveRequest.query.filter(
+                LeaveRequest.employee_id.in_(valid_emp_ids),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.request_type == "Permission",
+                LeaveRequest.permission_date <= effective_end_date,
+                LeaveRequest.permission_date >= start_date
+            ).all()
+
             emp_effective_end = effective_end_date
             if employee.is_active is False and employee.last_working_date:
                 lwd = employee.last_working_date.date() if isinstance(employee.last_working_date, datetime) else employee.last_working_date
@@ -2918,27 +3004,52 @@ def export_monthly_attendance():
                     effective_status = att.status if att else None
                     if total_day_leave_val > 0.0:
                         # Prioritize approved leave(s)
+                        # If total leaves on this day equal 1.0 (e.g. First Half + Second Half), mark is_day_half as False
+                        is_day_half = (total_day_leave_val < 1.0)
                         for item in day_leave_breakdown:
                             item_val = item["val"]
-                            is_half = item["is_half"]
+                            item_is_half = is_day_half if total_day_leave_val >= 1.0 else item["is_half"]
                             if item["is_lop"]:
                                 lop_leave_taken += item_val
-                                if (d, is_half) not in lop_dates:
-                                    lop_dates.append((d, is_half))
+                                if (d, item_is_half) not in lop_dates:
+                                    lop_dates.append((d, item_is_half))
                             elif item["is_cl_sl"]:
                                 cl_sl_taken += item_val
-                                if (d, is_half) not in leave_dates:
-                                    leave_dates.append((d, is_half))
+                                if (d, item_is_half) not in leave_dates:
+                                    leave_dates.append((d, item_is_half))
                             elif item["is_pl"]:
                                 pl_taken += item_val
-                                if (d, is_half) not in leave_dates:
-                                    leave_dates.append((d, is_half))
+                                if (d, item_is_half) not in leave_dates:
+                                    leave_dates.append((d, item_is_half))
                         
                         # Process remaining day portion with attendance
                         remaining_day = max(0.0, 1.0 - total_day_leave_val)
                         if remaining_day > 0.0:
+                            worked_hrs = (getattr(att, "total_hours", 0.0) or 0.0) if att else 0.0
+                            # Calculate any approved permission hours for this date
+                            day_perm_hrs = 0.0
+                            for p in emp_permissions:
+                                if p.permission_date == d and p.from_time and p.to_time:
+                                    f_sec = p.from_time.hour * 3600 + p.from_time.minute * 60 + getattr(p.from_time, 'second', 0)
+                                    t_sec = p.to_time.hour * 3600 + p.to_time.minute * 60 + getattr(p.to_time, 'second', 0)
+                                    day_perm_hrs += max(t_sec - f_sec, 0) / 3600.0
+
+                            effective_worked_hrs = worked_hrs + day_perm_hrs
+                            # For PM mode employee, check card hours if available
+                            emp_work_mode = (getattr(employee, "work_mode", None) or "").strip().upper()
+                            card_hrs = (getattr(att, "card_working_hours", 0.0) or 0.0) if att else 0.0
+                            effective_card_hrs = card_hrs + day_perm_hrs
                             has_punches = bool(att and (att.check_in or att.card_check_in or att.check_out or att.card_check_out))
-                            if att and (effective_status in ["Present", "Half Day", "Half Day Present"] or has_punches):
+                            
+                            # A half-day worked portion requires at least 4.0 hours (worked/card + permission) to be counted as present
+                            is_half_present = False
+                            if att and has_punches:
+                                if emp_work_mode == "PM" and (att.card_check_in or card_hrs > 0):
+                                    is_half_present = (effective_card_hrs >= 4.0)
+                                else:
+                                    is_half_present = (effective_worked_hrs >= 4.0)
+
+                            if is_half_present:
                                 total_working_days += remaining_day
                             else:
                                 unauthorized_absences += remaining_day
@@ -5162,17 +5273,8 @@ def upload_attendance_excel():
                 else:
                     attendance.card_working_hours = 0.0
                     
-                # Recalculate Status
-                web_hrs = attendance.total_hours or 0.0
-                card_hrs = attendance.card_working_hours or 0.0
-                max_hrs = max(web_hrs, card_hrs)
-                
-                if max_hrs < 4.0:
-                    attendance.status = "Absent"
-                elif max_hrs < 8.0:
-                    attendance.status = "Half Day"
-                else:
-                    attendance.status = "Present"
+                # Recalculate Status using standard engine (respecting PM Mode rules)
+                calculate_attendance_status(attendance)
                     
                 processed_count += 1
                 
@@ -5325,6 +5427,13 @@ def update_attendance_record():
             attendance.total_break_minutes = lunch_minutes + tea_minutes
             attendance.manager_status = "Approved"
 
+        # Calculate card working hours first so status calculation knows biometric hours
+        if attendance.card_check_in and attendance.card_check_out:
+            diff_seconds = (attendance.card_check_out - attendance.card_check_in).total_seconds()
+            attendance.card_working_hours = max(0.0, round(diff_seconds / 3600.0, 2))
+        else:
+            attendance.card_working_hours = 0.0
+
         # Calculate working hours if both check-in and check-out are present
         if attendance.check_in and attendance.check_out:
             diff_seconds = (attendance.check_out - attendance.check_in).total_seconds()
@@ -5343,12 +5452,6 @@ def update_attendance_record():
             attendance.total_hours = raw_total_hours
         else:
             calculate_attendance_status(attendance)
-
-        if attendance.card_check_in and attendance.card_check_out:
-            diff_seconds = (attendance.card_check_out - attendance.card_check_in).total_seconds()
-            attendance.card_working_hours = max(0.0, round(diff_seconds / 3600.0, 2))
-        else:
-            attendance.card_working_hours = 0.0
             
         db.session.commit()
         return jsonify({"success": True, "message": "Attendance record updated successfully"})
