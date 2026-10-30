@@ -2158,6 +2158,9 @@ def get_reporting_employees(user_id):
             pm_card_hours_short = False
             pm_web_hours_short = False
             pm_rule_failed = False
+            effective_pm_card_hours = 0.0
+            effective_pm_web_hours = 0.0
+            pm_req_web_hours = 9.0
 
             if is_pm_mode and status in ("Present", "Half Day"):
                 # 1. Biometric check-in before or at 10:30 AM

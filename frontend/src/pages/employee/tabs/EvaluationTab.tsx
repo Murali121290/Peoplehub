@@ -978,6 +978,25 @@ export const EvaluationTab: React.FC = () => {
   const [showHrTargetGuide, setShowHrTargetGuide] = useState<boolean>(false);
   const [copiedHrCategories, setCopiedHrCategories] = useState<{ name: string; key: string; categories: KPICategory[] } | null>(null);
 
+  // Rankings Top Performers Export Modal State
+  const [isRankingsExportModalOpen, setIsRankingsExportModalOpen] = useState<boolean>(false);
+  const [rankingsExportCadence, setRankingsExportCadence] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('weekly');
+  const [rankingsExportMonth, setRankingsExportMonth] = useState<number>(new Date().getMonth() + 1);
+  const [rankingsExportYear, setRankingsExportYear] = useState<number>(new Date().getFullYear());
+  const [rankingsExportWeek, setRankingsExportWeek] = useState<number>(4);
+  const [rankingsExportQuarter, setRankingsExportQuarter] = useState<number>(3);
+  const [rankingsExportTeam, setRankingsExportTeam] = useState<string>('all');
+  const [isExportingRankings, setIsExportingRankings] = useState<boolean>(false);
+
+  // Manager Monthly Productivity Report Modal State
+  const [isProductivityExportModalOpen, setIsProductivityExportModalOpen] = useState<boolean>(false);
+  const [exportPeriodType, setExportPeriodType] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('monthly');
+  const [exportMonth, setExportMonth] = useState<number>(new Date().getMonth() + 1);
+  const [exportYear, setExportYear] = useState<number>(new Date().getFullYear());
+  const [exportWeek, setExportWeek] = useState<number>(1);
+  const [exportQuarter, setExportQuarter] = useState<number>(1);
+  const [isExportingProductivity, setIsExportingProductivity] = useState<boolean>(false);
+
   // Manager Create & Assign Metrics Modal State
   const [isMgrCreateModalOpen, setIsMgrCreateModalOpen] = useState<boolean>(false);
   const [mgrAssignTeamId, setMgrAssignTeamId] = useState<string>('');
@@ -1272,7 +1291,7 @@ export const EvaluationTab: React.FC = () => {
     try {
       const p = new URLSearchParams(window.location.search).get('week');
       if (p && !isNaN(Number(p))) return Number(p);
-    } catch (_) {}
+    } catch (_) { }
     return getCurrentFiscalWeekIndex();
   });
   const [weeklyQuarterFilter, setWeeklyQuarterFilter] = useState<number | 'all'>(getCurrentFiscalQuarterIndex());
@@ -9848,7 +9867,64 @@ export const EvaluationTab: React.FC = () => {
   const groupedReportHierarchy = useMemo(() => {
     const teamMap = new Map<string, Map<string, any[]>>();
 
-    reportFilteredResponses.forEach((r, idx) => {
+    // Deduplicate reportFilteredResponses by employee:
+    // When an employee has multiple evaluations (e.g. daily metric for today and another form/metrics for earlier),
+    // pick the most recent/actionable assigned evaluation so employee names never repeat in the team list.
+    const empDedupMap = new Map<string, typeof reportFilteredResponses[0]>();
+    reportFilteredResponses.forEach((r) => {
+      const { employeeCode, employeeName } = getEmployeeDisplayInfo(r);
+      const empKey = String(employeeCode || employeeName || r.id).trim().toLowerCase();
+      if (!empKey) return;
+
+      if (!empDedupMap.has(empKey)) {
+        empDedupMap.set(empKey, r);
+      } else {
+        const existing = empDedupMap.get(empKey)!;
+
+        // Priority calculation helper:
+        // 1. Pending manager review / needs review gets top priority so actionable cards are never lost
+        // 2. Otherwise latest submission or creation/start date
+        const isPendingReview = (resp: typeof r) => {
+          const respStatusStr = String((resp as any).status || '');
+          if (isYearlyResponse(resp)) {
+            return (
+              (resp.daily_records || []).some((d: any) => d.status === 'submitted_to_manager' || d.status === 'manager_review') ||
+              (resp.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager' || q.status === 'manager_review') ||
+              (resp.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager' || w.status === 'manager_review') ||
+              (resp.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager' || m.status === 'manager_review') ||
+              respStatusStr === 'manager_review' || respStatusStr === 'Submitted to Manager'
+            );
+          }
+          return Boolean(
+            (respStatusStr === 'manager_review' || respStatusStr === 'Submitted to Manager' || respStatusStr.toLowerCase().includes('submitted') || Boolean(resp.employeeSubmittedAt) || Boolean((resp as any).submitted_at)) &&
+            resp.managerScore == null
+          );
+        };
+
+        const existingPending = isPendingReview(existing);
+        const currentPending = isPendingReview(r);
+
+        if (currentPending && !existingPending) {
+          empDedupMap.set(empKey, r);
+        } else if (!currentPending && existingPending) {
+          // Keep existing pending
+        } else {
+          // Compare dates (updatedAt, submitted_at, createdAt, startDate)
+          const getTime = (resp: typeof r) => {
+            const raw = (resp as any).updatedAt || (resp as any).updated_at || (resp as any).submitted_at || resp.employeeSubmittedAt || (resp as any).createdAt || (resp as any).created_at || (resp as any).startDate || '';
+            const t = raw ? new Date(raw).getTime() : 0;
+            return isNaN(t) ? 0 : t;
+          };
+          if (getTime(r) > getTime(existing)) {
+            empDedupMap.set(empKey, r);
+          }
+        }
+      }
+    });
+
+    const uniqueResponses = Array.from(empDedupMap.values());
+
+    uniqueResponses.forEach((r, idx) => {
       const { employeeCode, employeeName, teamName, departmentName, designation, empInDb, profileImage } = getEmployeeDisplayInfo(r);
       const isCalibrated = r.managerScore != null && (r.status as string) !== 'manager_review' && (r.status as string) !== 'Submitted to Manager';
       const initials = (employeeName || 'EM').split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase() || 'EM';
@@ -9885,25 +9961,25 @@ export const EvaluationTab: React.FC = () => {
         const approvedMonths = (r.monthly_records || []).filter(m => m.status === 'manager_approved');
         if (approvedDays.length > 0) {
           const ytdScore = approvedDays.reduce((acc: number, d: any) => acc + (Number(d.managerScore) || 0), 0) / approvedDays.length;
-          mgrScoreNum = Number(ytdScore.toFixed(1));
+          mgrScoreNum = Number(ytdScore.toFixed(2));
         } else if (approvedQuarters.length > 0) {
           const ytdScore = approvedQuarters.reduce((acc, q) => acc + (Number(q.managerScore) || 0), 0) / approvedQuarters.length;
-          mgrScoreNum = Number(ytdScore.toFixed(1));
+          mgrScoreNum = Number(ytdScore.toFixed(2));
         } else if (approvedWeeks.length > 0) {
           const ytdScore = approvedWeeks.reduce((acc, w) => acc + (Number(w.managerScore) || 0), 0) / approvedWeeks.length;
-          mgrScoreNum = Number(ytdScore.toFixed(1));
+          mgrScoreNum = Number(ytdScore.toFixed(2));
         } else if (approvedMonths.length > 0) {
           const ytdScore = approvedMonths.reduce((acc, m) => acc + (Number(m.managerScore) || 0), 0) / approvedMonths.length;
-          mgrScoreNum = Number(ytdScore.toFixed(1));
+          mgrScoreNum = Number(ytdScore.toFixed(2));
         }
       }
 
       const dateScoreDisplay = selfScoreNum != null && selfScoreNum > 0
-        ? `${selfScoreNum.toFixed(1)}%`
+        ? `${selfScoreNum.toFixed(2)}%`
         : '—';
 
       const averageScoreDisplay = mgrScoreNum != null
-        ? `${mgrScoreNum.toFixed(1)}%`
+        ? `${mgrScoreNum.toFixed(2)}%`
         : '—';
 
       const range = getEvaluationDateRange(r);
@@ -10422,10 +10498,10 @@ export const EvaluationTab: React.FC = () => {
     }
 
     // Map unique employee to their array of scores across cycles in this period
-    const empMap = new Map<string, { employeeName: string; employeeCode: string; departmentName: string; teamName: string; scores: number[] }>();
+    const empMap = new Map<string, { employeeName: string; employeeCode: string; departmentName: string; teamName: string; reportingManager: string; scores: number[] }>();
 
     filtered.forEach(r => {
-      const { employeeName, employeeCode, departmentName, teamName } = getEmployeeDisplayInfo(r);
+      const { employeeName, employeeCode, departmentName, teamName, empInDb } = getEmployeeDisplayInfo(r);
       const scoreVal = r.managerScore != null
         ? Number(r.managerScore)
         : ((r as any).manager_score != null
@@ -10434,29 +10510,35 @@ export const EvaluationTab: React.FC = () => {
 
       if (scoreVal == null || scoreVal <= 0) return;
 
+      // Extract Reporting Manager accurately
+      const respCycle = cycles.find(c => c.id === r.cycleId);
+      const rawRepMgr = (r as any).reportingManager || (r as any).reporting_manager || empInDb?.reporting_manager || (r as any).managerName || (r as any).manager_name || respCycle?.managerName || '';
+      let repMgrName = String(rawRepMgr).trim();
+      const parenMatch = repMgrName.match(/^([^(]+)/);
+      if (parenMatch && parenMatch[1]) {
+        repMgrName = parenMatch[1].trim();
+      }
+
       const empKey = `${employeeCode || employeeName}`;
       if (!empMap.has(empKey)) {
-        empMap.set(empKey, { employeeName, employeeCode, departmentName, teamName, scores: [] });
+        empMap.set(empKey, { employeeName, employeeCode, departmentName, teamName, reportingManager: repMgrName, scores: [] });
       }
       empMap.get(empKey)!.scores.push(scoreVal);
     });
 
-    // Group unique employees by Department and Team with calculated average score
-    const teamMap = new Map<string, { departmentName: string; teamName: string; managerName: string; members: Array<{ name: string; code: string; score: number; rank: number }> }>();
+    // Group unique employees by Team and Reporting Manager: Team (Reporting Manager)
+    const groupMap = new Map<string, { departmentName: string; teamName: string; managerName: string; members: Array<{ name: string; code: string; score: number; rank: number }> }>();
 
     empMap.forEach(emp => {
       const avgScore = emp.scores.reduce((a, b) => a + b, 0) / emp.scores.length;
-      const key = `${emp.departmentName}___${emp.teamName}`;
-      if (!teamMap.has(key)) {
-        // Find manager for this team
-        const matchingDbTeam = dbTeams.find(t =>
-          t.name?.toLowerCase() === emp.teamName.toLowerCase() ||
-          String(t.id) === emp.teamName.toLowerCase()
-        );
-        const resolvedMgr = matchingDbTeam?.manager_name || matchingDbTeam?.manager || matchingDbTeam?.lead || matchingDbTeam?.reporting_manager || '';
-        teamMap.set(key, { departmentName: emp.departmentName, teamName: emp.teamName, managerName: resolvedMgr, members: [] });
+      const tName = emp.teamName || 'General Team';
+      const repMgr = emp.reportingManager;
+      const displayGroupLabel = repMgr ? `${tName} (${repMgr})` : tName;
+      const key = `${emp.departmentName}___${tName}___${repMgr || ''}`;
+      if (!groupMap.has(key)) {
+        groupMap.set(key, { departmentName: emp.departmentName, teamName: displayGroupLabel, managerName: repMgr || '', members: [] });
       }
-      teamMap.get(key)!.members.push({
+      groupMap.get(key)!.members.push({
         name: emp.employeeName,
         code: emp.employeeCode,
         score: avgScore,
@@ -10464,15 +10546,15 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    // Sort team members by average score descending and assign rank
-    return Array.from(teamMap.values()).map(g => {
+    // Sort group members by average score descending, assign rank, and strictly keep only Top 3
+    return Array.from(groupMap.values()).map(g => {
       const sorted = [...g.members].sort((a, b) => b.score - a.score);
       sorted.forEach((m, idx) => { m.rank = idx + 1; });
       return {
         departmentName: g.departmentName,
         teamName: g.teamName,
         managerName: g.managerName,
-        members: sorted
+        members: sorted.slice(0, 3)
       };
     });
   };
@@ -10519,7 +10601,7 @@ export const EvaluationTab: React.FC = () => {
               const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
               items.push({
                 ...r,
-                managerScore: Number(avg.toFixed(1))
+                managerScore: avg
               });
               return;
             }
@@ -10557,7 +10639,7 @@ export const EvaluationTab: React.FC = () => {
               const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
               items.push({
                 ...r,
-                managerScore: Number(avg.toFixed(1))
+                managerScore: avg
               });
               return;
             }
@@ -10748,24 +10830,40 @@ export const EvaluationTab: React.FC = () => {
               const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
               if (scores.length > 0) {
                 const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                monthScopedItems.push({ ...r, managerScore: avg });
                 return;
               }
             }
           }
 
-          // Check weekly_records in this month
+          // Check weekly_records in this month (day-weighted across month boundaries matching Excel)
           if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
             const approvedWeeks = (r as any).weekly_records.filter((w: any) => {
-              if (!w.startDate) return false;
-              const wDate = new Date(w.startDate);
-              return !isNaN(wDate.getTime()) && wDate >= mStart && wDate <= mEnd && (w.status === 'manager_approved' || w.status === 'approved' || (w.managerScore != null && Number(w.managerScore) > 0));
+              if (!w.startDate || !w.endDate) return false;
+              const ws = new Date(w.startDate);
+              const we = new Date(w.endDate);
+              if (isNaN(ws.getTime()) || isNaN(we.getTime())) return false;
+              const overlaps = (ws <= mEnd && we >= mStart);
+              return overlaps && (w.status === 'manager_approved' || w.status === 'approved' || (w.managerScore != null && Number(w.managerScore) > 0));
             });
             if (approvedWeeks.length > 0) {
-              const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
-              if (scores.length > 0) {
-                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+              const dailyScoresInMonth: number[] = [];
+              approvedWeeks.forEach((w: any) => {
+                const score = Number(w.managerScore || w.earnedScore || w.employeeScore || 0);
+                if (score <= 0) return;
+                const ws = new Date(w.startDate);
+                const we = new Date(w.endDate);
+                let cur = new Date(ws);
+                while (cur <= we) {
+                  if (cur >= mStart && cur <= mEnd) {
+                    dailyScoresInMonth.push(score);
+                  }
+                  cur.setDate(cur.getDate() + 1);
+                }
+              });
+              if (dailyScoresInMonth.length > 0) {
+                const avg = dailyScoresInMonth.reduce((a: number, b: number) => a + b, 0) / dailyScoresInMonth.length;
+                monthScopedItems.push({ ...r, managerScore: avg });
                 return;
               }
             }
@@ -10842,7 +10940,7 @@ export const EvaluationTab: React.FC = () => {
             const avgScore = qApprovedRecords.reduce((sum, m) => sum + Number(m.managerScore), 0) / qApprovedRecords.length;
             quarterScopedItems.push({
               ...r,
-              managerScore: Number(avgScore.toFixed(1))
+              managerScore: avgScore
             });
             return;
           }
@@ -10856,7 +10954,7 @@ export const EvaluationTab: React.FC = () => {
           if (qRecord) {
             quarterScopedItems.push({
               ...r,
-              managerScore: Number(Number(qRecord.managerScore).toFixed(1))
+              managerScore: Number(qRecord.managerScore)
             });
             return;
           }
@@ -10873,7 +10971,7 @@ export const EvaluationTab: React.FC = () => {
               const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
               if (scores.length > 0) {
                 const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-                quarterScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                quarterScopedItems.push({ ...r, managerScore: avg });
                 return;
               }
             }
@@ -10891,7 +10989,7 @@ export const EvaluationTab: React.FC = () => {
               const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
               if (scores.length > 0) {
                 const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-                quarterScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                quarterScopedItems.push({ ...r, managerScore: avg });
                 return;
               }
             }
@@ -10965,7 +11063,7 @@ export const EvaluationTab: React.FC = () => {
               const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
               if (scores.length > 0) {
                 const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                monthScopedItems.push({ ...r, managerScore: avg });
                 return;
               }
             }
@@ -10982,7 +11080,7 @@ export const EvaluationTab: React.FC = () => {
               const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
               if (scores.length > 0) {
                 const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                monthScopedItems.push({ ...r, managerScore: avg });
                 return;
               }
             }
@@ -11027,7 +11125,7 @@ export const EvaluationTab: React.FC = () => {
           const avgScore = approvedRecords.reduce((sum, m) => sum + Number(m.managerScore), 0) / approvedRecords.length;
           yearScopedItems.push({
             ...r,
-            managerScore: Number(avgScore.toFixed(1))
+            managerScore: avgScore
           });
           return;
         }
@@ -11043,7 +11141,7 @@ export const EvaluationTab: React.FC = () => {
             const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
             if (scores.length > 0) {
               const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-              yearScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+              yearScopedItems.push({ ...r, managerScore: avg });
               return;
             }
           }
@@ -11060,7 +11158,7 @@ export const EvaluationTab: React.FC = () => {
             const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
             if (scores.length > 0) {
               const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-              yearScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+              yearScopedItems.push({ ...r, managerScore: avg });
               return;
             }
           }
@@ -11105,6 +11203,135 @@ export const EvaluationTab: React.FC = () => {
     { id: 'quarterly', label: 'Quarterly', count: frequencyCounts.quarterly, pending: frequencyCounts.quarterlyPending, completed: frequencyCounts.quarterlyCompleted },
     { id: 'yearly', label: 'Yearly', count: frequencyCounts.yearly, pending: frequencyCounts.yearlyPending, completed: frequencyCounts.yearlyCompleted },
   ];
+
+  // Rankings Top Performers Matrix Excel Export (Weekly, Monthly, Quarterly, Yearly matching EEMS format)
+  const handleDownloadRankingsMatrix = async () => {
+    try {
+      setIsExportingRankings(true);
+      const token = localStorage.getItem("token");
+
+      const queryParams = new URLSearchParams({
+        period_type: rankingsExportCadence,
+        year: String(rankingsExportYear),
+        month: String(rankingsExportMonth),
+        week: String(rankingsExportWeek),
+        quarter: String(rankingsExportQuarter),
+        team: rankingsExportTeam,
+      });
+
+      const res = await fetch(`${API_URL}/api/performance/evaluation/rankings-export?${queryParams.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+
+      if (!res.ok) {
+        let errMessage = "Failed to generate rankings report.";
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) errMessage = errData.error;
+        } catch {}
+        showAlert(errMessage, "Export Failed", "danger");
+        return;
+      }
+
+      // Check filename from Content-Disposition header or generate descriptive name
+      let downloadFileName = '';
+      const disposition = res.headers.get('content-disposition');
+      if (disposition && disposition.indexOf('filename=') !== -1) {
+        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+        if (matches != null && matches[1]) {
+          downloadFileName = matches[1].replace(/['"]/g, '');
+        }
+      }
+
+      if (!downloadFileName) {
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const mName = monthNames[rankingsExportMonth - 1] || 'Month';
+        const teamSuffix = rankingsExportTeam && rankingsExportTeam !== 'all' ? `_${rankingsExportTeam.replace(/\s+/g, '_')}` : '';
+
+        if (rankingsExportCadence === 'monthly') {
+          downloadFileName = `Monthly_Report_${mName}_${rankingsExportYear}${teamSuffix}.xlsx`;
+        } else if (rankingsExportCadence === 'weekly') {
+          downloadFileName = `Weekly_Report_Week${rankingsExportWeek}_${mName}_${rankingsExportYear}${teamSuffix}.xlsx`;
+        } else if (rankingsExportCadence === 'quarterly') {
+          downloadFileName = `Quarterly_Report_Q${rankingsExportQuarter}_FY${rankingsExportYear}-${rankingsExportYear + 1}${teamSuffix}.xlsx`;
+        } else {
+          downloadFileName = `Annual_Report_FY${rankingsExportYear}-${rankingsExportYear + 1}${teamSuffix}.xlsx`;
+        }
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = downloadFileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      setIsRankingsExportModalOpen(false);
+      showToast("Rankings report downloaded successfully!");
+    } catch (err: any) {
+      showAlert(err?.message || "Error exporting rankings", "Export Error", "danger");
+    } finally {
+      setIsExportingRankings(false);
+    }
+  };
+
+  // Team-wise Monthly/Weekly/Quarterly/Yearly Productivity Excel Export
+  const handleDownloadMonthlyProductivity = async () => {
+    try {
+      setIsExportingProductivity(true);
+      const token = localStorage.getItem("token");
+      const queryParams = new URLSearchParams({
+        period_type: exportPeriodType,
+        year: String(exportYear),
+        month: String(exportMonth),
+        week: String(exportWeek),
+        quarter: String(exportQuarter),
+        format: 'excel'
+      });
+      const res = await fetch(`${API_URL}/api/performance/evaluation/monthly-productivity-export?${queryParams.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+
+      if (!res.ok) {
+        let errMessage = "Failed to generate productivity report.";
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) errMessage = errData.error;
+        } catch {
+          // not json
+        }
+        showAlert(errMessage, "Export Failed", "danger");
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const cadenceLabel = exportPeriodType === 'weekly'
+        ? `W${exportWeek}_M${exportMonth}`
+        : exportPeriodType === 'quarterly'
+        ? `Q${exportQuarter}`
+        : exportPeriodType === 'yearly'
+        ? `FY${exportYear}-${exportYear + 1}`
+        : `M${exportMonth}`;
+      a.download = `Productivity_Report_${exportPeriodType.toUpperCase()}_${cadenceLabel}_${exportYear}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      setIsProductivityExportModalOpen(false);
+      showToast("Productivity Report downloaded successfully!");
+    } catch (err: any) {
+      showAlert(err?.message || "Error generating productivity export", "Export Error", "danger");
+    } finally {
+      setIsExportingProductivity(false);
+    }
+  };
 
   // Direct Excel Export using XLSX from database data
   const handleDownloadExcel = () => {
@@ -13297,7 +13524,7 @@ export const EvaluationTab: React.FC = () => {
                             try {
                               const dt = new Date(d.date + 'T00:00:00');
                               mName = dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                            } catch (_) {}
+                            } catch (_) { }
                           }
                           monthsMap.set(mKey, { key: mKey, name: mName, days: [] });
                         }
@@ -13309,8 +13536,8 @@ export const EvaluationTab: React.FC = () => {
                       const effectiveMonthFilter = dailyMonthFilter === 'all'
                         ? 'all'
                         : (monthsMap.has(dailyMonthFilter)
-                            ? dailyMonthFilter
-                            : (monthsMap.has(todayMonthKey) ? todayMonthKey : (monthsList[0]?.key ?? 'all')));
+                          ? dailyMonthFilter
+                          : (monthsMap.has(todayMonthKey) ? todayMonthKey : (monthsList[0]?.key ?? 'all')));
 
                       const displayedDays = effectiveMonthFilter === 'all'
                         ? curDailyRecords
@@ -13624,8 +13851,8 @@ export const EvaluationTab: React.FC = () => {
                       const effectiveQuarterFilter = weeklyQuarterFilter === 'all'
                         ? 'all'
                         : (typeof weeklyQuarterFilter === 'number' && quarters.some(q => q.qNum === weeklyQuarterFilter)
-                            ? weeklyQuarterFilter
-                            : (quarters.some(q => q.qNum === activeQuarterNum) ? activeQuarterNum : (quarters[0]?.qNum ?? 'all')));
+                          ? weeklyQuarterFilter
+                          : (quarters.some(q => q.qNum === activeQuarterNum) ? activeQuarterNum : (quarters[0]?.qNum ?? 'all')));
 
                       const displayedWeeks = effectiveQuarterFilter === 'all'
                         ? curWeeklyRecords
@@ -14723,11 +14950,11 @@ export const EvaluationTab: React.FC = () => {
                                                   }`}>
                                                   {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
                                                 </span>
-                                                  {isDeliverableWaived && (
-                                                    <span className="text-[9px] font-bold uppercase text-teal-800 px-1.5 py-0.5 rounded bg-teal-100 border border-teal-300 shadow-2xs">
-                                                      WAIVED
-                                                    </span>
-                                                  )}
+                                                {isDeliverableWaived && (
+                                                  <span className="text-[9px] font-bold uppercase text-teal-800 px-1.5 py-0.5 rounded bg-teal-100 border border-teal-300 shadow-2xs">
+                                                    WAIVED
+                                                  </span>
+                                                )}
                                                 {mgrRemarks?.trim() && (
                                                   <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />
                                                 )}
@@ -15896,9 +16123,8 @@ export const EvaluationTab: React.FC = () => {
                                           {/* Left: Chevron + Title + Date & criteria count */}
                                           <div className="flex items-center gap-3 min-w-0">
                                             <ChevronRightIcon
-                                              className={`w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-transform duration-200 shrink-0 ${
-                                                isExpanded ? 'rotate-90 text-primary-600' : ''
-                                              }`}
+                                              className={`w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-transform duration-200 shrink-0 ${isExpanded ? 'rotate-90 text-primary-600' : ''
+                                                }`}
                                             />
                                             <div className="min-w-0">
                                               <div className="font-bold text-xs text-slate-900 group-hover:text-primary-800 transition-colors">
@@ -16697,9 +16923,8 @@ export const EvaluationTab: React.FC = () => {
                                                   >
                                                     <div className="flex items-center gap-2.5 min-w-0">
                                                       <ChevronDownIcon
-                                                        className={`w-4 h-4 text-purple-900 transition-transform duration-200 shrink-0 ${
-                                                          isQExpanded ? 'rotate-0' : '-rotate-90'
-                                                        }`}
+                                                        className={`w-4 h-4 text-purple-900 transition-transform duration-200 shrink-0 ${isQExpanded ? 'rotate-0' : '-rotate-90'
+                                                          }`}
                                                       />
                                                       <span className="text-base">🎯</span>
                                                       <div className="min-w-0">
@@ -16749,9 +16974,8 @@ export const EvaluationTab: React.FC = () => {
                                                             >
                                                               <div className="flex items-center gap-2 min-w-0">
                                                                 <ChevronDownIcon
-                                                                  className={`w-3.5 h-3.5 text-slate-600 transition-transform duration-200 shrink-0 ${
-                                                                    isMExpanded ? 'rotate-0' : '-rotate-90'
-                                                                  }`}
+                                                                  className={`w-3.5 h-3.5 text-slate-600 transition-transform duration-200 shrink-0 ${isMExpanded ? 'rotate-0' : '-rotate-90'
+                                                                    }`}
                                                                 />
                                                                 <span className="text-sm">📅</span>
                                                                 <span className="font-bold text-xs text-slate-800">
@@ -16812,9 +17036,8 @@ export const EvaluationTab: React.FC = () => {
                                                   >
                                                     <div className="flex items-center gap-2.5 min-w-0">
                                                       <ChevronDownIcon
-                                                        className={`w-4 h-4 text-purple-900 transition-transform duration-200 shrink-0 ${
-                                                          isQExpanded ? 'rotate-0' : '-rotate-90'
-                                                        }`}
+                                                        className={`w-4 h-4 text-purple-900 transition-transform duration-200 shrink-0 ${isQExpanded ? 'rotate-0' : '-rotate-90'
+                                                          }`}
                                                       />
                                                       <span className="text-base">🎯</span>
                                                       <div className="min-w-0">
@@ -16864,9 +17087,8 @@ export const EvaluationTab: React.FC = () => {
                                                             >
                                                               <div className="flex items-center gap-2 min-w-0">
                                                                 <ChevronDownIcon
-                                                                  className={`w-3.5 h-3.5 text-slate-600 transition-transform duration-200 shrink-0 ${
-                                                                    isMExpanded ? 'rotate-0' : '-rotate-90'
-                                                                  }`}
+                                                                  className={`w-3.5 h-3.5 text-slate-600 transition-transform duration-200 shrink-0 ${isMExpanded ? 'rotate-0' : '-rotate-90'
+                                                                    }`}
                                                                 />
                                                                 <span className="text-sm">📅</span>
                                                                 <span className="font-bold text-xs text-slate-800">
@@ -16927,9 +17149,8 @@ export const EvaluationTab: React.FC = () => {
                                                   >
                                                     <div className="flex items-center gap-2.5 min-w-0">
                                                       <ChevronDownIcon
-                                                        className={`w-4 h-4 text-purple-900 transition-transform duration-200 shrink-0 ${
-                                                          isQExpanded ? 'rotate-0' : '-rotate-90'
-                                                        }`}
+                                                        className={`w-4 h-4 text-purple-900 transition-transform duration-200 shrink-0 ${isQExpanded ? 'rotate-0' : '-rotate-90'
+                                                          }`}
                                                       />
                                                       <span className="text-base">🎯</span>
                                                       <span className="font-extrabold text-xs text-purple-950">
@@ -18388,6 +18609,16 @@ export const EvaluationTab: React.FC = () => {
                       <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
 
 
+                        <button
+                          type="button"
+                          onClick={() => setIsProductivityExportModalOpen(true)}
+                          className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                          title="Download monthly productivity excel report team-wise"
+                        >
+                          <ArrowDownTrayIcon className="w-4 h-4 text-emerald-600 stroke-[2.2]" />
+                          <span>Download Report</span>
+                        </button>
+
                         {canCreateMetrics && (
                           <button
                             type="button"
@@ -18710,7 +18941,7 @@ export const EvaluationTab: React.FC = () => {
                                   return (
                                     <div key={group.teamName} className="space-y-1.5">
                                       <div className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border ${color.bg} ${color.text} ${color.border} flex items-center justify-between`}>
-                                        <span>{group.teamName}</span>
+                                        <span>Team: {group.teamName}</span>
                                         <span className="text-[10px] opacity-75">{group.members.length} people</span>
                                       </div>
                                       <div className="space-y-1">
@@ -19786,8 +20017,8 @@ export const EvaluationTab: React.FC = () => {
                     ))}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500 font-medium">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="text-xs text-slate-500 font-medium hidden sm:inline">
                       {reportViewTab === 'top_weekly'
                         ? topPerformersQuarterRangeText
                         : `1 Apr ${topPerformersFiscalYear} - 31 Mar ${topPerformersFiscalYear + 1}`}
@@ -19795,6 +20026,26 @@ export const EvaluationTab: React.FC = () => {
                     <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
                       ranked by score
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaultCadence = reportViewTab === 'top_weekly'
+                          ? 'weekly'
+                          : reportViewTab === 'top_quarterly'
+                          ? 'quarterly'
+                          : reportViewTab === 'top_annual'
+                          ? 'yearly'
+                          : 'monthly';
+                        setRankingsExportCadence(defaultCadence as any);
+                        setIsRankingsExportModalOpen(true);
+                      }}
+                      disabled={isExportingRankings}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200/90 shadow-2xs transition cursor-pointer disabled:opacity-50"
+                      title="Download Department and Team-wise Evaluation Matrix Excel"
+                    >
+                      <ArrowDownTrayIcon className="w-4 h-4 stroke-[2.2]" />
+                      <span>{isExportingRankings ? "Exporting..." : "Download"}</span>
+                    </button>
                   </div>
                 </div>
 
@@ -20332,7 +20583,7 @@ export const EvaluationTab: React.FC = () => {
                             try {
                               const dt = new Date(d.date + 'T00:00:00');
                               mName = dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                            } catch (_) {}
+                            } catch (_) { }
                           }
                           monthsMap.set(mKey, { key: mKey, name: mName, days: [] });
                         }
@@ -20350,8 +20601,8 @@ export const EvaluationTab: React.FC = () => {
                       const effectiveMonthFilter = mgrDailyMonthFilter === 'all'
                         ? 'all'
                         : (monthsMap.has(mgrDailyMonthFilter)
-                            ? mgrDailyMonthFilter
-                            : (monthsMap.has(todayMonthKey) ? todayMonthKey : (monthsList[0]?.key ?? 'all')));
+                          ? mgrDailyMonthFilter
+                          : (monthsMap.has(todayMonthKey) ? todayMonthKey : (monthsList[0]?.key ?? 'all')));
 
                       const displayedDays = effectiveMonthFilter === 'all'
                         ? curDailyRecords
@@ -20604,8 +20855,8 @@ export const EvaluationTab: React.FC = () => {
                       const effectiveQuarterFilter = mgrWeeklyQuarterFilter === 'all'
                         ? 'all'
                         : (typeof mgrWeeklyQuarterFilter === 'number' && quarters.some(q => q.qNum === mgrWeeklyQuarterFilter)
-                            ? mgrWeeklyQuarterFilter
-                            : (quarters.some(q => q.qNum === currentFiscalQ) ? currentFiscalQ : (quarters[0]?.qNum ?? 'all')));
+                          ? mgrWeeklyQuarterFilter
+                          : (quarters.some(q => q.qNum === currentFiscalQ) ? currentFiscalQ : (quarters[0]?.qNum ?? 'all')));
 
                       const displayedWeeks = effectiveQuarterFilter === 'all'
                         ? curWeeklyRecords
@@ -21404,13 +21655,12 @@ export const EvaluationTab: React.FC = () => {
                                         return (
                                           <div className="flex flex-col items-center justify-center gap-1">
                                             <label
-                                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all select-none text-xs font-semibold ${
-                                                isWaived
+                                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all select-none text-xs font-semibold ${isWaived
                                                   ? 'bg-teal-600 text-white border-teal-700 shadow-xs ring-2 ring-teal-300/40 cursor-pointer'
                                                   : hasGap
                                                     ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-2xs cursor-pointer'
                                                     : 'bg-slate-100/80 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
-                                              }`}
+                                                }`}
                                               title={
                                                 !hasGap
                                                   ? "Target is already fully met (no shortfall exists to waive)."
@@ -22387,7 +22637,540 @@ export const EvaluationTab: React.FC = () => {
         })()
       }
 
-      {/* Website Confirmation & Alert Dialog */}
+      {/* Rankings Top Performers Period Selection Modal */}
+      {isRankingsExportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl border border-slate-200 p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center border border-teal-100 shadow-2xs">
+                  <ArrowDownTrayIcon className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-bold text-slate-800">Download Rankings Report</h3>
+                    <span className="px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200 text-[11px] font-bold">
+                      {rankingsExportCadence === 'monthly' && `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][rankingsExportMonth - 1]} ${rankingsExportYear}`}
+                      {rankingsExportCadence === 'weekly' && `Week ${rankingsExportWeek} - ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][rankingsExportMonth - 1]} ${rankingsExportYear}`}
+                      {rankingsExportCadence === 'quarterly' && `Q${rankingsExportQuarter} (FY ${rankingsExportYear}-${rankingsExportYear + 1})`}
+                      {rankingsExportCadence === 'yearly' && `FY ${rankingsExportYear}-${rankingsExportYear + 1}`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Selected: <span className="font-semibold text-slate-700">{rankingsExportCadence === 'monthly' ? `${['January','February','March','April','May','June','July','August','September','October','November','December'][rankingsExportMonth - 1]} ${rankingsExportYear}` : rankingsExportCadence === 'weekly' ? `Week ${rankingsExportWeek} of ${['January','February','March','April','May','June','July','August','September','October','November','December'][rankingsExportMonth - 1]} ${rankingsExportYear}` : rankingsExportCadence === 'quarterly' ? `Q${rankingsExportQuarter} (FY ${rankingsExportYear}-${rankingsExportYear + 1})` : `FY ${rankingsExportYear}-${rankingsExportYear + 1}`}</span> • Team: <span className="font-semibold text-teal-700">{rankingsExportTeam === 'all' ? 'All Teams' : rankingsExportTeam}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRankingsExportModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Cadence Selection Tabs */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">
+                  Select Period Type
+                </label>
+                <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200/70">
+                  {[
+                    { id: 'weekly', label: 'Weekly' },
+                    { id: 'monthly', label: 'Monthly' },
+                    { id: 'quarterly', label: 'Quarterly' },
+                    { id: 'yearly', label: 'Yearly' },
+                  ].map(tab => {
+                    const isSel = rankingsExportCadence === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setRankingsExportCadence(tab.id as any)}
+                        className={`py-2 px-2 rounded-lg font-bold text-xs transition cursor-pointer text-center ${
+                          isSel
+                            ? 'bg-white text-teal-800 shadow-xs border border-teal-100'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Weekly Filters */}
+              {rankingsExportCadence === 'weekly' && (
+                <div className="grid grid-cols-3 gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Year
+                    </label>
+                    <select
+                      value={rankingsExportYear}
+                      onChange={(e) => setRankingsExportYear(Number(e.target.value))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition cursor-pointer"
+                    >
+                      {[2025, 2026, 2027].map(yr => (
+                        <option key={yr} value={yr}>{yr}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Month
+                    </label>
+                    <select
+                      value={rankingsExportMonth}
+                      onChange={(e) => setRankingsExportMonth(Number(e.target.value))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition cursor-pointer"
+                    >
+                      {[
+                        { m: 1, name: 'Jan' }, { m: 2, name: 'Feb' }, { m: 3, name: 'Mar' },
+                        { m: 4, name: 'Apr' }, { m: 5, name: 'May' }, { m: 6, name: 'Jun' },
+                        { m: 7, name: 'Jul' }, { m: 8, name: 'Aug' }, { m: 9, name: 'Sep' },
+                        { m: 10, name: 'Oct' }, { m: 11, name: 'Nov' }, { m: 12, name: 'Dec' },
+                      ].map(item => (
+                        <option key={item.m} value={item.m}>{item.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Week
+                    </label>
+                    <select
+                      value={rankingsExportWeek}
+                      onChange={(e) => setRankingsExportWeek(Number(e.target.value))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition cursor-pointer"
+                    >
+                      {[
+                        { w: 1, name: 'Week 1 (1 - 7)' },
+                        { w: 2, name: 'Week 2 (8 - 14)' },
+                        { w: 3, name: 'Week 3 (15 - 21)' },
+                        { w: 4, name: 'Week 4 (22 - 28)' },
+                        { w: 5, name: 'Week 5 (29 - End)' },
+                      ].map(item => (
+                        <option key={item.w} value={item.w}>{item.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Monthly Filters */}
+              {rankingsExportCadence === 'monthly' && (
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Select Month
+                    </label>
+                    <select
+                      value={rankingsExportMonth}
+                      onChange={(e) => setRankingsExportMonth(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition cursor-pointer"
+                    >
+                      {[
+                        { m: 1, name: "January" },
+                        { m: 2, name: "February" },
+                        { m: 3, name: "March" },
+                        { m: 4, name: "April" },
+                        { m: 5, name: "May" },
+                        { m: 6, name: "June" },
+                        { m: 7, name: "July" },
+                        { m: 8, name: "August" },
+                        { m: 9, name: "September" },
+                        { m: 10, name: "October" },
+                        { m: 11, name: "November" },
+                        { m: 12, name: "December" },
+                      ].map(item => (
+                        <option key={item.m} value={item.m}>{item.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Select Year
+                    </label>
+                    <select
+                      value={rankingsExportYear}
+                      onChange={(e) => setRankingsExportYear(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition cursor-pointer"
+                    >
+                      {[2025, 2026, 2027].map(yr => (
+                        <option key={yr} value={yr}>{yr}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Quarterly Filters */}
+              {rankingsExportCadence === 'quarterly' && (
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Select Quarter
+                    </label>
+                    <select
+                      value={rankingsExportQuarter}
+                      onChange={(e) => setRankingsExportQuarter(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition cursor-pointer"
+                    >
+                      <option value={1}>Q1 (Apr - Jun)</option>
+                      <option value={2}>Q2 (Jul - Sep)</option>
+                      <option value={3}>Q3 (Oct - Dec)</option>
+                      <option value={4}>Q4 (Jan - Mar)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Financial Year
+                    </label>
+                    <select
+                      value={rankingsExportYear}
+                      onChange={(e) => setRankingsExportYear(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition cursor-pointer"
+                    >
+                      {[2025, 2026, 2027].map(yr => (
+                        <option key={yr} value={yr}>FY {yr}-{yr + 1}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Yearly Filter */}
+              {rankingsExportCadence === 'yearly' && (
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                    Select Financial Year (Full Year Apr - Mar)
+                  </label>
+                  <select
+                    value={rankingsExportYear}
+                    onChange={(e) => setRankingsExportYear(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition cursor-pointer"
+                  >
+                    {[2025, 2026, 2027].map(yr => (
+                      <option key={yr} value={yr}>FY {yr}-{yr + 1} (1 Apr {yr} - 31 Mar {yr + 1})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Team Selector Filter */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                  Select Team
+                </label>
+                <select
+                  value={rankingsExportTeam}
+                  onChange={(e) => setRankingsExportTeam(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition cursor-pointer"
+                >
+                  <option value="all">All Teams (Every Sheet)</option>
+                  {/* Scope teams strictly to current manager / admin accessible teams */}
+                  {availableFilterTeams && availableFilterTeams.length > 0 ? (
+                    availableFilterTeams.map((tName: string) => (
+                      <option key={tName} value={tName}>
+                        {tName}
+                      </option>
+                    ))
+                  ) : (dbTeams && dbTeams.length > 0) ? (
+                    dbTeams.map((t: any) => (
+                      <option key={t.id || t.name} value={t.name || t.id}>
+                        {t.name || t.id}
+                      </option>
+                    ))
+                  ) : null}
+                </select>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-teal-50/70 border border-teal-100 flex items-center gap-2 text-[11px] text-teal-800">
+                <InformationCircleIcon className="w-4 h-4 shrink-0 text-teal-600" />
+                <span>
+                  Downloads the performance matrix containing all team members under your reporting scope with daily scores and averages.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsRankingsExportModalOpen(false)}
+                disabled={isExportingRankings}
+                className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadRankingsMatrix}
+                disabled={isExportingRankings}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-teal-700 to-cyan-700 hover:from-teal-800 hover:to-cyan-800 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer disabled:opacity-50"
+              >
+                <ArrowDownTrayIcon className="w-4 h-4 stroke-[2.2]" />
+                <span>{isExportingRankings ? "Generating Excel..." : "Download Excel"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Monthly Productivity Report Download Modal */}
+      {isProductivityExportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl border border-slate-200 p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shadow-2xs">
+                  <ArrowDownTrayIcon className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">Download Productivity Report</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Team-wise Excel with deliverable Total and Completed metrics</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsProductivityExportModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Period Type Selection Tabs */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">
+                  Select Evaluation Cadence
+                </label>
+                <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200/70">
+                  {[
+                    { id: 'weekly', label: 'Weekly' },
+                    { id: 'monthly', label: 'Monthly' },
+                    { id: 'quarterly', label: 'Quarterly' },
+                    { id: 'yearly', label: 'Yearly' },
+                  ].map(tab => {
+                    const isSel = exportPeriodType === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setExportPeriodType(tab.id as any)}
+                        className={`py-2 px-2 rounded-lg font-bold text-xs transition cursor-pointer text-center ${
+                          isSel
+                            ? 'bg-white text-emerald-700 shadow-xs border border-emerald-100'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Dynamic Filter Selectors Based on Cadence */}
+              {exportPeriodType === 'weekly' && (
+                <div className="grid grid-cols-3 gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Year
+                    </label>
+                    <select
+                      value={exportYear}
+                      onChange={(e) => setExportYear(Number(e.target.value))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition cursor-pointer"
+                    >
+                      {[2025, 2026, 2027].map(yr => (
+                        <option key={yr} value={yr}>{yr}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Month
+                    </label>
+                    <select
+                      value={exportMonth}
+                      onChange={(e) => setExportMonth(Number(e.target.value))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition cursor-pointer"
+                    >
+                      {[
+                        { m: 1, name: 'Jan' }, { m: 2, name: 'Feb' }, { m: 3, name: 'Mar' },
+                        { m: 4, name: 'Apr' }, { m: 5, name: 'May' }, { m: 6, name: 'Jun' },
+                        { m: 7, name: 'Jul' }, { m: 8, name: 'Aug' }, { m: 9, name: 'Sep' },
+                        { m: 10, name: 'Oct' }, { m: 11, name: 'Nov' }, { m: 12, name: 'Dec' },
+                      ].map(item => (
+                        <option key={item.m} value={item.m}>{item.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Week
+                    </label>
+                    <select
+                      value={exportWeek}
+                      onChange={(e) => setExportWeek(Number(e.target.value))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition cursor-pointer"
+                    >
+                      {[
+                        { w: 1, name: 'Week 1 (1 - 7)' },
+                        { w: 2, name: 'Week 2 (8 - 14)' },
+                        { w: 3, name: 'Week 3 (15 - 21)' },
+                        { w: 4, name: 'Week 4 (22 - 28)' },
+                        { w: 5, name: 'Week 5 (29 - End)' },
+                      ].map(item => (
+                        <option key={item.w} value={item.w}>{item.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {exportPeriodType === 'monthly' && (
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Select Month
+                    </label>
+                    <select
+                      value={exportMonth}
+                      onChange={(e) => setExportMonth(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition cursor-pointer"
+                    >
+                      {[
+                        { m: 1, name: "January" },
+                        { m: 2, name: "February" },
+                        { m: 3, name: "March" },
+                        { m: 4, name: "April" },
+                        { m: 5, name: "May" },
+                        { m: 6, name: "June" },
+                        { m: 7, name: "July" },
+                        { m: 8, name: "August" },
+                        { m: 9, name: "September" },
+                        { m: 10, name: "October" },
+                        { m: 11, name: "November" },
+                        { m: 12, name: "December" },
+                      ].map(item => (
+                        <option key={item.m} value={item.m}>{item.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Select Year
+                    </label>
+                    <select
+                      value={exportYear}
+                      onChange={(e) => setExportYear(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition cursor-pointer"
+                    >
+                      {[2025, 2026, 2027].map(yr => (
+                        <option key={yr} value={yr}>{yr}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {exportPeriodType === 'quarterly' && (
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Select Quarter
+                    </label>
+                    <select
+                      value={exportQuarter}
+                      onChange={(e) => setExportQuarter(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition cursor-pointer"
+                    >
+                      <option value={1}>Q1 (Apr - Jun)</option>
+                      <option value={2}>Q2 (Jul - Sep)</option>
+                      <option value={3}>Q3 (Oct - Dec)</option>
+                      <option value={4}>Q4 (Jan - Mar)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Financial Year
+                    </label>
+                    <select
+                      value={exportYear}
+                      onChange={(e) => setExportYear(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition cursor-pointer"
+                    >
+                      {[2025, 2026, 2027].map(yr => (
+                        <option key={yr} value={yr}>FY {yr}-{yr + 1}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {exportPeriodType === 'yearly' && (
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                    Select Financial Year (Full Year Apr - Mar)
+                  </label>
+                  <select
+                    value={exportYear}
+                    onChange={(e) => setExportYear(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition cursor-pointer"
+                  >
+                    {[2025, 2026, 2027].map(yr => (
+                      <option key={yr} value={yr}>FY {yr}-{yr + 1} (1 Apr {yr} - 31 Mar {yr + 1})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="p-2.5 rounded-xl bg-teal-50/70 border border-teal-100 flex items-center gap-2 text-[11px] text-teal-800">
+                <InformationCircleIcon className="w-4 h-4 shrink-0 text-teal-600" />
+                <span>
+                  The downloaded workbook includes team-wise sheets, deliverable Total & Completed metrics, and attendance analysis.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsProductivityExportModalOpen(false)}
+                disabled={isExportingProductivity}
+                className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadMonthlyProductivity}
+                disabled={isExportingProductivity}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer disabled:opacity-50"
+              >
+                <ArrowDownTrayIcon className="w-4 h-4 stroke-[2.2]" />
+                <span>{isExportingProductivity ? "Generating Excel..." : "Download Excel"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+{/* Website Confirmation & Alert Dialog */}
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}
         title={confirmDialog.title}
