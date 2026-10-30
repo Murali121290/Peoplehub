@@ -986,6 +986,7 @@ export const EvaluationTab: React.FC = () => {
   const [rankingsExportWeek, setRankingsExportWeek] = useState<number>(4);
   const [rankingsExportQuarter, setRankingsExportQuarter] = useState<number>(3);
   const [rankingsExportTeam, setRankingsExportTeam] = useState<string>('all');
+  const [rankingsExportManager, setRankingsExportManager] = useState<string>('all');
   const [isExportingRankings, setIsExportingRankings] = useState<boolean>(false);
 
   // Manager Monthly Productivity Report Modal State
@@ -1062,7 +1063,7 @@ export const EvaluationTab: React.FC = () => {
   };
 
   // Dynamic Frequency & Period Configuration State
-  const [mgrPeriodType, setMgrPeriodType] = useState<'quarterly' | 'monthly' | 'weekly' | 'daily' | 'yearly'>('quarterly');
+  const [mgrPeriodType, setMgrPeriodType] = useState<'quarterly' | 'monthly' | 'weekly' | 'daily' | 'yearly'>('yearly');
   const [mgrSubFrequency, setMgrSubFrequency] = useState<'monthly' | 'weekly' | 'quarterly' | 'annual' | 'daily' | ''>('');
   const [mgrPeriodQuarter, setMgrPeriodQuarter] = useState<number>(currentQuarter); // 1, 2, 3, 4 (Stage 1..4)
   const [mgrPeriodYear, setMgrPeriodYear] = useState<number>(currentYear);
@@ -1257,8 +1258,13 @@ export const EvaluationTab: React.FC = () => {
   const [mgrEditFormName, setMgrEditFormName] = useState<string>('');
   const [mgrEditPeriod, setMgrEditPeriod] = useState<string>('');
   const [mgrEditTeamName, setMgrEditTeamName] = useState<string>('');
+  const [mgrEditDirectMembers, setMgrEditDirectMembers] = useState<any[]>([]);
   const [mgrEditCategories, setMgrEditCategories] = useState<KPICategory[]>(DEFAULT_KPI_CATEGORIES);
   const [isSavingMatrixEdit, setIsSavingMatrixEdit] = useState<boolean>(false);
+  const [mgrEditTargetCycle, setMgrEditTargetCycle] = useState<EvaluationCycle | null>(null);
+  const [mgrEditSelectedEmpIds, setMgrEditSelectedEmpIds] = useState<string[]>([]);
+  const [mgrEditEffectiveOption, setMgrEditEffectiveOption] = useState<'tomorrow' | 'today' | 'next_month' | 'custom'>('tomorrow');
+  const [mgrEditCustomDate, setMgrEditCustomDate] = useState<string>('');
 
   // Employee Form State
   const [selectedResponseId, setSelectedResponseId] = useState<string>('');
@@ -1278,6 +1284,7 @@ export const EvaluationTab: React.FC = () => {
   const [empRemarks, setEmpRemarks] = useState('');
   const [employeeSubTab, setEmployeeSubTab] = useState<'worksheet' | 'reports'>('worksheet');
   const [isSubmittingEmp, setIsSubmittingEmp] = useState<boolean>(false);
+  const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
   const [empSearchQuery, setEmpSearchQuery] = useState<string>('');
   const [empFilterTab, setEmpFilterTab] = useState<'all' | 'adjusted' | 'pending'>('all');
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
@@ -1358,7 +1365,7 @@ export const EvaluationTab: React.FC = () => {
   // Department Oversight / Submissions States
   const [oversightSubView, setOversightSubView] = useState<'submissions' | 'top_performers'>('submissions');
   const [submissionStatusFilter, setSubmissionStatusFilter] = useState<'all' | 'with_manager' | 'approved' | 'completed' | 'with_gm' | 'with_admin' | 'sent_back'>('all');
-  const [submissionGroupBy, setSubmissionGroupBy] = useState<'none' | 'department' | 'team'>('team');
+  const [submissionGroupBy, setSubmissionGroupBy] = useState<'none' | 'department' | 'team' | 'manager'>('team');
   const [expandedSubmissionGroups, setExpandedSubmissionGroups] = useState<Record<string, boolean>>({});
   const [expandedSubmissionDesigs, setExpandedSubmissionDesigs] = useState<Record<string, boolean>>({});
   const [submissionSearchQuery, setSubmissionSearchQuery] = useState<string>('');
@@ -3696,11 +3703,11 @@ export const EvaluationTab: React.FC = () => {
     setMgrPeriodToDate(week.to);
     setMgrPeriodDueDate(todayStr);
 
-    // Initial selected employees = only employees NOT already assigned for this stage/period AND with NO pending evaluation
-    setMgrPeriodType('quarterly');
-    setMgrPeriodQuarter(currentQuarter);
+    // Initial selected employees = default to Yearly Rollout (Automatically Assign Milestones)
+    setMgrPeriodType('yearly');
+    setMgrSubFrequency('');
     setMgrPeriodYear(currentYear);
-    syncPeriodAndFormName('quarterly', currentQuarter, currentYear, currentMonth, week.from, week.to, undefined, defaultTeamVal);
+    syncPeriodAndFormName('yearly', currentQuarter, currentYear, currentMonth, week.from, week.to, undefined, defaultTeamVal);
 
     // Asynchronously load manager's saved templates from PostgreSQL DB
     const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.id || '');
@@ -3710,7 +3717,7 @@ export const EvaluationTab: React.FC = () => {
       isEmployeeActive(e) && isEmpInSelectedTeam(e, defaultTeamVal)
     );
     const unassignedMembers = baseTeamMembers.filter((e: any) => {
-      return !isEmpAlreadyAssignedForPeriod(e, undefined, 'quarterly', currentQuarter, currentYear) && !getEmpPendingEvaluation(e);
+      return !isEmpAlreadyAssignedForPeriod(e, undefined, 'yearly', currentQuarter, currentYear) && !getEmpPendingEvaluation(e);
     });
     setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || '')).filter(Boolean));
     setMgrCustomizeMembers(false);
@@ -4836,27 +4843,64 @@ export const EvaluationTab: React.FC = () => {
   const filledResponsesCount = getCycleLockedInfo(activeManagerCycle).activeCount;
 
   // Handlers for Manager Edit & Delete Deliverables Matrix
-  const handleOpenMgrEditMatrixModal = (targetCycle?: EvaluationCycle) => {
+  const handleOpenMgrEditMatrixModal = (targetCycle?: EvaluationCycle, directMembers?: any[]) => {
     const cycleToEdit = targetCycle || activeManagerCycle;
     if (!cycleToEdit) {
       showAlert('No active deliverables matrix found for this team. You can create one using "Create & Assign Metrics".', 'No Matrix Found');
       return;
     }
-    const { isLocked, activeCount } = getCycleLockedInfo(cycleToEdit);
-    if (isLocked) {
-      showAlert(
-        `This Deliverables Matrix cannot be edited because ${activeCount} team member(s) have already started or submitted their evaluations. Editing is locked to protect score data and maintain review consistency.`,
-        'Deliverables Matrix Locked',
-        'warning'
-      );
-      return;
-    }
 
+    setMgrEditTargetCycle(cycleToEdit);
     setMgrEditCycleId(cycleToEdit.id);
     setMgrEditFormName(cycleToEdit.name || `Q${currentQuarter} Performance Metrics`);
     setMgrEditPeriod(cycleToEdit.periodName || `Q${currentQuarter} ${currentYear} (${quarterLabel})`);
     setMgrEditTeamName(cycleToEdit.teamName || effectiveTeamName || 'Your Team');
-    setMgrEditCategories(JSON.parse(JSON.stringify(cycleToEdit.categories || DEFAULT_KPI_CATEGORIES)));
+
+    // Load actual categories from cycle or direct members' response if available
+    let loadedCategories = cycleToEdit.categories;
+    if ((!loadedCategories || loadedCategories.length === 0) && directMembers && directMembers.length > 0) {
+      for (const m of directMembers) {
+        if (m.response?.categories && m.response.categories.length > 0) {
+          loadedCategories = m.response.categories;
+          break;
+        }
+      }
+    }
+    setMgrEditCategories(JSON.parse(JSON.stringify(loadedCategories || DEFAULT_KPI_CATEGORIES)));
+
+    // Store direct members for strict team-scoped selection
+    if (directMembers && directMembers.length > 0) {
+      setMgrEditDirectMembers(directMembers);
+      const memberIds = directMembers
+        .map(m => String(m.employeeCode || m.response?.employeeId || m.response?.employeeCode || ''))
+        .filter(Boolean);
+      setMgrEditSelectedEmpIds(memberIds);
+    } else {
+      setMgrEditDirectMembers([]);
+      // Pre-select all employee IDs currently enrolled in this cycle / team
+      const initialEmpIds: string[] = [];
+      if (Array.isArray(cycleToEdit.employeeIds) && cycleToEdit.employeeIds.length > 0) {
+        initialEmpIds.push(...cycleToEdit.employeeIds.map(String));
+      } else {
+        responses.forEach(r => {
+          if ((r.cycleId === cycleToEdit.id || (cycleToEdit.teamId && r.teamId === cycleToEdit.teamId) || (cycleToEdit.teamName && (r.department || '').toLowerCase() === cycleToEdit.teamName.toLowerCase())) && r.employeeId) {
+            if (!initialEmpIds.includes(String(r.employeeId))) initialEmpIds.push(String(r.employeeId));
+          }
+        });
+      }
+      setMgrEditSelectedEmpIds(initialEmpIds);
+    }
+
+    const freq = String(cycleToEdit.frequency || '').toLowerCase();
+    if (freq === 'daily' || freq === 'weekly') {
+      setMgrEditEffectiveOption('tomorrow');
+    } else {
+      setMgrEditEffectiveOption('next_month');
+    }
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    setMgrEditCustomDate(t.toISOString().split('T')[0]);
+
     setIsMgrEditMatrixModalOpen(true);
   };
 
@@ -4989,12 +5033,8 @@ export const EvaluationTab: React.FC = () => {
     e.preventDefault();
     if (!mgrEditCycleId) return;
 
-    if (isMatrixLocked) {
-      showAlert(
-        `This Deliverables Matrix cannot be edited because ${filledResponsesCount} team member(s) have already started or submitted their evaluations.`,
-        'Matrix Locked',
-        'warning'
-      );
+    if (mgrEditSelectedEmpIds.length === 0) {
+      showAlert('Please select at least one employee to update metrics for.', 'No Employees Selected', 'warning');
       return;
     }
 
@@ -5058,11 +5098,37 @@ export const EvaluationTab: React.FC = () => {
       await evaluationService.saveCycles(updatedCycles);
       evaluationService.saveResponsesLocal(updatedResponses);
 
+      // Calculate effective date string based on manager selection
+      let computedEffectiveFrom = '';
+      const nowD = new Date();
+      if (mgrEditEffectiveOption === 'tomorrow') {
+        const tom = new Date(nowD);
+        tom.setDate(tom.getDate() + 1);
+        computedEffectiveFrom = tom.toISOString().split('T')[0];
+      } else if (mgrEditEffectiveOption === 'today') {
+        computedEffectiveFrom = nowD.toISOString().split('T')[0];
+      } else if (mgrEditEffectiveOption === 'next_month') {
+        const nextM = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 1);
+        computedEffectiveFrom = nextM.toISOString().split('T')[0];
+      } else if (mgrEditEffectiveOption === 'custom' && mgrEditCustomDate) {
+        computedEffectiveFrom = mgrEditCustomDate;
+      }
+
       // Sync to backend Postgres
       try {
         const targetCycle = updatedCycles.find(c => c.id === mgrEditCycleId);
         if (targetCycle) {
           const token = localStorage.getItem('token') || '';
+          // Strictly target only the employees selected by the manager!
+          const targetEmpObjects = mgrEditSelectedEmpIds.map(empId => {
+            const e = dbEmployees.find(emp => String(emp.employee_id) === String(empId));
+            return {
+              id: String(e?.employee_id || empId),
+              employee_id: String(e?.employee_id || empId),
+              name: e ? `${e.first_name || ''} ${e.last_name || ''}`.trim() : `Employee ${empId}`
+            };
+          });
+
           await fetch(`${API_URL}/api/performance/kpi-evaluations/assign`, {
             method: 'POST',
             headers: {
@@ -5077,14 +5143,9 @@ export const EvaluationTab: React.FC = () => {
               reporting_manager: targetCycle.managerName,
               reporting_manager_id: targetCycle.managerId,
               categories: mgrEditCategories,
-              employees: (targetCycle.employeeIds || []).map(empId => {
-                const e = dbEmployees.find(emp => String(emp.employee_id) === String(empId));
-                return {
-                  id: String(e?.employee_id || empId),
-                  employee_id: String(e?.employee_id || empId),
-                  name: e ? `${e.first_name || ''} ${e.last_name || ''}`.trim() : `Employee ${empId}`
-                };
-              })
+              effective_from: computedEffectiveFrom,
+              effectiveDate: computedEffectiveFrom,
+              employees: targetEmpObjects
             })
           });
         }
@@ -5111,9 +5172,9 @@ export const EvaluationTab: React.FC = () => {
     }
 
     const { isLocked, activeCount } = getCycleLockedInfo(cycleToDelete);
-    if (isLocked) {
+    if (!isHrOrAdmin && isLocked) {
       showAlert(
-        `This Deliverables Matrix cannot be deleted because ${activeCount} team member(s) have already started or submitted their self-evaluations. Deletion is disabled to protect score integrity and historical records.`,
+        `This Deliverables Matrix cannot be deleted because ${activeCount} team member(s) have already started or submitted their self-evaluations. Deletion is disabled for managers to protect score integrity. Only HR / Admin can remove it.`,
         'Deliverables Matrix Locked',
         'warning'
       );
@@ -5207,8 +5268,8 @@ export const EvaluationTab: React.FC = () => {
     const isCalibrated = resp.managerScore != null && statusStr !== 'manager_review' && statusStr !== 'Submitted to Manager';
     const isEmpSubmitted = Boolean(resp.employeeSubmittedAt) || Boolean((resp as any).submitted_at) || statusStr === 'manager_review' || statusStr === 'Submitted to Manager' || statusStr.toLowerCase().includes('submitted');
 
-    if (isEmpSubmitted || isCalibrated || resp.managerScore != null || statusStr === 'Calibrated & Approved' || statusStr === 'Published' || statusStr === 'Completed' || statusStr === 'Approved') {
-      showToast('Submitted, published, and approved evaluation records cannot be deleted.');
+    if (!isHrOrAdmin && (isEmpSubmitted || isCalibrated || resp.managerScore != null || statusStr === 'Calibrated & Approved' || statusStr === 'Published' || statusStr === 'Completed' || statusStr === 'Approved')) {
+      showToast('Submitted, published, and approved evaluation records cannot be deleted by managers. Only HR / Admin can remove records.');
       return;
     }
     const { employeeName, employeeCode } = getEmployeeDisplayInfo(resp);
@@ -8123,6 +8184,20 @@ export const EvaluationTab: React.FC = () => {
     return { employeeCode, employeeName, teamName, departmentName, designation, empInDb, profileImage };
   };
 
+  // Helper to extract clean reporting manager name for any evaluation response
+  const getResponseReportingManager = (r: EvaluationResponse): string => {
+    const { empInDb } = getEmployeeDisplayInfo(r);
+    const respCycle = cycles.find(c => c.id === r.cycleId);
+    const raw = (r as any).reportingManager || (r as any).reporting_manager || empInDb?.reporting_manager || (r as any).managerName || (r as any).manager_name || respCycle?.managerName || '';
+    let repMgrName = String(raw).trim();
+    // Strip trailing employee code in parens like "Murali B (1881)" -> "Murali B"
+    const parenMatch = repMgrName.match(/^([^(]+)/);
+    if (parenMatch && parenMatch[1]) {
+      repMgrName = parenMatch[1].trim();
+    }
+    return repMgrName || 'Unassigned Manager';
+  };
+
   // Helper to render distinct status badges across all lifecycle stages
   const renderStatusBadge = (status: string, r?: EvaluationResponse) => {
     const s = String(status || '').toLowerCase().replace(/[_\s]+/g, ' ').trim();
@@ -8545,11 +8620,13 @@ export const EvaluationTab: React.FC = () => {
       const q = submissionSearchQuery.trim().toLowerCase();
       list = list.filter(r => {
         const { employeeName, employeeCode, teamName, departmentName } = getEmployeeDisplayInfo(r);
+        const repMgr = getResponseReportingManager(r);
         return (
           (employeeName || '').toLowerCase().includes(q) ||
           (employeeCode || '').toLowerCase().includes(q) ||
           (teamName || '').toLowerCase().includes(q) ||
           (departmentName || '').toLowerCase().includes(q) ||
+          (repMgr || '').toLowerCase().includes(q) ||
           (r.periodName || '').toLowerCase().includes(q) ||
           (r.frequency || '').toLowerCase().includes(q)
         );
@@ -8575,9 +8652,11 @@ export const EvaluationTab: React.FC = () => {
     // Populate all available responses in this manager/oversight scope
     allDeduplicatedManagerResponses.forEach(r => {
       const info = getEmployeeDisplayInfo(r);
-      const groupKey = submissionGroupBy === 'team'
-        ? (info.teamName || 'General Team')
-        : (info.departmentName || 'General Department');
+      const groupKey = submissionGroupBy === 'manager'
+        ? getResponseReportingManager(r)
+        : (submissionGroupBy === 'team'
+          ? (info.teamName || 'General Team')
+          : (info.departmentName || 'General Department'));
 
       if (!groupMap.has(groupKey)) {
         groupMap.set(groupKey, {
@@ -8597,9 +8676,11 @@ export const EvaluationTab: React.FC = () => {
     // Populate filtered items
     filteredSubmissionsList.forEach(r => {
       const info = getEmployeeDisplayInfo(r);
-      const groupKey = submissionGroupBy === 'team'
-        ? (info.teamName || 'General Team')
-        : (info.departmentName || 'General Department');
+      const groupKey = submissionGroupBy === 'manager'
+        ? getResponseReportingManager(r)
+        : (submissionGroupBy === 'team'
+          ? (info.teamName || 'General Team')
+          : (info.departmentName || 'General Department'));
 
       if (groupMap.has(groupKey)) {
         groupMap.get(groupKey)!.items.push(r);
@@ -9590,6 +9671,22 @@ export const EvaluationTab: React.FC = () => {
     });
     return Array.from(teams).filter(Boolean).sort();
   }, [activeScopedResponsesForCards, managerDirectReports, reportFilterDept, dbEmployees, dbTeams]);
+
+  // Available reporting managers dynamically populated directly from database employees & evaluations within scope
+  const availableFilterReportingManagers = useMemo(() => {
+    const managers = new Set<string>();
+    allDeduplicatedManagerResponses.forEach(r => {
+      const mgr = getResponseReportingManager(r);
+      if (mgr && mgr !== 'Unassigned Manager') managers.add(mgr);
+    });
+    dbEmployees.forEach((e: any) => {
+      let raw = (e.reporting_manager || '').trim();
+      const parenMatch = raw.match(/^([^(]+)/);
+      if (parenMatch && parenMatch[1]) raw = parenMatch[1].trim();
+      if (raw) managers.add(raw);
+    });
+    return Array.from(managers).sort();
+  }, [allDeduplicatedManagerResponses, dbEmployees, cycles]);
 
   // Available designations dynamically populated directly from database employees & teams within scope
   const availableFilterDesignations = useMemo(() => {
@@ -11217,6 +11314,7 @@ export const EvaluationTab: React.FC = () => {
         week: String(rankingsExportWeek),
         quarter: String(rankingsExportQuarter),
         team: rankingsExportTeam,
+        manager: rankingsExportManager,
       });
 
       const res = await fetch(`${API_URL}/api/performance/evaluation/rankings-export?${queryParams.toString()}`, {
@@ -11555,6 +11653,92 @@ export const EvaluationTab: React.FC = () => {
 
 
   // 4. Employee Submit to Manager
+  // Employee Save Milestone Draft handler (saves actuals & remarks to DB + localStorage, keeps status pending_employee)
+  const handleEmployeeSaveMilestoneDraft = async () => {
+    if (!activeEmpResponse || isSubmittingEmp || isSavingDraft) return;
+    try {
+      setIsSavingDraft(true);
+      const isYearly = isYearlyResponse(activeEmpResponse);
+      const empCadence = isYearly ? getResponseCadence(activeEmpResponse) : null;
+
+      if (empCadence === 'daily') {
+        const curDailyRecords = getResponseDailyRecords(activeEmpResponse);
+        const targetDayRecord = curDailyRecords.find(d => d.dayIndex === activeYearlyDailyIndex);
+        const currentDayEntries = yearlyDailyKpiInputs[activeYearlyDailyIndex] || targetDayRecord?.kpiEntries || {};
+        const remarks = yearlyDailyRemarks[activeYearlyDailyIndex] || targetDayRecord?.employeeRemarks || '';
+        const dayLabel = getYearlyDailyLockInfo(activeYearlyDailyIndex, curDailyRecords).currentDayLabel || `Day ${activeYearlyDailyIndex}`;
+
+        const updatedResp = await evaluationService.saveYearlyDailyDraft(
+          activeEmpResponse.id,
+          activeYearlyDailyIndex,
+          currentDayEntries,
+          remarks
+        );
+        setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+        setSelectedResponseId(updatedResp.id);
+        showToast(`${dayLabel} deliverables saved as draft. You can continue editing anytime.`);
+      } else if (empCadence === 'weekly') {
+        const curWeeklyRecords = getResponseWeeklyRecords(activeEmpResponse);
+        const targetWeekRecord = curWeeklyRecords.find(w => w.weekIndex === activeYearlyWeekIndex);
+        const currentWeekEntries = yearlyWeekKpiInputs[activeYearlyWeekIndex] || targetWeekRecord?.kpiEntries || {};
+        const remarks = yearlyWeekRemarks[activeYearlyWeekIndex] || targetWeekRecord?.employeeRemarks || '';
+        const weekLabel = getYearlyWeekLockInfo(activeYearlyWeekIndex, curWeeklyRecords).currentWeekLabel || `Week ${activeYearlyWeekIndex}`;
+
+        const updatedResp = await evaluationService.saveYearlyWeekDraft(
+          activeEmpResponse.id,
+          activeYearlyWeekIndex,
+          currentWeekEntries,
+          remarks
+        );
+        setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+        setSelectedResponseId(updatedResp.id);
+        showToast(`${weekLabel} deliverables saved as draft. You can continue editing anytime.`);
+      } else if (empCadence === 'quarterly') {
+        const curQuarterlyRecords = getResponseQuarterlyRecords(activeEmpResponse);
+        const targetQuarterRecord = curQuarterlyRecords.find(q => q.quarterIndex === activeYearlyQuarterIndex);
+        const currentQuarterEntries = yearlyQuarterKpiInputs[activeYearlyQuarterIndex] || targetQuarterRecord?.kpiEntries || {};
+        const remarks = yearlyQuarterRemarks[activeYearlyQuarterIndex] || targetQuarterRecord?.employeeRemarks || '';
+        const quarterLabel = getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords).currentQuarterLabel || `Q${activeYearlyQuarterIndex}`;
+
+        const updatedResp = await evaluationService.saveYearlyQuarterDraft(
+          activeEmpResponse.id,
+          activeYearlyQuarterIndex,
+          currentQuarterEntries,
+          remarks
+        );
+        setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+        setSelectedResponseId(updatedResp.id);
+        showToast(`${quarterLabel} deliverables saved as draft. You can continue editing anytime.`);
+      } else if (empCadence === 'monthly' || isYearly) {
+        const curMonthlyRecords = getResponseMonthlyRecords(activeEmpResponse);
+        const targetMonthRecord = curMonthlyRecords.find(m => m.monthIndex === activeYearlyFiscalMonth);
+        const currentMonthEntries = yearlyMonthKpiInputs[activeYearlyFiscalMonth] || targetMonthRecord?.kpiEntries || {};
+        const remarks = yearlyMonthRemarks[activeYearlyFiscalMonth] || targetMonthRecord?.employeeRemarks || '';
+        const monthName = getYearlyMonthLockInfo(activeYearlyFiscalMonth, curMonthlyRecords).currentMonthName || `Month ${activeYearlyFiscalMonth}`;
+
+        const updatedResp = await evaluationService.saveYearlyMonthDraft(
+          activeEmpResponse.id,
+          activeYearlyFiscalMonth,
+          currentMonthEntries,
+          remarks
+        );
+        setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+        setSelectedResponseId(updatedResp.id);
+        showToast(`${monthName} deliverables saved as draft. You can continue editing anytime.`);
+      } else {
+        // Standalone cycle
+        const updatedResp = await evaluationService.saveEmployeeDraft(activeEmpResponse.id, kpiInputs, empRemarks);
+        setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+        setSelectedResponseId(updatedResp.id);
+        showToast('Self-assessment saved as draft. You can continue editing anytime.');
+      }
+    } catch (err: any) {
+      showAlert(`Failed to save draft: ${err?.message || 'Unknown error'}`, 'Save Draft Error', 'warning');
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
   const handleEmployeeSubmit = async () => {
     if (isEmpSubmitted) {
       showAlert('Your self-assessment has already been submitted to your manager and is locked.', 'Already Submitted');
@@ -11945,6 +12129,7 @@ export const EvaluationTab: React.FC = () => {
         const targetQIndex = submittedQuarter ? submittedQuarter.quarterIndex : (firstActionableQuarter ? firstActionableQuarter.quarterIndex : curFiscalQ);
         setActiveMgrYearlyQuarterIndex(targetQIndex);
 
+        const initialWaived: Record<string, boolean> = {};
         const curQuarterRec = curQuarterlyRecords.find(q => q.quarterIndex === targetQIndex);
         targetCats.forEach((cat: KPICategory) => {
           cat.kpis.forEach((kpi: KPIItem) => {
@@ -11953,10 +12138,12 @@ export const EvaluationTab: React.FC = () => {
             const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
             initialActuals[kpi.id] = mgrActual;
             initialRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+            initialWaived[kpi.id] = Boolean(entry?.isWaived || (entry as any)?.fullCreditGranted);
           });
         });
         setMgrKpiActuals(initialActuals);
         setMgrKpiRemarks(initialRemarks);
+        setMgrWaivedShortfall(initialWaived);
         let totalScore = 0;
         targetCats.forEach((cat: KPICategory) => {
           let rawCat = 0;
@@ -11983,6 +12170,7 @@ export const EvaluationTab: React.FC = () => {
       const targetFMonth = submittedMonth ? submittedMonth.monthIndex : (firstActionableMonth ? firstActionableMonth.monthIndex : curFiscalMonth);
       setActiveMgrYearlyFiscalMonth(targetFMonth);
 
+      const initialWaived: Record<string, boolean> = {};
       const curMonthRec = (r.monthly_records || []).find(m => m.monthIndex === targetFMonth);
       targetCats.forEach((cat: KPICategory) => {
         cat.kpis.forEach((kpi: KPIItem) => {
@@ -11991,10 +12179,12 @@ export const EvaluationTab: React.FC = () => {
           const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
           initialActuals[kpi.id] = mgrActual;
           initialRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+          initialWaived[kpi.id] = Boolean(entry?.isWaived || (entry as any)?.fullCreditGranted);
         });
       });
       setMgrKpiActuals(initialActuals);
       setMgrKpiRemarks(initialRemarks);
+      setMgrWaivedShortfall(initialWaived);
       let totalScore = 0;
       targetCats.forEach((cat: KPICategory) => {
         let rawCat = 0;
@@ -12010,6 +12200,7 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
 
+    const initialWaived: Record<string, boolean> = {};
     targetCats.forEach((cat: KPICategory) => {
       cat.kpis.forEach((kpi: KPIItem) => {
         const respItem = r.kpiResponses?.[kpi.id] || (kpi.name ? r.kpiResponses?.[kpi.name] : null);
@@ -12020,19 +12211,25 @@ export const EvaluationTab: React.FC = () => {
         }
         initialActuals[kpi.id] = actualVal;
         initialRemarks[kpi.id] = respItem?.managerRemarks || '';
+        initialWaived[kpi.id] = Boolean(respItem?.isWaived || (respItem as any)?.fullCreditGranted || (kpi as any)?.isWaived || (kpi as any)?.fullCreditGranted);
       });
     });
 
     setMgrKpiActuals(initialActuals);
     setMgrKpiRemarks(initialRemarks);
+    setMgrWaivedShortfall(initialWaived);
 
     let totalScore = 0;
     targetCats.forEach((cat: KPICategory) => {
       let rawCat = 0;
       cat.kpis.forEach((kpi: KPIItem) => {
-        const actualVal = initialActuals[kpi.id];
-        const calc = calculateKPIScore(kpi, actualVal);
-        rawCat += calc.earnedScore;
+        if (initialWaived[kpi.id]) {
+          rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+        } else {
+          const actualVal = initialActuals[kpi.id];
+          const calc = calculateKPIScore(kpi, actualVal);
+          rawCat += calc.earnedScore;
+        }
       });
       totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
@@ -12130,13 +12327,17 @@ export const EvaluationTab: React.FC = () => {
             };
             const empActual = currentItem.actualValue ?? '';
             const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
+            const isWaived = Boolean(mgrWaivedShortfall[kpi.id]);
             const calc = calculateKPIScore(kpi, mgrActual);
+            const finalScore = isWaived ? (Number(kpi.targetScore ?? kpi.weightage) || 0) : calc.earnedScore;
 
             updatedKpiResponses[kpi.id] = {
               ...currentItem,
               managerActualValue: mgrActual,
-              managerScore: Number(calc.earnedScore.toFixed(2)),
-              managerRemarks: mgrKpiRemarks[kpi.id] || ''
+              managerScore: Number(finalScore.toFixed(2)),
+              managerRemarks: mgrKpiRemarks[kpi.id] || '',
+              isWaived: isWaived,
+              fullCreditGranted: isWaived
             };
           });
         });
@@ -15146,7 +15347,7 @@ export const EvaluationTab: React.FC = () => {
                               const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
 
                               return (
-                                <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                                <div className="flex items-center gap-2.5 self-end sm:self-auto flex-nowrap shrink-0">
                                   {currentActiveCatIdx > 0 && !allCatsOpen && (
                                     <button
                                       type="button"
@@ -15157,7 +15358,7 @@ export const EvaluationTab: React.FC = () => {
                                           setExpandedCategories({ [prevCat.id]: true });
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                      className="inline-flex items-center justify-center gap-1.5 h-11 px-4 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-semibold shadow-xs transition-all duration-150 cursor-pointer select-none shrink-0"
                                     >
                                       <ArrowLeftIcon className="w-3.5 h-3.5" />
                                       <span>Previous</span>
@@ -15174,17 +15375,28 @@ export const EvaluationTab: React.FC = () => {
                                           setExpandedCategories({ [nextCat.id]: true });
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 transition-all duration-150 cursor-pointer select-none shrink-0"
                                     >
                                       <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
                                       <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
                                     </button>
                                   ) : (
-                                    <button
+                                    <div className="inline-flex items-center gap-2.5 flex-nowrap shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={handleEmployeeSaveMilestoneDraft}
+                                        disabled={isSubmittingEmp || isSavingDraft}
+                                        className="inline-flex items-center justify-center gap-2 h-11 px-5 bg-white hover:bg-teal-50/80 active:bg-teal-100/60 text-teal-700 hover:text-teal-900 border border-teal-300 hover:border-teal-400 rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
+                                        title="Save your entered values as draft without submitting to manager"
+                                      >
+                                        {isSavingDraft ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin text-teal-600" /> : <ClipboardDocumentCheckIcon className="w-3.5 h-3.5 text-teal-600" />}
+                                        <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
+                                      </button>
+                                      <button
                                       type="button"
                                       onClick={() => handleYearlyDailySubmit(activeYearlyDailyIndex)}
-                                      disabled={isSubmittingEmp}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                      disabled={isSubmittingEmp || isSavingDraft}
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
                                     >
                                       {isSubmittingEmp ? (
                                         <>
@@ -15198,6 +15410,7 @@ export const EvaluationTab: React.FC = () => {
                                         </>
                                       )}
                                     </button>
+                                    </div>
                                   )}
                                 </div>
                               );
@@ -15248,7 +15461,7 @@ export const EvaluationTab: React.FC = () => {
                               const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
 
                               return (
-                                <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                                <div className="flex items-center gap-2.5 self-end sm:self-auto flex-nowrap shrink-0">
                                   {currentActiveCatIdx > 0 && !allCatsOpen && (
                                     <button
                                       type="button"
@@ -15259,7 +15472,7 @@ export const EvaluationTab: React.FC = () => {
                                           setExpandedCategories({ [prevCat.id]: true });
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                      className="inline-flex items-center justify-center gap-1.5 h-11 px-4 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-semibold shadow-xs transition-all duration-150 cursor-pointer select-none shrink-0"
                                     >
                                       <ArrowLeftIcon className="w-3.5 h-3.5" />
                                       <span>Previous</span>
@@ -15276,17 +15489,28 @@ export const EvaluationTab: React.FC = () => {
                                           setExpandedCategories({ [nextCat.id]: true });
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 transition-all duration-150 cursor-pointer select-none shrink-0"
                                     >
                                       <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
                                       <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
                                     </button>
                                   ) : (
-                                    <button
+                                    <div className="inline-flex items-center gap-2.5 flex-nowrap shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={handleEmployeeSaveMilestoneDraft}
+                                        disabled={isSubmittingEmp || isSavingDraft}
+                                        className="inline-flex items-center justify-center gap-2 h-11 px-5 bg-white hover:bg-teal-50/80 active:bg-teal-100/60 text-teal-700 hover:text-teal-900 border border-teal-300 hover:border-teal-400 rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
+                                        title="Save your entered values as draft without submitting to manager"
+                                      >
+                                        {isSavingDraft ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin text-teal-600" /> : <ClipboardDocumentCheckIcon className="w-3.5 h-3.5 text-teal-600" />}
+                                        <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
+                                      </button>
+                                      <button
                                       type="button"
                                       onClick={() => handleYearlyQuarterSubmit(activeYearlyQuarterIndex)}
-                                      disabled={isSubmittingEmp}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                      disabled={isSubmittingEmp || isSavingDraft}
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
                                     >
                                       {isSubmittingEmp ? (
                                         <>
@@ -15300,6 +15524,7 @@ export const EvaluationTab: React.FC = () => {
                                         </>
                                       )}
                                     </button>
+                                    </div>
                                   )}
                                 </div>
                               );
@@ -15353,7 +15578,7 @@ export const EvaluationTab: React.FC = () => {
                               const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
 
                               return (
-                                <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                                <div className="flex items-center gap-2.5 self-end sm:self-auto flex-nowrap shrink-0">
                                   {currentActiveCatIdx > 0 && !allCatsOpen && (
                                     <button
                                       type="button"
@@ -15364,7 +15589,7 @@ export const EvaluationTab: React.FC = () => {
                                           setExpandedCategories({ [prevCat.id]: true });
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                      className="inline-flex items-center justify-center gap-1.5 h-11 px-4 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-semibold shadow-xs transition-all duration-150 cursor-pointer select-none shrink-0"
                                     >
                                       <ArrowLeftIcon className="w-3.5 h-3.5" />
                                       <span>Previous</span>
@@ -15381,17 +15606,28 @@ export const EvaluationTab: React.FC = () => {
                                           setExpandedCategories({ [nextCat.id]: true });
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 transition-all duration-150 cursor-pointer select-none shrink-0"
                                     >
                                       <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
                                       <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
                                     </button>
                                   ) : (
-                                    <button
+                                    <div className="inline-flex items-center gap-2.5 flex-nowrap shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={handleEmployeeSaveMilestoneDraft}
+                                        disabled={isSubmittingEmp || isSavingDraft}
+                                        className="inline-flex items-center justify-center gap-2 h-11 px-5 bg-white hover:bg-teal-50/80 active:bg-teal-100/60 text-teal-700 hover:text-teal-900 border border-teal-300 hover:border-teal-400 rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
+                                        title="Save your entered values as draft without submitting to manager"
+                                      >
+                                        {isSavingDraft ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin text-teal-600" /> : <ClipboardDocumentCheckIcon className="w-3.5 h-3.5 text-teal-600" />}
+                                        <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
+                                      </button>
+                                      <button
                                       type="button"
                                       onClick={() => handleYearlyWeekSubmit(activeYearlyWeekIndex)}
-                                      disabled={isSubmittingEmp}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                      disabled={isSubmittingEmp || isSavingDraft}
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
                                     >
                                       {isSubmittingEmp ? (
                                         <>
@@ -15405,6 +15641,7 @@ export const EvaluationTab: React.FC = () => {
                                         </>
                                       )}
                                     </button>
+                                    </div>
                                   )}
                                 </div>
                               );
@@ -15454,8 +15691,7 @@ export const EvaluationTab: React.FC = () => {
                             const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
 
                             return (
-                              <div className="flex items-center gap-2.5 self-end sm:self-auto">
-                                <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                              <div className="flex items-center gap-2.5 self-end sm:self-auto flex-nowrap shrink-0">
                                   {currentActiveCatIdx > 0 && !allCatsOpen && (
                                     <button
                                       type="button"
@@ -15466,7 +15702,7 @@ export const EvaluationTab: React.FC = () => {
                                           setExpandedCategories({ [prevCat.id]: true });
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                      className="inline-flex items-center justify-center gap-1.5 h-11 px-4 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-semibold shadow-xs transition-all duration-150 cursor-pointer select-none shrink-0"
                                     >
                                       <ArrowLeftIcon className="w-3.5 h-3.5" />
                                       <span>Previous</span>
@@ -15483,17 +15719,28 @@ export const EvaluationTab: React.FC = () => {
                                           setExpandedCategories({ [nextCat.id]: true });
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 transition-all duration-150 cursor-pointer select-none shrink-0"
                                     >
                                       <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
                                       <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
                                     </button>
                                   ) : (
-                                    <button
+                                    <div className="inline-flex items-center gap-2.5 flex-nowrap shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={handleEmployeeSaveMilestoneDraft}
+                                        disabled={isSubmittingEmp || isSavingDraft}
+                                        className="inline-flex items-center justify-center gap-2 h-11 px-5 bg-white hover:bg-teal-50/80 active:bg-teal-100/60 text-teal-700 hover:text-teal-900 border border-teal-300 hover:border-teal-400 rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
+                                        title="Save your entered values as draft without submitting to manager"
+                                      >
+                                        {isSavingDraft ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin text-teal-600" /> : <ClipboardDocumentCheckIcon className="w-3.5 h-3.5 text-teal-600" />}
+                                        <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
+                                      </button>
+                                      <button
                                       type="button"
                                       onClick={() => handleYearlyMonthSubmit(activeYearlyFiscalMonth)}
-                                      disabled={isSubmittingEmp}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                      disabled={isSubmittingEmp || isSavingDraft}
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
                                     >
                                       {isSubmittingEmp ? (
                                         <>
@@ -15507,9 +15754,9 @@ export const EvaluationTab: React.FC = () => {
                                         </>
                                       )}
                                     </button>
+                                    </div>
                                   )}
                                 </div>
-                              </div>
                             );
                           })() : (
                             isEmpSubmitted ? (
@@ -15536,7 +15783,7 @@ export const EvaluationTab: React.FC = () => {
                               const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
 
                               return (
-                                <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                                <div className="flex items-center gap-2.5 self-end sm:self-auto flex-nowrap shrink-0">
                                   {currentActiveCatIdx > 0 && !allCatsOpen && (
                                     <button
                                       type="button"
@@ -15547,7 +15794,7 @@ export const EvaluationTab: React.FC = () => {
                                           setExpandedCategories({ [prevCat.id]: true });
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                      className="inline-flex items-center justify-center gap-1.5 h-11 px-4 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-semibold shadow-xs transition-all duration-150 cursor-pointer select-none shrink-0"
                                     >
                                       <ArrowLeftIcon className="w-3.5 h-3.5" />
                                       <span>Previous</span>
@@ -15564,17 +15811,28 @@ export const EvaluationTab: React.FC = () => {
                                           setExpandedCategories({ [nextCat.id]: true });
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 transition-all duration-150 cursor-pointer select-none shrink-0"
                                     >
                                       <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
                                       <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
                                     </button>
                                   ) : (
-                                    <button
+                                    <div className="inline-flex items-center gap-2.5 flex-nowrap shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={handleEmployeeSaveMilestoneDraft}
+                                        disabled={isSubmittingEmp || isSavingDraft}
+                                        className="inline-flex items-center justify-center gap-2 h-11 px-5 bg-white hover:bg-teal-50/80 active:bg-teal-100/60 text-teal-700 hover:text-teal-900 border border-teal-300 hover:border-teal-400 rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
+                                        title="Save your entered values as draft without submitting to manager"
+                                      >
+                                        {isSavingDraft ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin text-teal-600" /> : <ClipboardDocumentCheckIcon className="w-3.5 h-3.5 text-teal-600" />}
+                                        <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
+                                      </button>
+                                      <button
                                       type="button"
                                       onClick={handleEmployeeSubmit}
-                                      disabled={isSubmittingEmp}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                      disabled={isSubmittingEmp || isSavingDraft}
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
                                     >
                                       {isSubmittingEmp ? (
                                         <>
@@ -15588,6 +15846,7 @@ export const EvaluationTab: React.FC = () => {
                                         </>
                                       )}
                                     </button>
+                                    </div>
                                   )}
                                 </div>
                               );
@@ -17494,11 +17753,10 @@ export const EvaluationTab: React.FC = () => {
                               }}
                               className="w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20 transition cursor-pointer"
                             >
-                              <option value="quarterly">Quarterly</option>
-                              <option value="monthly">Monthly</option>
-                              <option value="weekly">Weekly</option>
-                              {/* <option value="daily">Daily</option> */}
                               <option value="yearly">⚡ Automatically Assign Milestones (Yearly Rollout)</option>
+                              {/* <option value="quarterly">Quarterly</option>
+                              <option value="monthly">Monthly</option>
+                              <option value="weekly">Weekly</option> */}
                             </select>
                           </div>
 
@@ -19007,7 +19265,7 @@ export const EvaluationTab: React.FC = () => {
                             </th>
                             <th className="py-3.5 px-4 text-center w-[24%]">EVALUATION PERIOD / DATE</th>
                             <th className="py-3.5 px-4 text-center w-[12%]">{reportViewTab === 'all' ? 'SELF SCORE' : formattedDateColumnHeader}</th>
-                            <th className="py-3.5 px-4 text-center w-[12%]">AVERAGE SCORE</th>
+                            <th className="py-3.5 px-4 text-center w-[12%]">MANAGER SCORE</th>
                             <th className="py-3.5 px-4 text-center w-[11%]">STATUS</th>
                             <th className="py-3.5 px-4 text-right w-[11%]">ACTION</th>
                           </tr>
@@ -19179,47 +19437,34 @@ export const EvaluationTab: React.FC = () => {
                                             <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
                                               {teamCycle ? (
                                                 <>
-                                                  {cycleLockedInfo.isLocked ? (
-                                                    /* Sleek Locked Badge */
-                                                    <span
-                                                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs"
-                                                      title={`Deliverables matrix is locked because ${cycleLockedInfo.activeCount} evaluation(s) are in progress`}
-                                                    >
-                                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                                      <span>Locked</span>
-                                                    </span>
-                                                  ) : (
-                                                    /* Editable Matrix Controls */
-                                                    <>
-                                                      <span
-                                                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs"
-                                                        title="Active Deliverables Matrix (Editable)"
-                                                      >
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                                        <span>Matrix: 100%</span>
-                                                      </span>
+                                                  {/* Matrix Controls with Versioning / Effective Date Edit */}
+                                                  <span
+                                                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs"
+                                                    title={cycleLockedInfo.isLocked ? `Active Matrix (In Progress: ${cycleLockedInfo.activeCount}). Click Edit to update targets from tomorrow or next month.` : "Active Deliverables Matrix (Editable)"}
+                                                  >
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${cycleLockedInfo.isLocked ? 'bg-teal-500' : 'bg-emerald-500'}`} />
+                                                    <span>Matrix: 100%</span>
+                                                  </span>
 
-                                                      <button
-                                                        type="button"
-                                                        onClick={() => handleOpenMgrEditMatrixModal(teamCycle)}
-                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
-                                                        title="Edit Deliverables Matrix"
-                                                      >
-                                                        <PencilSquareIcon className="w-3 h-3 text-slate-500" />
-                                                        <span>Edit</span>
-                                                      </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleOpenMgrEditMatrixModal(teamCycle, teamGroup.members)}
+                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white hover:bg-teal-50 text-slate-700 hover:text-teal-700 border border-slate-200 hover:border-teal-300 shadow-2xs transition cursor-pointer"
+                                                    title={cycleLockedInfo.isLocked ? "Edit deliverables matrix from tomorrow/next month with employee selection" : "Edit Deliverables Matrix"}
+                                                  >
+                                                    <PencilSquareIcon className="w-3 h-3 text-slate-500 hover:text-teal-600" />
+                                                    <span>Edit</span>
+                                                  </button>
 
-                                                      <button
-                                                        type="button"
-                                                        onClick={() => handleMgrDeleteMatrix(teamCycle)}
-                                                        className={isHrOrAdmin ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-danger-50 hover:bg-danger-100 text-danger-600 border border-danger-200 shadow-2xs transition cursor-pointer" : "hidden"}
-                                                        title="Delete Deliverables Matrix"
-                                                      >
-                                                        <TrashIcon className="w-3 h-3" />
-                                                        <span>Delete</span>
-                                                      </button>
-                                                    </>
-                                                  )}
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleMgrDeleteMatrix(teamCycle)}
+                                                    className={isHrOrAdmin ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-danger-50 hover:bg-danger-100 text-danger-600 border border-danger-200 shadow-2xs transition cursor-pointer" : "hidden"}
+                                                    title="Delete Deliverables Matrix"
+                                                  >
+                                                    <TrashIcon className="w-3 h-3" />
+                                                    <span>Delete</span>
+                                                  </button>
                                                 </>
                                               ) : (
                                                 <div className="flex items-center gap-2">
@@ -19341,11 +19586,17 @@ export const EvaluationTab: React.FC = () => {
                                           </span>
                                         </td>
 
-                                        {/* 4. Average Score */}
+                                        {/* 4. Manager Score */}
                                         <td className="py-3.5 px-4 text-center">
-                                          <span className="text-xs font-semibold text-slate-800">
-                                            {member.averageScoreDisplay}
-                                          </span>
+                                          {member.averageScoreDisplay && member.averageScoreDisplay !== '—' && member.averageScoreDisplay !== '-' ? (
+                                            <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                              {member.averageScoreDisplay}
+                                            </span>
+                                          ) : (
+                                            <span className="text-xs font-medium text-slate-400">
+                                              —
+                                            </span>
+                                          )}
                                         </td>
 
                                         {/* 5. Status Badge */}
@@ -19396,14 +19647,14 @@ export const EvaluationTab: React.FC = () => {
                                                 <span className="hidden group-hover/btn:inline-block font-bold">View</span>
                                               </button>
                                             )}
-                                            {!isSubmittedPending && !member.isCalibrated && !hasYearlyApprovedMilestone && member.response.managerScore == null && !member.response.employeeSubmittedAt && (
+                                            {(isHrOrAdmin || (!isSubmittedPending && !member.isCalibrated && !hasYearlyApprovedMilestone && member.response.managerScore == null && !member.response.employeeSubmittedAt)) && (
                                               <button
                                                 type="button"
                                                 onClick={() => handleDeleteMgrResponseRow(member.response)}
                                                 className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                                title="Delete unstarted evaluation record"
+                                                title={isHrOrAdmin ? "Permanently delete evaluation record from DB" : "Delete unstarted evaluation record"}
                                               >
-                                                <TrashIcon className="w-3.5 h-3.5" />
+                                                <TrashIcon className="w-3.5 h-3.5 text-rose-500" />
                                               </button>
                                             )}
                                           </div>
@@ -19576,10 +19827,37 @@ export const EvaluationTab: React.FC = () => {
               /* Submissions Grouping View */
               <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-4 pb-1">
-                  {/* Left: Section Title / Badge */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-800 tracking-tight">Team Submissions Overview</span>
-                    <span className="text-[11px] text-slate-400 font-medium">• Grouped by Teams</span>
+                  {/* Left: Section Title & Manager / Team Switcher */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-xs font-bold text-slate-800 tracking-tight">
+                      {submissionGroupBy === 'manager' ? 'Submissions Overview' : 'Team Submissions Overview'}
+                    </span>
+                    <div className="inline-flex items-center p-0.5 rounded-lg bg-slate-100 border border-slate-200/80 shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => setSubmissionGroupBy('team')}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+                          submissionGroupBy === 'team'
+                            ? 'bg-white text-teal-800 shadow-xs'
+                            : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'
+                        }`}
+                      >
+                        <BuildingOffice2Icon className="w-3.5 h-3.5" />
+                        <span>By Teams</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSubmissionGroupBy('manager')}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+                          submissionGroupBy === 'manager'
+                            ? 'bg-white text-teal-800 shadow-xs'
+                            : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'
+                        }`}
+                      >
+                        <UserGroupIcon className="w-3.5 h-3.5" />
+                        <span>By Reporting Manager</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Right: Search & Submissions count badge */}
@@ -19658,7 +19936,11 @@ export const EvaluationTab: React.FC = () => {
                                   className={`w-4 h-4 transition-transform duration-200 ${theme.text} ${isExpanded ? 'rotate-90' : ''
                                     }`}
                                 />
-                                <BuildingOffice2Icon className={`w-5 h-5 ${theme.icon}`} />
+                                {submissionGroupBy === 'manager' ? (
+                                  <UserGroupIcon className={`w-5 h-5 ${theme.icon}`} />
+                                ) : (
+                                  <BuildingOffice2Icon className={`w-5 h-5 ${theme.icon}`} />
+                                )}
                                 <span className={`text-sm font-bold tracking-tight ${theme.text}`}>
                                   {group.groupName}
                                 </span>
@@ -19768,7 +20050,12 @@ export const EvaluationTab: React.FC = () => {
                                                         <div className="font-semibold text-slate-800 hover:text-primary-700 transition-colors">
                                                           {r.periodName || (r as any).form || 'Performance Evaluation'}
                                                         </div>
-                                                        <div className="text-[10px] text-slate-500 font-medium">{info.teamName}</div>
+                                                        <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1.5 flex-wrap">
+                                                          <span>{info.teamName}</span>
+                                                          {submissionGroupBy === 'team' && (
+                                                            <span className="text-slate-400">• Mgr: {getResponseReportingManager(r)}</span>
+                                                          )}
+                                                        </div>
                                                       </SubmissionDatesHover>
                                                     );
                                                   })()}
@@ -22014,8 +22301,8 @@ export const EvaluationTab: React.FC = () => {
                       <h3 className="text-sm font-bold text-slate-900 tracking-tight">
                         Edit Deliverables Matrix
                       </h3>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200/80">
-                        Unlocked (0 Submissions)
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200/80">
+                        Targeted Versioning
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
@@ -22033,6 +22320,240 @@ export const EvaluationTab: React.FC = () => {
               </div>
 
               <form onSubmit={handleMgrSaveMatrixChanges} className="overflow-y-auto space-y-5 pt-4 pr-1 flex-1">
+                {/* Effective Date & Scope Selector (Preserves historical scores) */}
+                <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-teal-600" />
+                        Effective From (Target Milestone Schedule)
+                      </span>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Choose when the new deliverables take effect. Past days, weeks, and approved scores are strictly preserved and never deleted.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-1">
+                    <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition select-none ${mgrEditEffectiveOption === 'tomorrow' ? 'bg-teal-50/80 border-teal-500 text-teal-950 font-semibold shadow-2xs ring-1 ring-teal-500/20' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'}`}>
+                      <input
+                        type="radio"
+                        name="mgrEffectiveDate"
+                        checked={mgrEditEffectiveOption === 'tomorrow'}
+                        onChange={() => setMgrEditEffectiveOption('tomorrow')}
+                        className="mt-0.5 text-teal-600 focus:ring-teal-500"
+                      />
+                      <div>
+                        <div className="font-bold text-xs">From Tomorrow</div>
+                        <div className="text-[10px] text-slate-500 font-normal mt-0.5">Recommended for Daily metrics. Preserves today & all past submissions.</div>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition select-none ${mgrEditEffectiveOption === 'today' ? 'bg-teal-50/80 border-teal-500 text-teal-950 font-semibold shadow-2xs ring-1 ring-teal-500/20' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'}`}>
+                      <input
+                        type="radio"
+                        name="mgrEffectiveDate"
+                        checked={mgrEditEffectiveOption === 'today'}
+                        onChange={() => setMgrEditEffectiveOption('today')}
+                        className="mt-0.5 text-teal-600 focus:ring-teal-500"
+                      />
+                      <div>
+                        <div className="font-bold text-xs">From Today</div>
+                        <div className="text-[10px] text-slate-500 font-normal mt-0.5">Applies today only if employee hasn't already submitted today.</div>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition select-none ${mgrEditEffectiveOption === 'next_month' ? 'bg-teal-50/80 border-teal-500 text-teal-950 font-semibold shadow-2xs ring-1 ring-teal-500/20' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'}`}>
+                      <input
+                        type="radio"
+                        name="mgrEffectiveDate"
+                        checked={mgrEditEffectiveOption === 'next_month'}
+                        onChange={() => setMgrEditEffectiveOption('next_month')}
+                        className="mt-0.5 text-teal-600 focus:ring-teal-500"
+                      />
+                      <div>
+                        <div className="font-bold text-xs">From Next Month</div>
+                        <div className="text-[10px] text-slate-500 font-normal mt-0.5">Ideal for Monthly / Weekly cycles. Starts on 1st of next month.</div>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition select-none ${mgrEditEffectiveOption === 'custom' ? 'bg-teal-50/80 border-teal-500 text-teal-950 font-semibold shadow-2xs ring-1 ring-teal-500/20' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'}`}>
+                      <input
+                        type="radio"
+                        name="mgrEffectiveDate"
+                        checked={mgrEditEffectiveOption === 'custom'}
+                        onChange={() => setMgrEditEffectiveOption('custom')}
+                        className="mt-0.5 text-teal-600 focus:ring-teal-500"
+                      />
+                      <div className="w-full">
+                        <div className="font-bold text-xs">Custom Date</div>
+                        <input
+                          type="date"
+                          value={mgrEditCustomDate}
+                          onChange={e => {
+                            setMgrEditCustomDate(e.target.value);
+                            setMgrEditEffectiveOption('custom');
+                          }}
+                          className="w-full mt-1.5 px-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] font-medium text-slate-800 focus:outline-none focus:border-teal-600 shadow-2xs"
+                        />
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Team Members Multi-Select Checklist */}
+                {(() => {
+                  // Resolve direct team members under this manager
+                  const teamMembers = (() => {
+                    const foundEmps: any[] = [];
+                    const addedIds = new Set<string>();
+
+                    // 1. Direct members passed from the table (exact team members under this manager)
+                    if (mgrEditDirectMembers && mgrEditDirectMembers.length > 0) {
+                      mgrEditDirectMembers.forEach(m => {
+                        const strId = String(m.employeeCode || m.response?.employeeId || m.response?.employeeCode || '');
+                        if (strId && !addedIds.has(strId)) {
+                          addedIds.add(strId);
+                          const emp = dbEmployees.find(e => String(e.employee_id) === strId);
+                          foundEmps.push(emp || {
+                            employee_id: strId,
+                            first_name: m.employeeName || m.response?.employeeName || `Employee ${strId}`,
+                            designation: m.designation || m.response?.designation
+                          });
+                        }
+                      });
+                      return foundEmps;
+                    }
+
+                    // 2. Direct from cycle employeeIds
+                    if (mgrEditTargetCycle?.employeeIds && mgrEditTargetCycle.employeeIds.length > 0) {
+                      mgrEditTargetCycle.employeeIds.forEach(id => {
+                        const strId = String(id);
+                        if (!addedIds.has(strId)) {
+                          addedIds.add(strId);
+                          const emp = dbEmployees.find(e => String(e.employee_id) === strId);
+                          foundEmps.push(emp || { employee_id: strId, first_name: `Employee ${strId}` });
+                        }
+                      });
+                    }
+
+                    // 3. From responses matching this cycle or team
+                    responses.forEach(r => {
+                      const empId = String(r.employeeId || r.employeeCode || '');
+                      if (empId && !addedIds.has(empId)) {
+                        const matchesTeam = (
+                          (mgrEditTargetCycle?.id && r.cycleId === mgrEditTargetCycle.id) ||
+                          (mgrEditTargetCycle?.teamId && r.teamId === mgrEditTargetCycle.teamId) ||
+                          (mgrEditTeamName && (r.department || '').toLowerCase() === mgrEditTeamName.toLowerCase())
+                        );
+                        if (matchesTeam) {
+                          addedIds.add(empId);
+                          const emp = dbEmployees.find(e => String(e.employee_id) === empId);
+                          foundEmps.push(emp || { employee_id: empId, first_name: r.employeeName || `Employee ${empId}` });
+                        }
+                      }
+                    });
+
+                    // 4. Fallback to dbEmployees matching team name
+                    if (foundEmps.length === 0 && mgrEditTeamName) {
+                      dbEmployees.forEach(e => {
+                        const strId = String(e.employee_id || '');
+                        if (strId && !addedIds.has(strId)) {
+                          const eTeam = String(e.team || e.department || '').toLowerCase();
+                          if (eTeam === mgrEditTeamName.toLowerCase()) {
+                            addedIds.add(strId);
+                            foundEmps.push(e);
+                          }
+                        }
+                      });
+                    }
+
+                    return foundEmps;
+                  })();
+
+                  if (teamMembers.length === 0) return null;
+
+                  const allTeamEmpIds = teamMembers.map(m => String(m.employee_id || '')).filter(Boolean);
+                  const isAllSelected = allTeamEmpIds.length > 0 && allTeamEmpIds.every(id => mgrEditSelectedEmpIds.includes(id));
+
+                  const toggleAll = () => {
+                    if (isAllSelected) {
+                      setMgrEditSelectedEmpIds([]);
+                    } else {
+                      setMgrEditSelectedEmpIds([...allTeamEmpIds]);
+                    }
+                  };
+
+                  const toggleOne = (empId: string) => {
+                    setMgrEditSelectedEmpIds(prev =>
+                      prev.includes(empId) ? prev.filter(id => id !== empId) : [...prev, empId]
+                    );
+                  };
+
+                  return (
+                    <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-teal-600" />
+                            <span className="text-xs font-bold text-slate-900">
+                              Apply Changes to Team Members ({mgrEditSelectedEmpIds.length} of {teamMembers.length} selected)
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Deselect any team member whose metrics should remain unchanged. Only selected employees receive the updated metrics.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={toggleAll}
+                          className="px-2.5 py-1 text-[11px] font-bold text-teal-700 bg-white hover:bg-teal-50 border border-teal-200 rounded-lg transition shadow-2xs cursor-pointer self-start sm:self-auto shrink-0"
+                        >
+                          {isAllSelected ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                        {teamMembers.map(emp => {
+                          const empId = String(emp.employee_id || '');
+                          const isSelected = mgrEditSelectedEmpIds.includes(empId);
+                          const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || `Employee ${empId}`;
+                          const designation = emp.designation || emp.job_title || emp.role || 'Team Member';
+                          const initials = (fullName || 'EM').split(' ').filter(Boolean).map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || 'EM';
+
+                          return (
+                            <div
+                              key={empId}
+                              onClick={() => toggleOne(empId)}
+                              className={`flex items-center justify-between gap-2.5 p-2 rounded-xl border transition cursor-pointer select-none ${isSelected ? 'bg-teal-50/90 border-teal-400 ring-1 ring-teal-500/20 shadow-xs' : 'bg-white border-slate-200/90 hover:bg-slate-50 text-slate-600'}`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 shadow-2xs ${isSelected ? 'bg-teal-700 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                                  {initials}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className={`text-xs truncate font-medium ${isSelected ? 'text-teal-950 font-bold' : 'text-slate-700'}`}>
+                                    {fullName}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 truncate">
+                                    #{empId} · {designation}
+                                  </div>
+                                </div>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}}
+                                className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-slate-300 pointer-events-none shrink-0"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Form & Period Metadata */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200">
                   <div>
@@ -22073,13 +22594,6 @@ export const EvaluationTab: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setMgrEditCategories(DEFAULT_KPI_CATEGORIES)}
-                        className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
-                      >
-                        Reset Template
-                      </button>
                       <button
                         type="button"
                         onClick={handleMgrAddEditCategory}
@@ -22865,7 +23379,7 @@ export const EvaluationTab: React.FC = () => {
                 </div>
               )}
 
-              {/* Team Selector Filter */}
+              {/* Select Team Filter */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
                   Select Team
@@ -22876,7 +23390,6 @@ export const EvaluationTab: React.FC = () => {
                   className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition cursor-pointer"
                 >
                   <option value="all">All Teams (Every Sheet)</option>
-                  {/* Scope teams strictly to current manager / admin accessible teams */}
                   {availableFilterTeams && availableFilterTeams.length > 0 ? (
                     availableFilterTeams.map((tName: string) => (
                       <option key={tName} value={tName}>

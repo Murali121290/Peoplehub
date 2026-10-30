@@ -884,7 +884,9 @@ export const evaluationService = {
             managerRemarks: item.managerRemarks ?? '',
             manager_remark: item.managerRemarks ?? '',
             isInsufficient: Boolean(item.isInsufficient),
-            is_insufficient: Boolean(item.isInsufficient)
+            is_insufficient: Boolean(item.isInsufficient),
+            isWaived: Boolean(item.isWaived || item.fullCreditGranted),
+            fullCreditGranted: Boolean(item.isWaived || item.fullCreditGranted)
           };
         }
         return kpi;
@@ -2316,6 +2318,328 @@ export const evaluationService = {
     }
     this.saveResponsesLocal(localResponses);
 
+    return updated;
+  },
+
+  // Standalone Evaluation: Save Draft by Employee (keeps status as pending / draft, does NOT submit to manager)
+  async saveEmployeeDraft(
+    responseId: string,
+    kpiInputs: Record<string, any>,
+    employeeRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+
+    // Calculate score
+    let overallScore = 0;
+    categories.forEach(cat => {
+      let rawCat = 0;
+      cat.kpis.forEach(kpi => {
+        const item = kpiInputs[kpi.id] || (kpi.name ? kpiInputs[kpi.name] : null);
+        const actualVal = item?.actualValue ?? item?.actual_value ?? '';
+        const calc = calculateKPIScore(kpi, actualVal);
+        rawCat += calc.earnedScore;
+      });
+      overallScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+    });
+    overallScore = Number(Math.min(100, overallScore).toFixed(2));
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      kpiResponses: { ...resp.kpiResponses, ...kpiInputs },
+      employeeOverallScore: overallScore,
+      employeeRemarks: employeeRemarks !== undefined ? employeeRemarks : resp.employeeRemarks,
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) localResponses[localIdx] = updated;
+    else localResponses.push(updated);
+    this.saveResponsesLocal(localResponses);
+    return updated;
+  },
+
+  // Yearly / Multi-Stage Evaluation: Save Quarterly Milestone Draft by Employee
+  async saveYearlyQuarterDraft(
+    responseId: string,
+    quarterIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    employeeRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+
+    let baseYear = new Date().getFullYear();
+    if (resp.startDate) {
+      baseYear = new Date(resp.startDate).getFullYear();
+    } else if (resp.periodName) {
+      const match = resp.periodName.match(/\\b(20\\d\\d)\\b/);
+      if (match) baseYear = parseInt(match[1], 10);
+    }
+
+    let quarterlyRecords: YearlyQuarterRecord[] = resp.quarterly_records || [];
+    if (!quarterlyRecords || quarterlyRecords.length === 0) {
+      quarterlyRecords = initializeYearlyQuarterlyRecords(baseYear, resp.startDate, resp.endDate);
+    }
+
+    let quarterScore = 0;
+    categories.forEach(cat => {
+      let rawCat = 0;
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
+        const calc = calculateKPIScore(kpi, actualVal);
+        rawCat += calc.earnedScore;
+      });
+      quarterScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+    });
+    quarterScore = Number(Math.min(100, quarterScore).toFixed(2));
+
+    const updatedQuarterlyRecords = quarterlyRecords.map(q => {
+      if (q.quarterIndex === quarterIndex) {
+        return {
+          ...q,
+          status: (q.status === 'submitted_to_manager' || q.status === 'manager_approved') ? q.status : ('pending_employee' as const),
+          employeeScore: quarterScore,
+          employeeRemarks: employeeRemarks || q.employeeRemarks || '',
+          kpiEntries: { ...q.kpiEntries, ...kpiEntries }
+        };
+      }
+      return q;
+    });
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      milestone_frequency: 'quarterly',
+      quarterly_records: updatedQuarterlyRecords,
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) localResponses[localIdx] = updated;
+    else localResponses.push(updated);
+    this.saveResponsesLocal(localResponses);
+    return updated;
+  },
+
+  // Yearly / Multi-Stage Evaluation: Save Daily Milestone Draft by Employee (stays pending_employee)
+  async saveYearlyDailyDraft(
+    responseId: string,
+    dayIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    employeeRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+
+    let dailyRecords: YearlyDailyRecord[] = resp.daily_records || [];
+    if (!dailyRecords || dailyRecords.length === 0) {
+      if (resp.startDate && resp.endDate) {
+        dailyRecords = initializeYearlyDailyRecords(resp.startDate, resp.endDate);
+      }
+    }
+
+    // Calculate day employee score based on categories & kpiEntries
+    let dayScore = 0;
+    categories.forEach(cat => {
+      let rawCat = 0;
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
+        const calc = calculateKPIScore(kpi, actualVal);
+        rawCat += calc.earnedScore;
+      });
+      dayScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+    });
+    dayScore = Number(Math.min(100, dayScore).toFixed(2));
+
+    const updatedDailyRecords = dailyRecords.map(d => {
+      if (d.dayIndex === dayIndex) {
+        return {
+          ...d,
+          // Keep status as pending_employee so it is NOT submitted to manager yet!
+          status: (d.status === 'submitted_to_manager' || d.status === 'manager_approved') ? d.status : ('pending_employee' as const),
+          employeeScore: dayScore,
+          employeeRemarks: employeeRemarks || d.employeeRemarks || '',
+          kpiEntries: { ...d.kpiEntries, ...kpiEntries }
+        };
+      }
+      return d;
+    });
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      milestone_frequency: 'daily',
+      daily_records: updatedDailyRecords,
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly / Multi-Stage Evaluation: Save Weekly Milestone Draft by Employee
+  async saveYearlyWeekDraft(
+    responseId: string,
+    weekIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    employeeRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    let weeklyRecords: YearlyWeekRecord[] = resp.weekly_records || [];
+
+    let weekScore = 0;
+    categories.forEach(cat => {
+      let rawCat = 0;
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
+        const calc = calculateKPIScore(kpi, actualVal);
+        rawCat += calc.earnedScore;
+      });
+      weekScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+    });
+    weekScore = Number(Math.min(100, weekScore).toFixed(2));
+
+    const updatedWeeklyRecords = weeklyRecords.map(w => {
+      if (w.weekIndex === weekIndex) {
+        return {
+          ...w,
+          status: (w.status === 'submitted_to_manager' || w.status === 'manager_approved') ? w.status : ('pending_employee' as const),
+          employeeScore: weekScore,
+          employeeRemarks: employeeRemarks || w.employeeRemarks || '',
+          kpiEntries: { ...w.kpiEntries, ...kpiEntries }
+        };
+      }
+      return w;
+    });
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      milestone_frequency: 'weekly',
+      weekly_records: updatedWeeklyRecords,
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) localResponses[localIdx] = updated;
+    else localResponses.push(updated);
+    this.saveResponsesLocal(localResponses);
+    return updated;
+  },
+
+  // Yearly / Multi-Stage Evaluation: Save Monthly Milestone Draft by Employee
+  async saveYearlyMonthDraft(
+    responseId: string,
+    monthIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    employeeRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    let monthlyRecords: YearlyMonthRecord[] = resp.monthly_records || [];
+
+    let monthScore = 0;
+    categories.forEach(cat => {
+      let rawCat = 0;
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
+        const calc = calculateKPIScore(kpi, actualVal);
+        rawCat += calc.earnedScore;
+      });
+      monthScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+    });
+    monthScore = Number(Math.min(100, monthScore).toFixed(2));
+
+    const updatedMonthlyRecords = monthlyRecords.map(m => {
+      if (m.monthIndex === monthIndex) {
+        return {
+          ...m,
+          status: (m.status === 'submitted_to_manager' || m.status === 'manager_approved') ? m.status : ('pending_employee' as const),
+          employeeScore: monthScore,
+          employeeRemarks: employeeRemarks || m.employeeRemarks || '',
+          kpiEntries: { ...m.kpiEntries, ...kpiEntries }
+        };
+      }
+      return m;
+    });
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      milestone_frequency: 'monthly',
+      monthly_records: updatedMonthlyRecords,
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) localResponses[localIdx] = updated;
+    else localResponses.push(updated);
+    this.saveResponsesLocal(localResponses);
     return updated;
   }
 };
