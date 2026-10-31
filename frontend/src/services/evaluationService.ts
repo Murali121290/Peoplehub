@@ -1126,7 +1126,7 @@ export const evaluationService = {
     const initialMonthlyRecords = isYearly && subFreq === 'monthly' ? initializeYearlyMonthlyRecords(baseStartYear, data.startDate, data.endDate) : undefined;
     const initialWeeklyRecords = isYearly && subFreq === 'weekly' ? initializeYearlyWeeklyRecords(baseStartYear, data.startDate, data.endDate) : (isWeekly ? [] : undefined);
     const initialQuarterlyRecords = isYearly && subFreq === 'quarterly' ? initializeYearlyQuarterlyRecords(baseStartYear, data.startDate, data.endDate) : undefined;
-    const initialDailyRecords = isDaily ? initializeYearlyDailyRecords(data.startDate, data.endDate) : undefined;
+    const initialDailyRecords = (isDaily || (isYearly && subFreq === 'daily')) ? initializeYearlyDailyRecords(data.startDate, data.endDate) : undefined;
 
     // 1. Assign to PostgreSQL kpi_evaluations table (strictly 1 row per employee)
     const token = localStorage.getItem('token') || '';
@@ -1369,6 +1369,7 @@ export const evaluationService = {
           employeeSubmittedAt: new Date().toISOString(),
           employeeScore: monthScore,
           employeeRemarks: employeeRemarks || '',
+          categories: m.categories && m.categories.length > 0 ? m.categories : categories,
           kpiEntries: { ...m.kpiEntries, ...kpiEntries }
         };
       }
@@ -1468,6 +1469,7 @@ export const evaluationService = {
           managerApprovedAt: new Date().toISOString(),
           managerScore: monthScore,
           managerRemarks: managerRemarks || '',
+          categories: m.categories && m.categories.length > 0 ? m.categories : categories,
           kpiEntries: { ...m.kpiEntries, ...kpiEntries }
         };
       }
@@ -1620,6 +1622,7 @@ export const evaluationService = {
           employeeSubmittedAt: new Date().toISOString(),
           employeeScore: weekScore,
           employeeRemarks: employeeRemarks || '',
+          categories: w.categories && w.categories.length > 0 ? w.categories : categories,
           kpiEntries: { ...w.kpiEntries, ...kpiEntries }
         };
       }
@@ -1719,6 +1722,7 @@ export const evaluationService = {
           managerApprovedAt: new Date().toISOString(),
           managerScore: weekScore,
           managerRemarks: managerRemarks || '',
+          categories: w.categories && w.categories.length > 0 ? w.categories : categories,
           kpiEntries: { ...w.kpiEntries, ...kpiEntries }
         };
       }
@@ -1871,6 +1875,7 @@ export const evaluationService = {
           employeeSubmittedAt: new Date().toISOString(),
           employeeScore: quarterScore,
           employeeRemarks: employeeRemarks || '',
+          categories: q.categories && q.categories.length > 0 ? q.categories : categories,
           kpiEntries: { ...q.kpiEntries, ...kpiEntries }
         };
       }
@@ -1972,6 +1977,7 @@ export const evaluationService = {
           managerApprovedAt: new Date().toISOString(),
           managerScore: quarterScore,
           managerRemarks: managerRemarks || '',
+          categories: q.categories && q.categories.length > 0 ? q.categories : categories,
           kpiEntries: { ...q.kpiEntries, ...kpiEntries }
         };
       }
@@ -2123,6 +2129,7 @@ export const evaluationService = {
           employeeSubmittedAt: new Date().toISOString(),
           employeeScore: dayScore,
           employeeRemarks: employeeRemarks || '',
+          categories: d.categories && d.categories.length > 0 ? d.categories : categories,
           kpiEntries: { ...d.kpiEntries, ...kpiEntries }
         };
       }
@@ -2218,6 +2225,7 @@ export const evaluationService = {
           managerApprovedAt: new Date().toISOString(),
           managerScore: dayScore,
           managerRemarks: managerRemarks || '',
+          categories: d.categories && d.categories.length > 0 ? d.categories : categories,
           kpiEntries: { ...d.kpiEntries, ...kpiEntries }
         };
       }

@@ -99,9 +99,9 @@ describe('scoreService', () => {
       expect(calculateKPIScore(kpi, 5).achievementPercentage).toBe(50);
       expect(calculateKPIScore(kpi, 5).earnedScore).toBe(10);
 
-      // 15 projects -> capped at 100%
-      expect(calculateKPIScore(kpi, 15).achievementPercentage).toBe(100);
-      expect(calculateKPIScore(kpi, 15).earnedScore).toBe(20);
+      // 15 projects out of 10 target -> 150% achievement & earned score
+      expect(calculateKPIScore(kpi, 15).achievementPercentage).toBe(150);
+      expect(calculateKPIScore(kpi, 15).earnedScore).toBe(30);
     });
 
     it('should calculate score for range targets (e.g. 12 to 15 projects)', () => {
@@ -116,11 +116,11 @@ describe('scoreService', () => {
       expect(calculateKPIScore(kpi, 12).achievementPercentage).toBe(100);
       expect(calculateKPIScore(kpi, 12).earnedScore).toBe(30);
 
-      expect(calculateKPIScore(kpi, 15).achievementPercentage).toBe(100);
-      expect(calculateKPIScore(kpi, 15).earnedScore).toBe(30);
+      expect(calculateKPIScore(kpi, 15).achievementPercentage).toBe(125);
+      expect(calculateKPIScore(kpi, 15).earnedScore).toBe(37.5);
 
-      expect(calculateKPIScore(kpi, 18).achievementPercentage).toBe(100);
-      expect(calculateKPIScore(kpi, 18).earnedScore).toBe(30);
+      expect(calculateKPIScore(kpi, 18).achievementPercentage).toBe(150);
+      expect(calculateKPIScore(kpi, 18).earnedScore).toBe(45);
 
       // < 12 (e.g. 6 -> 50%, 9 -> 75%)
       expect(calculateKPIScore(kpi, 6).achievementPercentage).toBe(50);

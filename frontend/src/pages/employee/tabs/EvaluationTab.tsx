@@ -1265,6 +1265,8 @@ export const EvaluationTab: React.FC = () => {
   const [mgrEditSelectedEmpIds, setMgrEditSelectedEmpIds] = useState<string[]>([]);
   const [mgrEditEffectiveOption, setMgrEditEffectiveOption] = useState<'tomorrow' | 'today' | 'next_month' | 'custom'>('tomorrow');
   const [mgrEditCustomDate, setMgrEditCustomDate] = useState<string>('');
+  const [mgrEditMemberFilterTab, setMgrEditMemberFilterTab] = useState<'all' | 'selected' | 'unselected'>('all');
+  const [mgrEditMemberSearch, setMgrEditMemberSearch] = useState<string>('');
 
   // Employee Form State
   const [selectedResponseId, setSelectedResponseId] = useState<string>('');
@@ -4733,8 +4735,111 @@ export const EvaluationTab: React.FC = () => {
       : undefined
   ) || managerDirectCycles.find(c => c.status === 'active') || managerDirectCycles[0];
 
+  const getResponseDailyRecords = (r: EvaluationResponse | null | undefined): YearlyDailyRecord[] => {
+    if (!r) return [];
+    if (getResponseCadence(r) !== 'daily') return [];
+    if (r.daily_records && r.daily_records.length > 0) return r.daily_records;
+    const startD = r.startDate || activeCycle?.startDate || '2026-10-01';
+    const endD = r.endDate || activeCycle?.endDate || '2026-10-31';
+    const records = initializeYearlyDailyRecords(startD, endD);
+    r.daily_records = records;
+    return records;
+  };
+
+  // Robust cadence resolver prioritizing DB-assigned milestone frequency
+  const getResponseCadence = (r?: EvaluationResponse | null): 'daily' | 'weekly' | 'quarterly' | 'monthly' => {
+    if (!r) return 'monthly';
+    const mFreq = String(r.milestone_frequency || '').toLowerCase().trim();
+    if (mFreq === 'daily') return 'daily';
+    if (mFreq === 'weekly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'weekly';
+    }
+    if (mFreq === 'quarterly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'quarterly';
+    }
+    if (mFreq === 'monthly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'monthly';
+    }
+
+    const freq = String(r.frequency || (r as any).periodType || '').toLowerCase().trim();
+    if (freq === 'daily') return 'daily';
+    if (freq === 'weekly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'weekly';
+    }
+    if (freq === 'quarterly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'quarterly';
+    }
+    if (freq === 'monthly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'monthly';
+    }
+
+    // Check DB-assigned records
+    if (r.weekly_records && r.weekly_records.length > 0) {
+      if (r.daily_records) delete r.daily_records;
+      return 'weekly';
+    }
+    if (r.quarterly_records && r.quarterly_records.length > 0) {
+      if (r.daily_records) delete r.daily_records;
+      return 'quarterly';
+    }
+    if (r.daily_records && r.daily_records.length > 0) return 'daily';
+    if (r.monthly_records && r.monthly_records.length > 0) return 'monthly';
+
+    const respCycle = cycles.find(c => c.id === r.cycleId);
+    const cycleFreq = String((respCycle as any)?.frequency || '').toLowerCase().trim();
+    if (cycleFreq === 'daily') return 'daily';
+    if (cycleFreq === 'weekly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'weekly';
+    }
+    if (cycleFreq === 'quarterly') return 'quarterly';
+    if (cycleFreq === 'monthly') return 'monthly';
+
+    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
+    if (p.includes('daily')) return 'daily';
+    if (p.includes('weekly') || p.includes('week')) {
+      if (r.daily_records) delete r.daily_records;
+      return 'weekly';
+    }
+    if (p.includes('quarterly') || p.includes('quarter')) return 'quarterly';
+
+    return 'monthly';
+  };
+
   // Resolve active categories for employee worksheet
   const activeCategories: KPICategory[] = useMemo(() => {
+    // 0. Check milestone-specific categories if looking at a specific milestone (e.g. week, day, month, quarter)
+    if (activeEmpResponse) {
+      const cad = getResponseCadence(activeEmpResponse);
+      if (cad === 'weekly') {
+        const curW = (activeEmpResponse.weekly_records || []).find(w => w.weekIndex === activeYearlyWeekIndex);
+        if (curW?.categories && Array.isArray(curW.categories) && curW.categories.length > 0) {
+          return curW.categories;
+        }
+      } else if (cad === 'daily') {
+        const curD = getResponseDailyRecords(activeEmpResponse).find(d => d.dayIndex === activeYearlyDailyIndex);
+        if (curD?.categories && Array.isArray(curD.categories) && curD.categories.length > 0) {
+          return curD.categories;
+        }
+      } else if (cad === 'quarterly') {
+        const curQ = (activeEmpResponse.quarterly_records || []).find(q => q.quarterIndex === activeYearlyQuarterIndex);
+        if (curQ?.categories && Array.isArray(curQ.categories) && curQ.categories.length > 0) {
+          return curQ.categories;
+        }
+      } else if (cad === 'monthly') {
+        const curM = (activeEmpResponse.monthly_records || []).find(m => m.monthIndex === activeYearlyFiscalMonth);
+        if (curM?.categories && Array.isArray(curM.categories) && curM.categories.length > 0) {
+          return curM.categories;
+        }
+      }
+    }
+
     // 1. Prefer categories explicitly attached to the employee's active response
     if (activeEmpResponse) {
       const respCats = (activeEmpResponse as any).categories || (activeEmpResponse as any).metrics_data;
@@ -4782,7 +4887,7 @@ export const EvaluationTab: React.FC = () => {
     }
     // 3. Fallback to default KPI categories
     return DEFAULT_KPI_CATEGORIES;
-  }, [activeEmpResponse, activeCycle]);
+  }, [activeEmpResponse, activeCycle, activeYearlyWeekIndex, activeYearlyDailyIndex, activeYearlyFiscalMonth, activeYearlyQuarterIndex]);
 
   const managerTeamCategories = (activeManagerCycle?.categories && activeManagerCycle.categories.length > 0) ? activeManagerCycle.categories : activeCategories;
 
@@ -4842,6 +4947,117 @@ export const EvaluationTab: React.FC = () => {
   const isMatrixLocked = getCycleLockedInfo(activeManagerCycle).isLocked;
   const filledResponsesCount = getCycleLockedInfo(activeManagerCycle).activeCount;
 
+  // Helper to calculate effective date string for Edit Matrix modal
+  const getMgrEditEffectiveDate = (
+    effOption = mgrEditEffectiveOption,
+    customDate = mgrEditCustomDate
+  ): string => {
+    const nowD = new Date();
+    if (effOption === 'tomorrow') {
+      const tom = new Date(nowD);
+      tom.setDate(tom.getDate() + 1);
+      return tom.toISOString().split('T')[0];
+    } else if (effOption === 'today') {
+      return nowD.toISOString().split('T')[0];
+    } else if (effOption === 'next_month') {
+      const nextM = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 1);
+      return nextM.toISOString().split('T')[0];
+    } else if (effOption === 'custom' && customDate) {
+      return customDate;
+    }
+    return nowD.toISOString().split('T')[0];
+  };
+
+  // Helper to check if an employee's milestone matching the target effective date is already approved / submitted
+  const isEmpMilestoneApprovedForTargetEffectiveDate = (
+    empIdOrObj: any,
+    targetCycle?: EvaluationCycle | null,
+    effOption = mgrEditEffectiveOption,
+    customDate = mgrEditCustomDate
+  ): { isBlocked: boolean; badgeText: string; reason: string } => {
+    if (!empIdOrObj) return { isBlocked: false, badgeText: '', reason: '' };
+    const empId = typeof empIdOrObj === 'object' ? String(empIdOrObj.employee_id || empIdOrObj.employeeCode || '') : String(empIdOrObj);
+
+    // Find matching response for this cycle / team
+    const matchingResp = responses.find(r => {
+      if (!isEmpMatch(empId, r)) return false;
+      if ((r as any).is_archived || (r as any).status === 'Archived') return false;
+      if (targetCycle) {
+        if (targetCycle.id && r.cycleId === targetCycle.id) return true;
+        if (targetCycle.teamId && r.teamId === targetCycle.teamId) return true;
+        if (targetCycle.teamName && (r.department || '').toLowerCase() === targetCycle.teamName.toLowerCase()) return true;
+      }
+      return true;
+    });
+
+    if (!matchingResp) return { isBlocked: false, badgeText: '', reason: '' };
+
+    const targetEffectiveDate = getMgrEditEffectiveDate(effOption, customDate);
+    const isYearly = isYearlyResponse(matchingResp);
+
+    if (isYearly) {
+      const cad = getResponseCadence(matchingResp);
+      if (cad === 'daily') {
+        const dRecs = getResponseDailyRecords(matchingResp);
+        // Only block if the specific TARGET milestone (on or after effective date) is already approved
+        const targetD = dRecs.find(d => d.date === targetEffectiveDate);
+        if (targetD && targetD.status === 'manager_approved') {
+          return { isBlocked: true, badgeText: 'Approved', reason: `${targetD.dayLabel || 'Day'} is already approved.` };
+        }
+        if (targetD && targetD.status === 'submitted_to_manager') {
+          return { isBlocked: true, badgeText: 'Pending Review', reason: `${targetD.dayLabel || 'Day'} submitted, awaiting manager review.` };
+        }
+      } else if (cad === 'weekly') {
+        const wRecs = getResponseWeeklyRecords(matchingResp);
+        const targetW = wRecs.find(w => w.startDate && w.endDate && targetEffectiveDate >= w.startDate && targetEffectiveDate <= w.endDate);
+        if (targetW && targetW.status === 'manager_approved') {
+          return { isBlocked: true, badgeText: 'Approved', reason: `${targetW.weekLabel || 'Week'} is already approved.` };
+        }
+        if (targetW && targetW.status === 'submitted_to_manager') {
+          return { isBlocked: true, badgeText: 'Pending Review', reason: `${targetW.weekLabel || 'Week'} submitted, awaiting manager review.` };
+        }
+      } else if (cad === 'quarterly') {
+        const qRecs = getResponseQuarterlyRecords(matchingResp);
+        const targetQ = qRecs.find(q => {
+          if (q.startDate && q.endDate) {
+            return targetEffectiveDate >= q.startDate && targetEffectiveDate <= q.endDate;
+          }
+          return false;
+        });
+        if (targetQ && targetQ.status === 'manager_approved') {
+          return { isBlocked: true, badgeText: 'Approved', reason: `${targetQ.quarterLabel || 'Quarter'} is already approved.` };
+        }
+        if (targetQ && targetQ.status === 'submitted_to_manager') {
+          return { isBlocked: true, badgeText: 'Pending Review', reason: `${targetQ.quarterLabel || 'Quarter'} submitted, awaiting manager review.` };
+        }
+      } else {
+        // monthly
+        const mRecs = getResponseMonthlyRecords(matchingResp);
+        const targetM = mRecs.find(m => {
+          if (m.startDate && m.endDate) {
+            return targetEffectiveDate >= m.startDate && targetEffectiveDate <= m.endDate;
+          }
+          return false;
+        });
+        if (targetM && targetM.status === 'manager_approved') {
+          return { isBlocked: true, badgeText: 'Approved', reason: `${targetM.monthName || 'Month'} is already approved.` };
+        }
+        if (targetM && targetM.status === 'submitted_to_manager') {
+          return { isBlocked: true, badgeText: 'Pending Review', reason: `${targetM.monthName || 'Month'} submitted, awaiting manager review.` };
+        }
+      }
+    } else {
+      // Standalone cycle
+      const s = String(matchingResp.status || '').toLowerCase().trim();
+      const isApproved = s === 'approved' || s === 'completed' || s === 'sm_final_approval' || (matchingResp.managerScore != null && s !== 'manager_review' && s !== 'submitted to manager');
+      if (isApproved && effOption === 'today') {
+        return { isBlocked: true, badgeText: 'Approved', reason: `${matchingResp.periodName || 'Cycle'} is already approved.` };
+      }
+    }
+
+    return { isBlocked: false, badgeText: '', reason: '' };
+  };
+
   // Handlers for Manager Edit & Delete Deliverables Matrix
   const handleOpenMgrEditMatrixModal = (targetCycle?: EvaluationCycle, directMembers?: any[]) => {
     const cycleToEdit = targetCycle || activeManagerCycle;
@@ -4868,35 +5084,42 @@ export const EvaluationTab: React.FC = () => {
     }
     setMgrEditCategories(JSON.parse(JSON.stringify(loadedCategories || DEFAULT_KPI_CATEGORIES)));
 
+    const freq = String(cycleToEdit.frequency || '').toLowerCase();
+    const defaultEff = (freq === 'daily' || freq === 'weekly') ? 'tomorrow' : 'next_month';
+    setMgrEditEffectiveOption(defaultEff);
+
     // Store direct members for strict team-scoped selection
     if (directMembers && directMembers.length > 0) {
       setMgrEditDirectMembers(directMembers);
       const memberIds = directMembers
         .map(m => String(m.employeeCode || m.response?.employeeId || m.response?.employeeCode || ''))
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter(id => !isEmpMilestoneApprovedForTargetEffectiveDate(id, cycleToEdit, defaultEff).isBlocked);
       setMgrEditSelectedEmpIds(memberIds);
     } else {
       setMgrEditDirectMembers([]);
-      // Pre-select all employee IDs currently enrolled in this cycle / team
       const initialEmpIds: string[] = [];
       if (Array.isArray(cycleToEdit.employeeIds) && cycleToEdit.employeeIds.length > 0) {
-        initialEmpIds.push(...cycleToEdit.employeeIds.map(String));
+        cycleToEdit.employeeIds.forEach(id => {
+          const strId = String(id);
+          if (!isEmpMilestoneApprovedForTargetEffectiveDate(strId, cycleToEdit, defaultEff).isBlocked) {
+            initialEmpIds.push(strId);
+          }
+        });
       } else {
         responses.forEach(r => {
           if ((r.cycleId === cycleToEdit.id || (cycleToEdit.teamId && r.teamId === cycleToEdit.teamId) || (cycleToEdit.teamName && (r.department || '').toLowerCase() === cycleToEdit.teamName.toLowerCase())) && r.employeeId) {
-            if (!initialEmpIds.includes(String(r.employeeId))) initialEmpIds.push(String(r.employeeId));
+            const strId = String(r.employeeId);
+            if (!initialEmpIds.includes(strId) && !isEmpMilestoneApprovedForTargetEffectiveDate(strId, cycleToEdit, defaultEff).isBlocked) {
+              initialEmpIds.push(strId);
+            }
           }
         });
       }
       setMgrEditSelectedEmpIds(initialEmpIds);
     }
-
-    const freq = String(cycleToEdit.frequency || '').toLowerCase();
-    if (freq === 'daily' || freq === 'weekly') {
-      setMgrEditEffectiveOption('tomorrow');
-    } else {
-      setMgrEditEffectiveOption('next_month');
-    }
+    setMgrEditMemberFilterTab('all');
+    setMgrEditMemberSearch('');
     const t = new Date();
     t.setDate(t.getDate() + 1);
     setMgrEditCustomDate(t.toISOString().split('T')[0]);
@@ -5129,7 +5352,7 @@ export const EvaluationTab: React.FC = () => {
             };
           });
 
-          await fetch(`${API_URL}/api/performance/kpi-evaluations/assign`, {
+          await fetch(`${API_URL}/api/performance/kpi-evaluations/update-deliverables-matrix`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -5226,7 +5449,8 @@ export const EvaluationTab: React.FC = () => {
             method: 'DELETE',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+              ...(isHrOrAdmin ? { 'X-User-Role': 'hr_admin', 'X-Access-Level': 'admin' } : {})
             },
             body: JSON.stringify({
               cycleId: targetCycleId,
@@ -5312,7 +5536,8 @@ export const EvaluationTab: React.FC = () => {
             method: 'DELETE',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+              ...(isHrOrAdmin ? { 'X-User-Role': 'hr_admin', 'X-Access-Level': 'admin' } : {})
             },
             body: JSON.stringify({
               respId,
@@ -5873,6 +6098,31 @@ export const EvaluationTab: React.FC = () => {
   // Resolve all assigned categories and deliverables for manager review
   const selectedMgrCategories: KPICategory[] = useMemo(() => {
     if (!selectedMgrResponse) return activeManagerCycle?.categories || managerTeamCategories;
+
+    // 0. Check milestone-specific categories for the active milestone being reviewed by manager
+    const cad = getResponseCadence(selectedMgrResponse);
+    if (cad === 'weekly') {
+      const curW = (selectedMgrResponse.weekly_records || []).find(w => w.weekIndex === activeMgrYearlyWeekIndex);
+      if (curW?.categories && Array.isArray(curW.categories) && curW.categories.length > 0) {
+        return curW.categories;
+      }
+    } else if (cad === 'daily') {
+      const curD = getResponseDailyRecords(selectedMgrResponse).find(d => d.dayIndex === activeMgrYearlyDailyIndex);
+      if (curD?.categories && Array.isArray(curD.categories) && curD.categories.length > 0) {
+        return curD.categories;
+      }
+    } else if (cad === 'quarterly') {
+      const curQ = (selectedMgrResponse.quarterly_records || []).find(q => q.quarterIndex === activeMgrYearlyQuarterIndex);
+      if (curQ?.categories && Array.isArray(curQ.categories) && curQ.categories.length > 0) {
+        return curQ.categories;
+      }
+    } else if (cad === 'monthly') {
+      const curM = (selectedMgrResponse.monthly_records || []).find(m => m.monthIndex === activeMgrYearlyFiscalMonth);
+      if (curM?.categories && Array.isArray(curM.categories) && curM.categories.length > 0) {
+        return curM.categories;
+      }
+    }
+
     // 1. Prefer categories explicitly attached to the evaluation response
     if ((selectedMgrResponse as any).categories && Array.isArray((selectedMgrResponse as any).categories) && (selectedMgrResponse as any).categories.length > 0) {
       return (selectedMgrResponse as any).categories;
@@ -5925,73 +6175,7 @@ export const EvaluationTab: React.FC = () => {
       }
     }
     return DEFAULT_KPI_CATEGORIES;
-  }, [selectedMgrResponse, selectedMgrCycle, managerTeamCategories, activeManagerCycle]);
-
-  // Robust cadence resolver prioritizing DB-assigned milestone frequency
-  const getResponseCadence = (r?: EvaluationResponse | null): 'daily' | 'weekly' | 'quarterly' | 'monthly' => {
-    if (!r) return 'monthly';
-    const mFreq = String(r.milestone_frequency || '').toLowerCase().trim();
-    if (mFreq === 'daily') return 'daily';
-    if (mFreq === 'weekly') {
-      if (r.daily_records) delete r.daily_records;
-      return 'weekly';
-    }
-    if (mFreq === 'quarterly') {
-      if (r.daily_records) delete r.daily_records;
-      return 'quarterly';
-    }
-    if (mFreq === 'monthly') {
-      if (r.daily_records) delete r.daily_records;
-      return 'monthly';
-    }
-
-    const freq = String(r.frequency || (r as any).periodType || '').toLowerCase().trim();
-    if (freq === 'daily') return 'daily';
-    if (freq === 'weekly') {
-      if (r.daily_records) delete r.daily_records;
-      return 'weekly';
-    }
-    if (freq === 'quarterly') {
-      if (r.daily_records) delete r.daily_records;
-      return 'quarterly';
-    }
-    if (freq === 'monthly') {
-      if (r.daily_records) delete r.daily_records;
-      return 'monthly';
-    }
-
-    // Check DB-assigned records
-    if (r.weekly_records && r.weekly_records.length > 0) {
-      if (r.daily_records) delete r.daily_records;
-      return 'weekly';
-    }
-    if (r.quarterly_records && r.quarterly_records.length > 0) {
-      if (r.daily_records) delete r.daily_records;
-      return 'quarterly';
-    }
-    if (r.daily_records && r.daily_records.length > 0) return 'daily';
-    if (r.monthly_records && r.monthly_records.length > 0) return 'monthly';
-
-    const respCycle = cycles.find(c => c.id === r.cycleId);
-    const cycleFreq = String((respCycle as any)?.frequency || '').toLowerCase().trim();
-    if (cycleFreq === 'daily') return 'daily';
-    if (cycleFreq === 'weekly') {
-      if (r.daily_records) delete r.daily_records;
-      return 'weekly';
-    }
-    if (cycleFreq === 'quarterly') return 'quarterly';
-    if (cycleFreq === 'monthly') return 'monthly';
-
-    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
-    if (p.includes('daily')) return 'daily';
-    if (p.includes('weekly') || p.includes('week')) {
-      if (r.daily_records) delete r.daily_records;
-      return 'weekly';
-    }
-    if (p.includes('quarterly') || p.includes('quarter')) return 'quarterly';
-
-    return 'monthly';
-  };
+  }, [selectedMgrResponse, selectedMgrCycle, managerTeamCategories, activeManagerCycle, activeMgrYearlyWeekIndex, activeMgrYearlyDailyIndex, activeMgrYearlyQuarterIndex, activeMgrYearlyFiscalMonth]);
 
   // Helper to determine if an evaluation response is a Yearly / Annual evaluation
   const isYearlyResponse = (r?: EvaluationResponse | null): boolean => {
@@ -6386,16 +6570,6 @@ export const EvaluationTab: React.FC = () => {
     };
   };
 
-  const getResponseDailyRecords = (r: EvaluationResponse | null | undefined): YearlyDailyRecord[] => {
-    if (!r) return [];
-    if (getResponseCadence(r) !== 'daily') return [];
-    if (r.daily_records && r.daily_records.length > 0) return r.daily_records;
-    const startD = r.startDate || activeCycle?.startDate || '2026-10-01';
-    const endD = r.endDate || activeCycle?.endDate || '2026-10-31';
-    const records = initializeYearlyDailyRecords(startD, endD);
-    r.daily_records = records;
-    return records;
-  };
 
   const getResponseWeeklyRecords = (r: EvaluationResponse | null | undefined): YearlyWeekRecord[] => {
     if (!r) return [];
@@ -14724,7 +14898,6 @@ export const EvaluationTab: React.FC = () => {
                                   <tr>
                                     <th className="px-4 py-2.5 text-left whitespace-nowrap">Deliverable Metric</th>
                                     <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Target Goal</th>
-                                    <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Weight</th>
                                     <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Actual</th>
                                     <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Self Score</th>
                                     <th className="px-3 py-2.5 text-center whitespace-nowrap">Insufficient</th>
@@ -14880,13 +15053,6 @@ export const EvaluationTab: React.FC = () => {
                                               })()}
                                             </span>
                                           </div>
-                                        </td>
-
-                                        {/* 3. Weight */}
-                                        <td className="px-2 py-3 align-middle text-center whitespace-nowrap">
-                                          <span className={`text-xs font-bold ${isNeg ? 'text-rose-900' : 'text-slate-700'}`}>
-                                            {kpi.targetScore ?? kpi.weightage}%
-                                          </span>
                                         </td>
 
                                         {/* 4. Self Actual */}
@@ -16793,16 +16959,19 @@ export const EvaluationTab: React.FC = () => {
                                             ? Number(d.managerScore)
                                             : (d.employeeScore != null ? Number(d.employeeScore) : null);
 
+                                          const milestoneCats = (d.categories && d.categories.length > 0) ? d.categories : dCats;
+                                          const milestoneTotalKpis = milestoneCats.reduce((sum: number, c: KPICategory) => sum + c.kpis.length, 0);
+
                                           return {
                                             key: `day_${d.dayIndex}`,
                                             title: d.dayLabel ? `${d.dayLabel} (${d.dayName || ''})` : `Day ${d.dayIndex}`,
                                             dateRange: d.date || `Day ${d.dayIndex}`,
                                             criteriaFilledCount: filledKpis,
-                                            totalCriteriaCount: totalKpis,
+                                            totalCriteriaCount: milestoneTotalKpis,
                                             status: d.status,
                                             score: scoreVal,
                                             scoreLabel: d.managerScore != null ? 'FINAL' : (d.employeeScore != null ? 'SELF' : 'PENDING'),
-                                            categories: dCats,
+                                            categories: milestoneCats,
                                             entries: d.kpiEntries || {},
                                             managerRemarks: d.managerRemarks
                                           };
@@ -16918,16 +17087,19 @@ export const EvaluationTab: React.FC = () => {
                                             ? Number(w.managerScore)
                                             : (w.employeeScore != null ? Number(w.employeeScore) : null);
 
+                                          const milestoneCats = (w.categories && w.categories.length > 0) ? w.categories : wCats;
+                                          const milestoneTotalKpis = milestoneCats.reduce((sum: number, c: KPICategory) => sum + c.kpis.length, 0);
+
                                           return {
                                             key: `week_${w.weekIndex}`,
                                             title: w.weekLabel || `Week ${w.weekIndex}`,
                                             dateRange: formatMilestoneRangeStr(w.startDate, w.endDate, w.weekLabel || `Week ${w.weekIndex}`),
                                             criteriaFilledCount: filledKpis,
-                                            totalCriteriaCount: totalKpis,
+                                            totalCriteriaCount: milestoneTotalKpis,
                                             status: w.status,
                                             score: scoreVal,
                                             scoreLabel: w.managerScore != null ? 'FINAL' : (w.employeeScore != null ? 'SELF' : 'PENDING'),
-                                            categories: wCats,
+                                            categories: milestoneCats,
                                             entries: w.kpiEntries || {},
                                             managerRemarks: w.managerRemarks
                                           };
@@ -17005,16 +17177,19 @@ export const EvaluationTab: React.FC = () => {
                                           ? Number(mRec.managerScore)
                                           : (mRec.employeeScore != null ? Number(mRec.employeeScore) : null);
 
+                                        const milestoneCats = (mRec.categories && mRec.categories.length > 0) ? mRec.categories : mCats;
+                                        const milestoneTotalKpis = milestoneCats.reduce((sum: number, c: KPICategory) => sum + c.kpis.length, 0);
+
                                         return {
                                           key: `month_${fMonth.monthIndex}`,
                                           title: mRec.monthName || fMonth.monthName,
                                           dateRange: formatMilestoneRangeStr(mRec.startDate, mRec.endDate, `${fMonth.monthName}`),
                                           criteriaFilledCount: filledKpis,
-                                          totalCriteriaCount: totalKpis,
+                                          totalCriteriaCount: milestoneTotalKpis,
                                           status: mRec.status || 'pending_employee',
                                           score: scoreVal,
                                           scoreLabel: mRec.managerScore != null ? 'FINAL' : (mRec.employeeScore != null ? 'SELF' : 'PENDING'),
-                                          categories: mCats,
+                                          categories: milestoneCats,
                                           entries: mRec.kpiEntries || {},
                                           managerRemarks: mRec.managerRemarks
                                         };
@@ -17069,16 +17244,19 @@ export const EvaluationTab: React.FC = () => {
                                         ? Number(qRec.managerScore)
                                         : (qRec.employeeScore != null ? Number(qRec.employeeScore) : null);
 
+                                      const milestoneCats = (qRec.categories && qRec.categories.length > 0) ? qRec.categories : qCats;
+                                      const milestoneTotalKpis = milestoneCats.reduce((sum: number, c: KPICategory) => sum + c.kpis.length, 0);
+
                                       return {
                                         key: `quarter_${fQuarter.quarterIndex}`,
                                         title: qRec.quarterLabel || fQuarter.quarterLabel,
                                         dateRange: qRec.monthsIncluded || fQuarter.monthsIncluded || formatMilestoneRangeStr(qRec.startDate, qRec.endDate, `Quarter ${fQuarter.quarterIndex}`),
                                         criteriaFilledCount: filledKpis,
-                                        totalCriteriaCount: totalKpis,
+                                        totalCriteriaCount: milestoneTotalKpis,
                                         status: qRec.status || 'pending_employee',
                                         score: scoreVal,
                                         scoreLabel: qRec.managerScore != null ? 'FINAL' : (qRec.employeeScore != null ? 'SELF' : 'PENDING'),
-                                        categories: qCats,
+                                        categories: milestoneCats,
                                         entries: qRec.kpiEntries || {},
                                         managerRemarks: qRec.managerRemarks
                                       };
@@ -21671,7 +21849,7 @@ export const EvaluationTab: React.FC = () => {
                                 <th className="px-5 py-3 min-w-[200px]">Deliverable</th>
                                 <th className="px-3 py-3 text-center whitespace-nowrap min-w-[85px]">Target</th>
                                 <th className="px-3 py-3 text-center whitespace-nowrap min-w-[85px]">Weight</th>
-                                <th className="px-3 py-3 text-center whitespace-nowrap min-w-[95px]">Actual PM</th>
+                                <th className="px-3 py-3 text-center whitespace-nowrap min-w-[95px]">Employee Score</th>
                                 <th className="px-3 py-3 text-center whitespace-nowrap min-w-[95px]">Earned</th>
                                 <th className="px-3 py-3 text-center whitespace-nowrap min-w-[130px]">Insufficient</th>
                                 <th className="px-3 py-3 text-center min-w-[150px] bg-slate-50/50 text-slate-700">
@@ -22473,83 +22651,200 @@ export const EvaluationTab: React.FC = () => {
 
                   if (teamMembers.length === 0) return null;
 
-                  const allTeamEmpIds = teamMembers.map(m => String(m.employee_id || '')).filter(Boolean);
-                  const isAllSelected = allTeamEmpIds.length > 0 && allTeamEmpIds.every(id => mgrEditSelectedEmpIds.includes(id));
+                  // Evaluate block/approved status based on CURRENTLY selected effective date option
+                  const memberStatusMap = new Map<string, { isBlocked: boolean; badgeText: string; reason: string }>();
+                  teamMembers.forEach(emp => {
+                    const empId = String(emp.employee_id || '');
+                    const status = isEmpMilestoneApprovedForTargetEffectiveDate(empId, mgrEditTargetCycle, mgrEditEffectiveOption, mgrEditCustomDate);
+                    memberStatusMap.set(empId, status);
+                  });
+
+                  const assignableMembers = teamMembers.filter(emp => {
+                    const empId = String(emp.employee_id || '');
+                    return !memberStatusMap.get(empId)?.isBlocked;
+                  });
+
+                  const activeSelectedCount = mgrEditSelectedEmpIds.filter(id => assignableMembers.some(m => String(m.employee_id || '') === id)).length;
+                  const unselectedCount = assignableMembers.length - activeSelectedCount;
+
+                  // Filter members by Tab & Search query
+                  const filteredMembers = teamMembers.filter(emp => {
+                    const empId = String(emp.employee_id || '');
+                    const status = memberStatusMap.get(empId);
+                    const isSelected = !status?.isBlocked && mgrEditSelectedEmpIds.includes(empId);
+
+                    if (mgrEditMemberFilterTab === 'selected' && !isSelected) return false;
+                    if (mgrEditMemberFilterTab === 'unselected' && (isSelected || status?.isBlocked)) return false;
+
+                    if (mgrEditMemberSearch.trim()) {
+                      const q = mgrEditMemberSearch.toLowerCase().trim();
+                      const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || '';
+                      const desig = emp.designation || emp.job_title || emp.role || '';
+                      if (!fullName.toLowerCase().includes(q) && !empId.toLowerCase().includes(q) && !desig.toLowerCase().includes(q)) {
+                        return false;
+                      }
+                    }
+                    return true;
+                  });
+
+                  const assignableIds = assignableMembers.map(m => String(m.employee_id || '')).filter(Boolean);
+                  const isAllSelected = assignableIds.length > 0 && assignableIds.every(id => mgrEditSelectedEmpIds.includes(id));
 
                   const toggleAll = () => {
                     if (isAllSelected) {
                       setMgrEditSelectedEmpIds([]);
                     } else {
-                      setMgrEditSelectedEmpIds([...allTeamEmpIds]);
+                      setMgrEditSelectedEmpIds([...assignableIds]);
                     }
                   };
 
-                  const toggleOne = (empId: string) => {
+                  const toggleOne = (empId: string, isBlocked: boolean) => {
+                    if (isBlocked) return;
                     setMgrEditSelectedEmpIds(prev =>
                       prev.includes(empId) ? prev.filter(id => id !== empId) : [...prev, empId]
                     );
                   };
 
                   return (
-                    <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-teal-600" />
-                            <span className="text-xs font-bold text-slate-900">
-                              Apply Changes to Team Members ({mgrEditSelectedEmpIds.length} of {teamMembers.length} selected)
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
-                            Deselect any team member whose metrics should remain unchanged. Only selected employees receive the updated metrics.
-                          </p>
+                    <div className="space-y-2.5">
+                      {/* Top Bar: Tabs (All, Selected, Excluded) + Search input + Deselect All button */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        {/* Left Tabs matching image */}
+                        <div className="inline-flex items-center gap-1 p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 shrink-0 select-none">
+                          <button
+                            type="button"
+                            onClick={() => setMgrEditMemberFilterTab('all')}
+                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                              mgrEditMemberFilterTab === 'all'
+                                ? 'bg-white text-slate-900 shadow-2xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            All ({teamMembers.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMgrEditMemberFilterTab('selected')}
+                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                              mgrEditMemberFilterTab === 'selected'
+                                ? 'bg-teal-600 text-white shadow-2xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Selected ({activeSelectedCount})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMgrEditMemberFilterTab('unselected')}
+                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                              mgrEditMemberFilterTab === 'unselected'
+                                ? 'bg-white text-slate-900 shadow-2xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Excluded ({unselectedCount})
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={toggleAll}
-                          className="px-2.5 py-1 text-[11px] font-bold text-teal-700 bg-white hover:bg-teal-50 border border-teal-200 rounded-lg transition shadow-2xs cursor-pointer self-start sm:self-auto shrink-0"
-                        >
-                          {isAllSelected ? 'Deselect All' : 'Select All'}
-                        </button>
+
+                        {/* Right: Search box + Deselect/Select All button */}
+                        <div className="flex items-center gap-2 flex-1 sm:justify-end">
+                          <div className="relative flex-1 sm:max-w-xs">
+                            <input
+                              type="text"
+                              value={mgrEditMemberSearch}
+                              onChange={e => setMgrEditMemberSearch(e.target.value)}
+                              placeholder="Search member name or ID..."
+                              className="w-full h-8 pl-8 pr-7 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs transition"
+                            />
+                            <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            {mgrEditMemberSearch && (
+                              <button
+                                type="button"
+                                onClick={() => setMgrEditMemberSearch('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+                              >
+                                &times;
+                              </button>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={toggleAll}
+                            disabled={assignableIds.length === 0}
+                            className={`h-8 px-3 text-xs font-semibold rounded-xl border shadow-2xs transition shrink-0 cursor-pointer ${
+                              assignableIds.length === 0
+                                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                : 'bg-white hover:bg-teal-50 text-teal-700 border-teal-200'
+                            }`}
+                          >
+                            {isAllSelected ? 'Deselect All' : 'Select All'}
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
-                        {teamMembers.map(emp => {
-                          const empId = String(emp.employee_id || '');
-                          const isSelected = mgrEditSelectedEmpIds.includes(empId);
-                          const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || `Employee ${empId}`;
-                          const designation = emp.designation || emp.job_title || emp.role || 'Team Member';
-                          const initials = (fullName || 'EM').split(' ').filter(Boolean).map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || 'EM';
+                      {/* Card Grid matching Image 3 style */}
+                      {filteredMembers.length === 0 ? (
+                        <div className="p-6 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-400">
+                          No team members match your search or filter.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
+                          {filteredMembers.map(emp => {
+                            const empId = String(emp.employee_id || '');
+                            const status = memberStatusMap.get(empId);
+                            const isBlocked = Boolean(status?.isBlocked);
+                            const isSelected = !isBlocked && mgrEditSelectedEmpIds.includes(empId);
+                            const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || `Employee ${empId}`;
+                            const designation = emp.designation || emp.job_title || emp.role || '';
 
-                          return (
-                            <div
-                              key={empId}
-                              onClick={() => toggleOne(empId)}
-                              className={`flex items-center justify-between gap-2.5 p-2 rounded-xl border transition cursor-pointer select-none ${isSelected ? 'bg-teal-50/90 border-teal-400 ring-1 ring-teal-500/20 shadow-xs' : 'bg-white border-slate-200/90 hover:bg-slate-50 text-slate-600'}`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 shadow-2xs ${isSelected ? 'bg-teal-700 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                                  {initials}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className={`text-xs truncate font-medium ${isSelected ? 'text-teal-950 font-bold' : 'text-slate-700'}`}>
+                            return (
+                              <div
+                                key={empId}
+                                onClick={() => toggleOne(empId, isBlocked)}
+                                title={isBlocked ? (status?.reason || 'Evaluation already approved for this period.') : `Click to ${isSelected ? 'deselect' : 'select'}`}
+                                className={`flex items-center justify-between gap-2 p-2.5 rounded-2xl border transition select-none ${
+                                  isBlocked
+                                    ? 'bg-slate-50/70 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                                    : isSelected
+                                      ? 'bg-teal-50/70 border-teal-400 ring-1 ring-teal-500/20 shadow-xs cursor-pointer'
+                                      : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs cursor-pointer text-slate-700'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className={`text-xs truncate font-medium ${isBlocked ? 'text-slate-400' : isSelected ? 'text-slate-900 font-bold' : 'text-slate-800'}`}>
                                     {fullName}
                                   </div>
-                                  <div className="text-[10px] text-slate-400 truncate">
-                                    #{empId} · {designation}
+                                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5 truncate">
+                                    <span className="font-mono text-slate-500">#{empId}</span>
+                                    {designation && (
+                                      <>
+                                        <span className="text-slate-300">&bull;</span>
+                                        <span className="truncate">{designation}</span>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
+
+                                {/* Right status pill or checkmark */}
+                                <div className="shrink-0 flex items-center">
+                                  {isBlocked ? (
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 whitespace-nowrap">
+                                      {status?.badgeText || 'Pending Review'}
+                                    </span>
+                                  ) : isSelected ? (
+                                    <span className="w-5 h-5 rounded-full bg-teal-600 text-white flex items-center justify-center text-xs font-bold shadow-2xs">
+                                      &#10003;
+                                    </span>
+                                  ) : (
+                                    <span className="w-5 h-5 rounded-full border-2 border-slate-300 bg-white hover:border-teal-400 transition" />
+                                  )}
+                                </div>
                               </div>
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => {}}
-                                className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-slate-300 pointer-events-none shrink-0"
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
