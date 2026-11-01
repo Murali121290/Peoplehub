@@ -962,11 +962,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       try {
         remoteData = await evaluationService.fetchRemoteEvaluationData();
       } catch (e) {
-        try {
-          const c = localStorage.getItem('peoplehub_evaluation_cycles_v2');
-          const r = localStorage.getItem('peoplehub_evaluation_responses_v2');
-          remoteData = { cycles: c ? JSON.parse(c) : [], responses: r ? JSON.parse(r) : [] };
-        } catch {}
+        remoteData = { cycles: evaluationService.getCycles(), responses: evaluationService.getResponses() };
       }
 
       const cycles = remoteData.cycles || [];

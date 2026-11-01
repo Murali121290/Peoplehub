@@ -703,9 +703,13 @@ def export_monthly_productivity():
             cats = m_data.get("categories", [])
             daily_records = m_data.get("daily_records", [])
             weekly_records = m_data.get("weekly_records", [])
+            monthly_records = m_data.get("monthly_records", [])
+            quarterly_records = m_data.get("quarterly_records", [])
 
             period_daily = [d for d in daily_records if d.get("date") and start_date <= date.fromisoformat(d.get("date")) <= end_date]
             period_weekly = [w for w in weekly_records if w.get("startDate") and w.get("endDate") and date.fromisoformat(w.get("startDate")) <= end_date and date.fromisoformat(w.get("endDate")) >= start_date]
+            period_monthly = [m for m in monthly_records if m.get("startDate") and m.get("endDate") and date.fromisoformat(m.get("startDate")) <= end_date and date.fromisoformat(m.get("endDate")) >= start_date]
+            period_quarterly = [q for q in quarterly_records if q.get("startDate") and q.get("endDate") and date.fromisoformat(q.get("startDate")) <= end_date and date.fromisoformat(q.get("endDate")) >= start_date]
 
             # Find name frequency across categories to disambiguate duplicates
             all_kpi_names = []
@@ -729,67 +733,153 @@ def export_monthly_productivity():
                     except Exception:
                         return 0.0
 
+            # ------------------------------------------------------------------
+            # Build deliverables map with PER-MILESTONE target awareness.
+            # When a manager changes targets mid-period (e.g., day 15 of a month),
+            # each daily/weekly milestone record stores its own 'categories' field
+            # with the target that was active on that day. We must sum targets
+            # milestone-by-milestone rather than applying a single root target
+            # to all milestones — otherwise the Excel Total column is wrong.
+            # ------------------------------------------------------------------
+
+            def get_milestone_cats(milestone_record, fallback_cats):
+                """Return categories for a specific milestone, falling back to root."""
+                mc = milestone_record.get("categories")
+                if mc and isinstance(mc, list) and len(mc) > 0:
+                    return mc
+                return fallback_cats
+
+            def get_kpi_target_from_cats(milestone_cats, kpi_id, kpi_name):
+                """Extract the numeric target for a specific KPI from a categories list."""
+                for mc in milestone_cats:
+                    for mk in mc.get("kpis", []):
+                        if mk.get("id") == kpi_id or (mk.get("name") or "").strip() == kpi_name:
+                            raw = str(mk.get("targetFromManager") or mk.get("targetValue") or "0").strip()
+                            return extract_num(raw)
+                return None  # not found in this categories snapshot
+
+            # Collect all unique KPI identifiers across root + all milestone categories
+            all_cats_snapshots = [cats]
+            for _d in period_daily:
+                if _d.get("categories"):
+                    all_cats_snapshots.append(_d["categories"])
+            for _w in period_weekly:
+                if _w.get("categories"):
+                    all_cats_snapshots.append(_w["categories"])
+            for _m in period_monthly:
+                if _m.get("categories"):
+                    all_cats_snapshots.append(_m["categories"])
+            for _q in period_quarterly:
+                if _q.get("categories"):
+                    all_cats_snapshots.append(_q["categories"])
+
+            # Build a union of all KPI labels seen across all snapshots
+            all_kpis_union = {}  # label -> {k_id, k_name, c_name, unit}
+            for snap_cats in all_cats_snapshots:
+                snap_name_counts = {}
+                for sc in snap_cats:
+                    for sk in sc.get("kpis", []):
+                        sn = (sk.get("name") or "").strip()
+                        if sn:
+                            snap_name_counts[sn] = snap_name_counts.get(sn, 0) + 1
+                for sc in snap_cats:
+                    sc_name = (sc.get("name") or "").strip()
+                    for sk in sc.get("kpis", []):
+                        sk_id = sk.get("id")
+                        sk_name = (sk.get("name") or "").strip()
+                        if not sk_name:
+                            continue
+                        label = f"{sc_name} - {sk_name}" if snap_name_counts.get(sk_name, 0) > 1 else sk_name
+                        if label not in all_kpis_union:
+                            all_kpis_union[label] = {
+                                "k_id": sk_id,
+                                "k_name": sk_name,
+                                "c_name": sc_name,
+                                "unit": sk.get("unit", "")
+                            }
+
             deliverables_map = {}
-            for c in cats:
-                c_name = (c.get("name") or "").strip()
-                for k in c.get("kpis", []):
-                    k_id = k.get("id")
-                    k_name = (k.get("name") or "").strip()
-                    if not k_name:
-                        continue
+            for label, kpi_info in all_kpis_union.items():
+                k_id = kpi_info["k_id"]
+                k_name = kpi_info["k_name"]
+                c_name = kpi_info["c_name"]
 
-                    label = f"{c_name} - {k_name}" if name_counts.get(k_name, 0) > 1 else k_name
-                    raw_tgt = str(k.get("targetFromManager") or k.get("targetValue") or "0").strip()
-                    base_num = extract_num(raw_tgt)
+                # Sum target and completed milestone by milestone (handles mid-period target changes)
+                total_tgt = 0.0
+                completed_val = 0.0
 
-                    # Determine multiplier for target in this period
-                    if period_daily:
-                        multiplier = present_days if present_days > 0 else float(len(period_daily))
-                    elif period_weekly:
-                        multiplier = float(len(period_weekly))
-                    else:
-                        if period_type == "weekly":
-                            multiplier = 1.0
-                        elif period_type == "monthly":
-                            multiplier = 4.0
-                        elif period_type == "quarterly":
-                            multiplier = 13.0
-                        else:
-                            multiplier = 52.0
+                if period_daily:
+                    for d in period_daily:
+                        m_cats = get_milestone_cats(d, cats)
+                        day_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
+                        if day_tgt is not None:
+                            total_tgt += day_tgt
+                        # Completed value from entries
+                        entries = d.get("kpiEntries") or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or {}
+                        v = entry.get("managerActualValue")
+                        if v is None or v == "":
+                            v = entry.get("manager_actual_pm")
+                        if v is None or v == "":
+                            v = entry.get("actualValue", entry.get("actual_value", 0))
+                        completed_val += extract_num(v)
+                elif period_weekly:
+                    for w in period_weekly:
+                        m_cats = get_milestone_cats(w, cats)
+                        week_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
+                        if week_tgt is not None:
+                            total_tgt += week_tgt
+                        # Completed value from entries
+                        entries = w.get("kpiEntries") or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or {}
+                        v = entry.get("managerActualValue")
+                        if v is None or v == "":
+                            v = entry.get("manager_actual_pm")
+                        if v is None or v == "":
+                            v = entry.get("actualValue", entry.get("actual_value", 0))
+                        completed_val += extract_num(v)
+                elif period_monthly:
+                    # Monthly cadence: one record per month — read target + actuals directly
+                    for mr in period_monthly:
+                        m_cats = get_milestone_cats(mr, cats)
+                        month_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
+                        if month_tgt is not None:
+                            total_tgt += month_tgt
+                        entries = mr.get("kpiEntries") or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or {}
+                        v = entry.get("managerActualValue")
+                        if v is None or v == "":
+                            v = entry.get("manager_actual_pm")
+                        if v is None or v == "":
+                            v = entry.get("actualValue", entry.get("actual_value", 0))
+                        completed_val += extract_num(v)
+                elif period_quarterly:
+                    # Quarterly cadence: one record per quarter — read target + actuals directly
+                    for qr in period_quarterly:
+                        m_cats = get_milestone_cats(qr, cats)
+                        qtr_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
+                        if qtr_tgt is not None:
+                            total_tgt += qtr_tgt
+                        entries = qr.get("kpiEntries") or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or {}
+                        v = entry.get("managerActualValue")
+                        if v is None or v == "":
+                            v = entry.get("manager_actual_pm")
+                        if v is None or v == "":
+                            v = entry.get("actualValue", entry.get("actual_value", 0))
+                        completed_val += extract_num(v)
+                else:
+                    # Absolute fallback: no milestone records at all — use root target x 1
+                    total_tgt = get_kpi_target_from_cats(cats, k_id, k_name) or 0.0
 
-                    total_tgt = round(base_num * multiplier, 1)
-
-                    # Sum completed across the period
-                    completed_val = 0.0
-                    if period_daily:
-                        for d in period_daily:
-                            entries = d.get("kpiEntries") or {}
-                            entry = entries.get(k_id) or entries.get(k_name) or {}
-                            v = entry.get("managerActualValue")
-                            if v is None or v == "":
-                                v = entry.get("manager_actual_pm")
-                            if v is None or v == "":
-                                v = entry.get("actualValue", entry.get("actual_value", 0))
-                            completed_val += extract_num(v)
-                    elif period_weekly:
-                        for w in period_weekly:
-                            entries = w.get("kpiEntries") or {}
-                            entry = entries.get(k_id) or entries.get(k_name) or {}
-                            v = entry.get("managerActualValue")
-                            if v is None or v == "":
-                                v = entry.get("manager_actual_pm")
-                            if v is None or v == "":
-                                v = entry.get("actualValue", entry.get("actual_value", 0))
-                            completed_val += extract_num(v)
-
-                    deliverables_map[label] = {
-                        "name": k_name,
-                        "category": c_name,
-                        "unit": k.get("unit", ""),
-                        "total": total_tgt,
-                        "completed": round(completed_val, 1),
-                        "actual": round(completed_val, 1)
-                    }
+                deliverables_map[label] = {
+                    "name": k_name,
+                    "category": c_name,
+                    "unit": kpi_info["unit"],
+                    "total": round(total_tgt, 1),
+                    "completed": round(completed_val, 1),
+                    "actual": round(completed_val, 1)
+                }
 
             # Calculate average score for this period
             scores_list = []
@@ -808,6 +898,26 @@ def export_monthly_productivity():
                     s = w.get("managerScore")
                     if s is None or s == "":
                         s = w.get("employeeScore")
+                    if s is not None and s != "":
+                        try:
+                            scores_list.append(float(str(s).rstrip("%")))
+                        except Exception:
+                            pass
+            elif period_monthly:
+                for mr in period_monthly:
+                    s = mr.get("managerScore")
+                    if s is None or s == "":
+                        s = mr.get("employeeScore")
+                    if s is not None and s != "":
+                        try:
+                            scores_list.append(float(str(s).rstrip("%")))
+                        except Exception:
+                            pass
+            elif period_quarterly:
+                for qr in period_quarterly:
+                    s = qr.get("managerScore")
+                    if s is None or s == "":
+                        s = qr.get("employeeScore")
                     if s is not None and s != "":
                         try:
                             scores_list.append(float(str(s).rstrip("%")))
@@ -2095,7 +2205,12 @@ def get_evaluation_data():
         # 2. Add cycles dynamically built from PostgreSQL KpiEvaluation records
         for g_key, g_info in team_eval_groups.items():
             if g_key not in seen_cycle_keys:
-                categories_from_db = g_info["metrics_data"] if isinstance(g_info["metrics_data"], list) else []
+                if isinstance(g_info["metrics_data"], dict):
+                    categories_from_db = g_info["metrics_data"].get("categories") or []
+                elif isinstance(g_info["metrics_data"], list):
+                    categories_from_db = g_info["metrics_data"]
+                else:
+                    categories_from_db = []
                 new_c_id = f"cycle_db_{abs(hash(g_key)) % 1000000}"
                 if new_c_id not in seen_cycle_ids:
                     seen_cycle_ids.add(new_c_id)
@@ -4287,19 +4402,62 @@ def update_deliverables_matrix():
             metrics_data = rec.metrics_data
             if isinstance(metrics_data, dict):
                 updated_md = dict(metrics_data)
-                updated_md["categories"] = categories
-                
+
+                # ------------------------------------------------------------------
+                # ROOT CATEGORIES PROTECTION:
+                # When effective_from is set, we must NOT blindly overwrite the
+                # root-level 'categories' on the record.  The frontend falls back
+                # to root categories for any milestone that has no milestone-level
+                # categories stored.  Overwriting root categories would therefore
+                # silently change what past / approved milestones display.
+                # Strategy:
+                #   - If there is ANY started / approved history before effective_from,
+                #     preserve root categories (old ones stay as fallback for history).
+                #   - Future / empty milestones get categories injected at the
+                #     milestone level below, so they override root correctly.
+                #   - If no history exists at all, update root freely.
+                # ------------------------------------------------------------------
+                has_any_history = False
+                if effective_from:
+                    for _ww in (updated_md.get("weekly_records") or []):
+                        _ws = str(_ww.get("startDate") or "")[:10]
+                        if (_ws and _ws < effective_from) or str(_ww.get("status") or "") in ["manager_approved", "approved", "submitted_to_manager"] or bool(_ww.get("kpiEntries")):
+                            has_any_history = True
+                            break
+                if effective_from and not has_any_history:
+                    for _dd in (updated_md.get("daily_records") or []):
+                        _ds = str(_dd.get("date") or "")[:10]
+                        if (_ds and _ds < effective_from) or str(_dd.get("status") or "") in ["manager_approved", "approved", "submitted_to_manager"] or bool(_dd.get("kpiEntries")):
+                            has_any_history = True
+                            break
+                if effective_from and not has_any_history:
+                    for _mm in (updated_md.get("monthly_records") or []):
+                        _me = str(_mm.get("endDate") or "")[:10]
+                        if (_me and _me < effective_from) or str(_mm.get("status") or "") in ["manager_approved", "approved", "submitted_to_manager"] or bool(_mm.get("kpiEntries")):
+                            has_any_history = True
+                            break
+                if effective_from and not has_any_history:
+                    for _qq in (updated_md.get("quarterly_records") or []):
+                        _qe = str(_qq.get("endDate") or "")[:10]
+                        if (_qe and _qe < effective_from) or str(_qq.get("status") or "") in ["manager_approved", "approved", "submitted_to_manager"] or bool(_qq.get("kpiEntries")):
+                            has_any_history = True
+                            break
+
+                # Only update root categories when safe (no approved/started history)
+                if not effective_from or not has_any_history:
+                    updated_md["categories"] = categories
+
                 # Slicing for weekly records if effective_from given
                 if effective_from and "weekly_records" in updated_md and isinstance(updated_md["weekly_records"], list):
                     merged_w = []
                     for w in updated_md["weekly_records"]:
                         w_start = str(w.get("startDate") or "")[:10]
                         w_status = str(w.get("status") or "")
-                        # Keep history if prior to effective_from or already has approvals/submissions
+                        # Preserve history: prior to effective_from OR approved/submitted/has entries
                         if (w_start and w_start < effective_from) or w_status in ["manager_approved", "approved", "submitted_to_manager"] or bool(w.get("kpiEntries")):
                             merged_w.append(w)
                         else:
-                            # Update empty/future week categories
+                            # Inject new categories at milestone level so it overrides root fallback
                             new_w = dict(w)
                             new_w["categories"] = categories
                             merged_w.append(new_w)
@@ -4323,7 +4481,6 @@ def update_deliverables_matrix():
                 if effective_from and "monthly_records" in updated_md and isinstance(updated_md["monthly_records"], list):
                     merged_m = []
                     for m in updated_md["monthly_records"]:
-                        m_start = str(m.get("startDate") or "")[:10]
                         m_end = str(m.get("endDate") or "")[:10]
                         m_status = str(m.get("status") or "")
                         if (m_end and m_end < effective_from) or m_status in ["manager_approved", "approved", "submitted_to_manager"] or bool(m.get("kpiEntries")):
@@ -4338,7 +4495,6 @@ def update_deliverables_matrix():
                 if effective_from and "quarterly_records" in updated_md and isinstance(updated_md["quarterly_records"], list):
                     merged_q = []
                     for q in updated_md["quarterly_records"]:
-                        q_start = str(q.get("startDate") or "")[:10]
                         q_end = str(q.get("endDate") or "")[:10]
                         q_status = str(q.get("status") or "")
                         if (q_end and q_end < effective_from) or q_status in ["manager_approved", "approved", "submitted_to_manager"] or bool(q.get("kpiEntries")):

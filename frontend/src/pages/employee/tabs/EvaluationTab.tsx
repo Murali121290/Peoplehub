@@ -1263,7 +1263,8 @@ export const EvaluationTab: React.FC = () => {
   const [isSavingMatrixEdit, setIsSavingMatrixEdit] = useState<boolean>(false);
   const [mgrEditTargetCycle, setMgrEditTargetCycle] = useState<EvaluationCycle | null>(null);
   const [mgrEditSelectedEmpIds, setMgrEditSelectedEmpIds] = useState<string[]>([]);
-  const [mgrEditEffectiveOption, setMgrEditEffectiveOption] = useState<'tomorrow' | 'today' | 'next_month' | 'custom'>('tomorrow');
+  const [mgrEditEffectiveOption, setMgrEditEffectiveOption] = useState<'tomorrow' | 'today'>('tomorrow');
+  const [mgrEditCadence, setMgrEditCadence] = useState<'daily' | 'weekly' | 'quarterly' | 'monthly'>('monthly');
   const [mgrEditCustomDate, setMgrEditCustomDate] = useState<string>('');
   const [mgrEditMemberFilterTab, setMgrEditMemberFilterTab] = useState<'all' | 'selected' | 'unselected'>('all');
   const [mgrEditMemberSearch, setMgrEditMemberSearch] = useState<string>('');
@@ -4947,33 +4948,133 @@ export const EvaluationTab: React.FC = () => {
   const isMatrixLocked = getCycleLockedInfo(activeManagerCycle).isLocked;
   const filledResponsesCount = getCycleLockedInfo(activeManagerCycle).activeCount;
 
-  // Helper to calculate effective date string for Edit Matrix modal
+  // Helper configuration for cadence-aware milestone schedule
+  const getCadenceMilestoneConfig = (cadence: 'daily' | 'weekly' | 'quarterly' | 'monthly') => {
+    switch (cadence) {
+      case 'weekly':
+        return {
+          cadenceName: 'Weekly',
+          unit: 'Week',
+          unitPlural: 'Weeks',
+          nextLabel: 'From Next Week',
+          nextDesc: 'Recommended for Weekly metrics. Starts upcoming Monday. Preserves current week & all past submissions.',
+          currentLabel: 'From Current Week',
+          currentDesc: 'Applies to current week only if employee hasn\'t already submitted or completed this week.',
+          blockedBadge: 'Week Completed',
+          blockedReason: (item: string) => `${item || 'Current week'} is already submitted or approved. Cannot change deliverables for completed weeks. Select "From Next Week".`,
+          noticeTitle: 'Weekly Evaluation Protection',
+          noticeMessage: 'Employees who completed or submitted the current week cannot have their current week deliverables altered. Select "From Next Week" to apply updates to future weeks.'
+        };
+      case 'daily':
+        return {
+          cadenceName: 'Daily',
+          unit: 'Day',
+          unitPlural: 'Days',
+          nextLabel: 'From Tomorrow',
+          nextDesc: 'Recommended for Daily metrics. Starts tomorrow. Preserves today & all past daily submissions.',
+          currentLabel: 'From Today',
+          currentDesc: 'Applies today only if employee hasn\'t already submitted today.',
+          blockedBadge: 'Today Completed',
+          blockedReason: (item: string) => `${item || 'Today'} is already submitted or approved. Select "From Tomorrow".`,
+          noticeTitle: 'Daily Evaluation Protection',
+          noticeMessage: 'Employees who completed today\'s evaluation cannot be modified for today. Select "From Tomorrow" to apply updates to upcoming days.'
+        };
+      case 'quarterly':
+        return {
+          cadenceName: 'Quarterly',
+          unit: 'Quarter',
+          unitPlural: 'Quarters',
+          nextLabel: 'From Next Quarter',
+          nextDesc: 'Recommended for Quarterly cycles. Starts on 1st day of next quarter. Preserves current quarter.',
+          currentLabel: 'From Current Quarter',
+          currentDesc: 'Applies to current quarter only if employee hasn\'t already submitted this quarter.',
+          blockedBadge: 'Quarter Completed',
+          blockedReason: (item: string) => `${item || 'Current quarter'} is already submitted or approved. Select "From Next Quarter".`,
+          noticeTitle: 'Quarterly Evaluation Protection',
+          noticeMessage: 'Employees who completed the current quarter cannot have this quarter altered. Select "From Next Quarter" to apply updates to future quarters.'
+        };
+      case 'monthly':
+      default:
+        return {
+          cadenceName: 'Monthly',
+          unit: 'Month',
+          unitPlural: 'Months',
+          nextLabel: 'From Next Month',
+          nextDesc: 'Recommended for Monthly cycles. Starts on 1st of next month. Preserves current month.',
+          currentLabel: 'From Current Month',
+          currentDesc: 'Applies to current month only if employee hasn\'t already submitted this month.',
+          blockedBadge: 'Month Completed',
+          blockedReason: (item: string) => `${item || 'Current month'} is already submitted or approved. Select "From Next Month".`,
+          noticeTitle: 'Monthly Evaluation Protection',
+          noticeMessage: 'Employees who completed the current month cannot have this month altered. Select "From Next Month" to apply updates to upcoming months.'
+        };
+    }
+  };
+
+  // Helper to calculate effective date string for Edit Matrix modal based on cadence
   const getMgrEditEffectiveDate = (
-    effOption = mgrEditEffectiveOption,
-    customDate = mgrEditCustomDate
+    effOption: 'tomorrow' | 'today' | string = mgrEditEffectiveOption,
+    cadence: 'daily' | 'weekly' | 'quarterly' | 'monthly' = mgrEditCadence
   ): string => {
+    const isNext = effOption === 'tomorrow' || effOption === 'next' || effOption === 'next_month' || effOption === 'next_week';
     const nowD = new Date();
-    if (effOption === 'tomorrow') {
-      const tom = new Date(nowD);
-      tom.setDate(tom.getDate() + 1);
-      return tom.toISOString().split('T')[0];
-    } else if (effOption === 'today') {
+
+    if (cadence === 'daily') {
+      if (isNext) {
+        const tom = new Date(nowD);
+        tom.setDate(tom.getDate() + 1);
+        return tom.toISOString().split('T')[0];
+      }
       return nowD.toISOString().split('T')[0];
-    } else if (effOption === 'next_month') {
+    }
+
+    if (cadence === 'weekly') {
+      if (isNext) {
+        // Next Monday
+        const dayOfWeek = nowD.getDay(); // 0: Sun, 1: Mon...
+        const daysUntilNextMon = ((8 - dayOfWeek) % 7) || 7;
+        const nextMon = new Date(nowD);
+        nextMon.setDate(nowD.getDate() + daysUntilNextMon);
+        return nextMon.toISOString().split('T')[0];
+      }
+      // Current Monday
+      const dayOfWeek = nowD.getDay();
+      const diffToMon = nowD.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+      const curMon = new Date(nowD);
+      curMon.setDate(diffToMon);
+      return curMon.toISOString().split('T')[0];
+    }
+
+    if (cadence === 'quarterly') {
+      const calMonth = nowD.getMonth() + 1; // 1-12
+      const year = nowD.getFullYear();
+      if (isNext) {
+        if (calMonth >= 1 && calMonth <= 3) return `${year}-04-01`;
+        if (calMonth >= 4 && calMonth <= 6) return `${year}-07-01`;
+        if (calMonth >= 7 && calMonth <= 9) return `${year}-10-01`;
+        return `${year + 1}-01-01`;
+      }
+      if (calMonth >= 1 && calMonth <= 3) return `${year}-01-01`;
+      if (calMonth >= 4 && calMonth <= 6) return `${year}-04-01`;
+      if (calMonth >= 7 && calMonth <= 9) return `${year}-07-01`;
+      return `${year}-10-01`;
+    }
+
+    // Monthly (default)
+    if (isNext) {
       const nextM = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 1);
       return nextM.toISOString().split('T')[0];
-    } else if (effOption === 'custom' && customDate) {
-      return customDate;
     }
-    return nowD.toISOString().split('T')[0];
+    const curM = new Date(nowD.getFullYear(), nowD.getMonth(), 1);
+    return curM.toISOString().split('T')[0];
   };
 
   // Helper to check if an employee's milestone matching the target effective date is already approved / submitted
   const isEmpMilestoneApprovedForTargetEffectiveDate = (
     empIdOrObj: any,
     targetCycle?: EvaluationCycle | null,
-    effOption = mgrEditEffectiveOption,
-    customDate = mgrEditCustomDate
+    effOption: 'tomorrow' | 'today' | string = mgrEditEffectiveOption,
+    cadence: 'daily' | 'weekly' | 'quarterly' | 'monthly' = mgrEditCadence
   ): { isBlocked: boolean; badgeText: string; reason: string } => {
     if (!empIdOrObj) return { isBlocked: false, badgeText: '', reason: '' };
     const empId = typeof empIdOrObj === 'object' ? String(empIdOrObj.employee_id || empIdOrObj.employeeCode || '') : String(empIdOrObj);
@@ -4992,66 +5093,101 @@ export const EvaluationTab: React.FC = () => {
 
     if (!matchingResp) return { isBlocked: false, badgeText: '', reason: '' };
 
-    const targetEffectiveDate = getMgrEditEffectiveDate(effOption, customDate);
-    const isYearly = isYearlyResponse(matchingResp);
+    const isNext = effOption === 'tomorrow' || effOption === 'next' || effOption === 'next_month' || effOption === 'next_week';
+    // When scheduled for the NEXT milestone, future milestones have not yet started or been submitted,
+    // so employees are never blocked!
+    if (isNext) {
+      return { isBlocked: false, badgeText: '', reason: '' };
+    }
 
-    if (isYearly) {
-      const cad = getResponseCadence(matchingResp);
-      if (cad === 'daily') {
-        const dRecs = getResponseDailyRecords(matchingResp);
-        // Only block if the specific TARGET milestone (on or after effective date) is already approved
-        const targetD = dRecs.find(d => d.date === targetEffectiveDate);
-        if (targetD && targetD.status === 'manager_approved') {
-          return { isBlocked: true, badgeText: 'Approved', reason: `${targetD.dayLabel || 'Day'} is already approved.` };
+    // When manager selects the CURRENT milestone, check if the current milestone is already submitted/approved
+    const effectiveCadence = cadence || getResponseCadence(matchingResp);
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    if (effectiveCadence === 'weekly') {
+      const wRecs = getResponseWeeklyRecords(matchingResp);
+      const curW = wRecs.find(w => w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate) || wRecs[0];
+      if (curW) {
+        const isApproved = curW.status === 'manager_approved' || (curW.status as string) === 'approved' || curW.managerScore != null;
+        const isSubmitted = curW.status === 'submitted_to_manager' || curW.employeeScore != null || Boolean(curW.employeeSubmittedAt);
+        if (isApproved) {
+          return {
+            isBlocked: true,
+            badgeText: 'Week Approved',
+            reason: `${curW.weekLabel || 'Current week'} is already approved. Cannot modify deliverables for completed weeks. Select "From Next Week".`
+          };
         }
-        if (targetD && targetD.status === 'submitted_to_manager') {
-          return { isBlocked: true, badgeText: 'Pending Review', reason: `${targetD.dayLabel || 'Day'} submitted, awaiting manager review.` };
+        if (isSubmitted) {
+          return {
+            isBlocked: true,
+            badgeText: 'Week Submitted',
+            reason: `${curW.weekLabel || 'Current week'} is already submitted by employee. Cannot change deliverables mid-evaluation. Select "From Next Week".`
+          };
         }
-      } else if (cad === 'weekly') {
-        const wRecs = getResponseWeeklyRecords(matchingResp);
-        const targetW = wRecs.find(w => w.startDate && w.endDate && targetEffectiveDate >= w.startDate && targetEffectiveDate <= w.endDate);
-        if (targetW && targetW.status === 'manager_approved') {
-          return { isBlocked: true, badgeText: 'Approved', reason: `${targetW.weekLabel || 'Week'} is already approved.` };
+      }
+    } else if (effectiveCadence === 'daily') {
+      const dRecs = getResponseDailyRecords(matchingResp);
+      const curD = dRecs.find(d => d.date === todayStr);
+      if (curD) {
+        const isApproved = curD.status === 'manager_approved' || (curD.status as string) === 'approved' || curD.managerScore != null;
+        const isSubmitted = curD.status === 'submitted_to_manager' || curD.employeeScore != null || Boolean(curD.employeeSubmittedAt);
+        if (isApproved) {
+          return {
+            isBlocked: true,
+            badgeText: 'Today Approved',
+            reason: `${curD.dayLabel || 'Today'} is already approved. Select "From Tomorrow".`
+          };
         }
-        if (targetW && targetW.status === 'submitted_to_manager') {
-          return { isBlocked: true, badgeText: 'Pending Review', reason: `${targetW.weekLabel || 'Week'} submitted, awaiting manager review.` };
+        if (isSubmitted) {
+          return {
+            isBlocked: true,
+            badgeText: 'Today Submitted',
+            reason: `${curD.dayLabel || 'Today'} is already submitted. Select "From Tomorrow".`
+          };
         }
-      } else if (cad === 'quarterly') {
-        const qRecs = getResponseQuarterlyRecords(matchingResp);
-        const targetQ = qRecs.find(q => {
-          if (q.startDate && q.endDate) {
-            return targetEffectiveDate >= q.startDate && targetEffectiveDate <= q.endDate;
-          }
-          return false;
-        });
-        if (targetQ && targetQ.status === 'manager_approved') {
-          return { isBlocked: true, badgeText: 'Approved', reason: `${targetQ.quarterLabel || 'Quarter'} is already approved.` };
+      }
+    } else if (effectiveCadence === 'quarterly') {
+      const qRecs = getResponseQuarterlyRecords(matchingResp);
+      const curQ = qRecs.find(q => q.startDate && q.endDate && todayStr >= q.startDate && todayStr <= q.endDate);
+      if (curQ) {
+        const isApproved = curQ.status === 'manager_approved' || (curQ.status as string) === 'approved' || curQ.managerScore != null;
+        const isSubmitted = curQ.status === 'submitted_to_manager' || curQ.employeeScore != null || Boolean(curQ.employeeSubmittedAt);
+        if (isApproved) {
+          return {
+            isBlocked: true,
+            badgeText: 'Quarter Approved',
+            reason: `${curQ.quarterLabel || 'Current quarter'} is already approved. Select "From Next Quarter".`
+          };
         }
-        if (targetQ && targetQ.status === 'submitted_to_manager') {
-          return { isBlocked: true, badgeText: 'Pending Review', reason: `${targetQ.quarterLabel || 'Quarter'} submitted, awaiting manager review.` };
-        }
-      } else {
-        // monthly
-        const mRecs = getResponseMonthlyRecords(matchingResp);
-        const targetM = mRecs.find(m => {
-          if (m.startDate && m.endDate) {
-            return targetEffectiveDate >= m.startDate && targetEffectiveDate <= m.endDate;
-          }
-          return false;
-        });
-        if (targetM && targetM.status === 'manager_approved') {
-          return { isBlocked: true, badgeText: 'Approved', reason: `${targetM.monthName || 'Month'} is already approved.` };
-        }
-        if (targetM && targetM.status === 'submitted_to_manager') {
-          return { isBlocked: true, badgeText: 'Pending Review', reason: `${targetM.monthName || 'Month'} submitted, awaiting manager review.` };
+        if (isSubmitted) {
+          return {
+            isBlocked: true,
+            badgeText: 'Quarter Submitted',
+            reason: `${curQ.quarterLabel || 'Current quarter'} is submitted. Select "From Next Quarter".`
+          };
         }
       }
     } else {
-      // Standalone cycle
-      const s = String(matchingResp.status || '').toLowerCase().trim();
-      const isApproved = s === 'approved' || s === 'completed' || s === 'sm_final_approval' || (matchingResp.managerScore != null && s !== 'manager_review' && s !== 'submitted to manager');
-      if (isApproved && effOption === 'today') {
-        return { isBlocked: true, badgeText: 'Approved', reason: `${matchingResp.periodName || 'Cycle'} is already approved.` };
+      // monthly
+      const mRecs = getResponseMonthlyRecords(matchingResp);
+      const curM = mRecs.find(m => m.startDate && m.endDate && todayStr >= m.startDate && todayStr <= m.endDate);
+      if (curM) {
+        const isApproved = curM.status === 'manager_approved' || (curM.status as string) === 'approved' || curM.managerScore != null;
+        const isSubmitted = curM.status === 'submitted_to_manager' || curM.employeeScore != null || Boolean(curM.employeeSubmittedAt);
+        if (isApproved) {
+          return {
+            isBlocked: true,
+            badgeText: 'Month Approved',
+            reason: `${curM.monthName || 'Current month'} is already approved. Select "From Next Month".`
+          };
+        }
+        if (isSubmitted) {
+          return {
+            isBlocked: true,
+            badgeText: 'Month Submitted',
+            reason: `${curM.monthName || 'Current month'} is submitted. Select "From Next Month".`
+          };
+        }
       }
     }
 
@@ -5084,8 +5220,27 @@ export const EvaluationTab: React.FC = () => {
     }
     setMgrEditCategories(JSON.parse(JSON.stringify(loadedCategories || DEFAULT_KPI_CATEGORIES)));
 
-    const freq = String(cycleToEdit.frequency || '').toLowerCase();
-    const defaultEff = (freq === 'daily' || freq === 'weekly') ? 'tomorrow' : 'next_month';
+    // Resolve cadence for this cycle
+    let resolvedCadence: 'daily' | 'weekly' | 'quarterly' | 'monthly' = 'monthly';
+    const cFreq = String(cycleToEdit.frequency || '').toLowerCase().trim();
+    if (cFreq === 'daily' || cFreq === 'weekly' || cFreq === 'quarterly' || cFreq === 'monthly') {
+      resolvedCadence = cFreq as any;
+    } else if (directMembers && directMembers.length > 0) {
+      for (const m of directMembers) {
+        if (m.response) {
+          resolvedCadence = getResponseCadence(m.response);
+          break;
+        }
+      }
+    } else {
+      const p = String(cycleToEdit.periodName || cycleToEdit.name || '').toLowerCase();
+      if (p.includes('daily') || p.includes('day')) resolvedCadence = 'daily';
+      else if (p.includes('weekly') || p.includes('week')) resolvedCadence = 'weekly';
+      else if (p.includes('quarter')) resolvedCadence = 'quarterly';
+    }
+    setMgrEditCadence(resolvedCadence);
+
+    const defaultEff: 'tomorrow' | 'today' = 'tomorrow';
     setMgrEditEffectiveOption(defaultEff);
 
     // Store direct members for strict team-scoped selection
@@ -5094,7 +5249,7 @@ export const EvaluationTab: React.FC = () => {
       const memberIds = directMembers
         .map(m => String(m.employeeCode || m.response?.employeeId || m.response?.employeeCode || ''))
         .filter(Boolean)
-        .filter(id => !isEmpMilestoneApprovedForTargetEffectiveDate(id, cycleToEdit, defaultEff).isBlocked);
+        .filter(id => !isEmpMilestoneApprovedForTargetEffectiveDate(id, cycleToEdit, defaultEff, resolvedCadence).isBlocked);
       setMgrEditSelectedEmpIds(memberIds);
     } else {
       setMgrEditDirectMembers([]);
@@ -5102,7 +5257,7 @@ export const EvaluationTab: React.FC = () => {
       if (Array.isArray(cycleToEdit.employeeIds) && cycleToEdit.employeeIds.length > 0) {
         cycleToEdit.employeeIds.forEach(id => {
           const strId = String(id);
-          if (!isEmpMilestoneApprovedForTargetEffectiveDate(strId, cycleToEdit, defaultEff).isBlocked) {
+          if (!isEmpMilestoneApprovedForTargetEffectiveDate(strId, cycleToEdit, defaultEff, resolvedCadence).isBlocked) {
             initialEmpIds.push(strId);
           }
         });
@@ -5110,7 +5265,7 @@ export const EvaluationTab: React.FC = () => {
         responses.forEach(r => {
           if ((r.cycleId === cycleToEdit.id || (cycleToEdit.teamId && r.teamId === cycleToEdit.teamId) || (cycleToEdit.teamName && (r.department || '').toLowerCase() === cycleToEdit.teamName.toLowerCase())) && r.employeeId) {
             const strId = String(r.employeeId);
-            if (!initialEmpIds.includes(strId) && !isEmpMilestoneApprovedForTargetEffectiveDate(strId, cycleToEdit, defaultEff).isBlocked) {
+            if (!initialEmpIds.includes(strId) && !isEmpMilestoneApprovedForTargetEffectiveDate(strId, cycleToEdit, defaultEff, resolvedCadence).isBlocked) {
               initialEmpIds.push(strId);
             }
           }
@@ -5321,21 +5476,8 @@ export const EvaluationTab: React.FC = () => {
       await evaluationService.saveCycles(updatedCycles);
       evaluationService.saveResponsesLocal(updatedResponses);
 
-      // Calculate effective date string based on manager selection
-      let computedEffectiveFrom = '';
-      const nowD = new Date();
-      if (mgrEditEffectiveOption === 'tomorrow') {
-        const tom = new Date(nowD);
-        tom.setDate(tom.getDate() + 1);
-        computedEffectiveFrom = tom.toISOString().split('T')[0];
-      } else if (mgrEditEffectiveOption === 'today') {
-        computedEffectiveFrom = nowD.toISOString().split('T')[0];
-      } else if (mgrEditEffectiveOption === 'next_month') {
-        const nextM = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 1);
-        computedEffectiveFrom = nextM.toISOString().split('T')[0];
-      } else if (mgrEditEffectiveOption === 'custom' && mgrEditCustomDate) {
-        computedEffectiveFrom = mgrEditCustomDate;
-      }
+      // Calculate effective date string based on cadence & manager selection
+      const computedEffectiveFrom = getMgrEditEffectiveDate(mgrEditEffectiveOption, mgrEditCadence);
 
       // Sync to backend Postgres
       try {
@@ -19045,16 +19187,6 @@ export const EvaluationTab: React.FC = () => {
                       <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
 
 
-                        <button
-                          type="button"
-                          onClick={() => setIsProductivityExportModalOpen(true)}
-                          className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
-                          title="Download monthly productivity excel report team-wise"
-                        >
-                          <ArrowDownTrayIcon className="w-4 h-4 text-emerald-600 stroke-[2.2]" />
-                          <span>Download Report</span>
-                        </button>
-
                         {canCreateMetrics && (
                           <button
                             type="button"
@@ -19553,7 +19685,52 @@ export const EvaluationTab: React.FC = () => {
                                   (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
                                   (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
                                 );
-                              });
+                              }) || teamGroup.members.map(m => cycles.find(c => c.id === m.response?.cycleId)).find(Boolean)
+                              || teamGroup.members.map(m => {
+                                const mCode = String(m.employeeCode || m.response?.employeeId || '').toLowerCase();
+                                return cycles.find(c => (c.employeeIds || []).some(id => String(id).toLowerCase() === mCode));
+                              }).find(Boolean)
+                              || (() => {
+                                const memberWithResp = teamGroup.members.find(m =>
+                                  m.response && (
+                                    (Array.isArray((m.response as any).categories) && (m.response as any).categories.length > 0) ||
+                                    (m.response.kpiResponses && Object.keys(m.response.kpiResponses).length > 0) ||
+                                    m.response.status === 'approved' ||
+                                    m.response.managerScore != null ||
+                                    Boolean((m.response as any).monthly_records) ||
+                                    Boolean((m.response as any).daily_records) ||
+                                    Boolean((m.response as any).weekly_records) ||
+                                    Boolean((m.response as any).quarterly_records)
+                                  )
+                                );
+                                if (memberWithResp?.response) {
+                                  const r = memberWithResp.response;
+                                  const rCats = (r as any).categories || (r as any).metrics_data?.categories || [];
+                                  return {
+                                    id: r.cycleId || `cycle_team_${teamGroup.teamName.toLowerCase().replace(/\s+/g, '_')}`,
+                                    name: (r as any).form || `${teamGroup.teamName} Performance Metrics`,
+                                    form: (r as any).form || `${teamGroup.teamName} Performance Metrics`,
+                                    frequency: (r as any).frequency || getResponseCadence(r) || 'monthly',
+                                    startDate: (r as any).startDate || '',
+                                    endDate: (r as any).endDate || '',
+                                    periodName: (r as any).periodName || (r as any).form || '',
+                                    description: (r as any).description || `Evaluation matrix for ${teamGroup.teamName}`,
+                                    teamId: r.teamId || teamGroup.teamName,
+                                    teamName: teamGroup.teamName,
+                                    managerId: (r as any).reporting_manager_id || (r as any).managerId || '',
+                                    managerName: (r as any).reporting_manager || (r as any).managerName || '',
+                                    serviceManagerId: '',
+                                    serviceManagerName: '',
+                                    categories: rCats,
+                                    employeeIds: teamGroup.members.map(m => String(m.employeeCode || m.response?.employeeId)),
+                                    isActive: true,
+                                    status: 'active',
+                                    createdAt: (r as any).createdAt || (r as any).created_at || new Date().toISOString(),
+                                    updatedAt: (r as any).updatedAt || (r as any).updated_at || new Date().toISOString()
+                                  } as unknown as EvaluationCycle;
+                                }
+                                return undefined;
+                              })();
 
                               const cycleLockedInfo = getCycleLockedInfo(teamCycle);
 
@@ -20063,6 +20240,15 @@ export const EvaluationTab: React.FC = () => {
                       <span className="font-bold text-slate-700">{filteredSubmissionsList.length}</span> of{' '}
                       <span className="font-bold text-slate-700">{allDeduplicatedManagerResponses.length}</span> submissions
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsProductivityExportModalOpen(true)}
+                      className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                      title="Download monthly productivity excel report team-wise"
+                    >
+                      <ArrowDownTrayIcon className="w-4 h-4 text-emerald-600 stroke-[2.2]" />
+                      <span>Download Report</span>
+                    </button>
                   </div>
                 </div>
 
@@ -22468,7 +22654,14 @@ export const EvaluationTab: React.FC = () => {
       {
         isMgrEditMatrixModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-            <div className="bg-white rounded-3xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col my-8">
+            <div className="relative bg-white rounded-3xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col my-8">
+              {/* Loading overlay while saving matrix changes */}
+              {isSavingMatrixEdit && (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/85 backdrop-blur-sm rounded-3xl">
+                  <BookLoader />
+                  <p className="text-sm text-slate-600 font-medium mt-3">Saving matrix changes...</p>
+                </div>
+              )}
               <div className="flex items-center justify-between pb-4 border-b border-slate-100 shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -22498,86 +22691,83 @@ export const EvaluationTab: React.FC = () => {
               </div>
 
               <form onSubmit={handleMgrSaveMatrixChanges} className="overflow-y-auto space-y-5 pt-4 pr-1 flex-1">
-                {/* Effective Date & Scope Selector (Preserves historical scores) */}
-                <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-teal-600" />
-                        Effective From (Target Milestone Schedule)
-                      </span>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Choose when the new deliverables take effect. Past days, weeks, and approved scores are strictly preserved and never deleted.
-                      </p>
+                {/* Effective Date & Scope Selector (Cadence-Aware & Preserves historical scores) */}
+                {(() => {
+                  const cfg = getCadenceMilestoneConfig(mgrEditCadence);
+                  return (
+                    <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-teal-600" />
+                            <span className="text-xs font-bold text-slate-900">
+                              Effective From ({cfg.cadenceName} Milestone Schedule)
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200/80">
+                              {cfg.cadenceName} Cadence
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Choose when the new deliverables take effect. Past {cfg.unitPlural.toLowerCase()} and completed scores are strictly preserved and never altered.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition select-none ${mgrEditEffectiveOption === 'tomorrow' ? 'bg-teal-50/80 border-teal-500 text-teal-950 font-semibold shadow-2xs ring-1 ring-teal-500/20' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'}`}>
+                          <input
+                            type="radio"
+                            name="mgrEffectiveDate"
+                            checked={mgrEditEffectiveOption === 'tomorrow'}
+                            onChange={() => setMgrEditEffectiveOption('tomorrow')}
+                            className="mt-0.5 text-teal-600 focus:ring-teal-500"
+                          />
+                          <div>
+                            <div className="font-bold text-xs flex items-center gap-1.5">
+                              {cfg.nextLabel}
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-800">Recommended</span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-normal mt-0.5">{cfg.nextDesc}</div>
+                          </div>
+                        </label>
+
+                        <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition select-none ${mgrEditEffectiveOption === 'today' ? 'bg-teal-50/80 border-teal-500 text-teal-950 font-semibold shadow-2xs ring-1 ring-teal-500/20' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'}`}>
+                          <input
+                            type="radio"
+                            name="mgrEffectiveDate"
+                            checked={mgrEditEffectiveOption === 'today'}
+                            onChange={() => setMgrEditEffectiveOption('today')}
+                            className="mt-0.5 text-teal-600 focus:ring-teal-500"
+                          />
+                          <div>
+                            <div className="font-bold text-xs">{cfg.currentLabel}</div>
+                            <div className="text-[10px] text-slate-500 font-normal mt-0.5">{cfg.currentDesc}</div>
+                          </div>
+                        </label>
+                      </div>
+
+                      {/* Informational notification banner when someone is completed / blocked */}
+                      {mgrEditEffectiveOption === 'today' && (
+                        <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-900 text-[11px] animate-in fade-in duration-150">
+                          <InformationCircleIcon className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold">{cfg.noticeTitle}: </span>
+                            {cfg.noticeMessage}
+                          </div>
+                        </div>
+                      )}
+
+                      {mgrEditEffectiveOption === 'tomorrow' && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-teal-50/70 border border-teal-200 text-teal-900 text-[11px] animate-in fade-in duration-150">
+                          <span className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
+                          <span>
+                            Changes will take effect <strong>{cfg.nextLabel}</strong> ({getMgrEditEffectiveDate('tomorrow', mgrEditCadence)}). All current and previous {cfg.unitPlural.toLowerCase()} remain protected.
+                          </span>
+                        </div>
+                      )}
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-1">
-                    <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition select-none ${mgrEditEffectiveOption === 'tomorrow' ? 'bg-teal-50/80 border-teal-500 text-teal-950 font-semibold shadow-2xs ring-1 ring-teal-500/20' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'}`}>
-                      <input
-                        type="radio"
-                        name="mgrEffectiveDate"
-                        checked={mgrEditEffectiveOption === 'tomorrow'}
-                        onChange={() => setMgrEditEffectiveOption('tomorrow')}
-                        className="mt-0.5 text-teal-600 focus:ring-teal-500"
-                      />
-                      <div>
-                        <div className="font-bold text-xs">From Tomorrow</div>
-                        <div className="text-[10px] text-slate-500 font-normal mt-0.5">Recommended for Daily metrics. Preserves today & all past submissions.</div>
-                      </div>
-                    </label>
-
-                    <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition select-none ${mgrEditEffectiveOption === 'today' ? 'bg-teal-50/80 border-teal-500 text-teal-950 font-semibold shadow-2xs ring-1 ring-teal-500/20' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'}`}>
-                      <input
-                        type="radio"
-                        name="mgrEffectiveDate"
-                        checked={mgrEditEffectiveOption === 'today'}
-                        onChange={() => setMgrEditEffectiveOption('today')}
-                        className="mt-0.5 text-teal-600 focus:ring-teal-500"
-                      />
-                      <div>
-                        <div className="font-bold text-xs">From Today</div>
-                        <div className="text-[10px] text-slate-500 font-normal mt-0.5">Applies today only if employee hasn't already submitted today.</div>
-                      </div>
-                    </label>
-
-                    <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition select-none ${mgrEditEffectiveOption === 'next_month' ? 'bg-teal-50/80 border-teal-500 text-teal-950 font-semibold shadow-2xs ring-1 ring-teal-500/20' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'}`}>
-                      <input
-                        type="radio"
-                        name="mgrEffectiveDate"
-                        checked={mgrEditEffectiveOption === 'next_month'}
-                        onChange={() => setMgrEditEffectiveOption('next_month')}
-                        className="mt-0.5 text-teal-600 focus:ring-teal-500"
-                      />
-                      <div>
-                        <div className="font-bold text-xs">From Next Month</div>
-                        <div className="text-[10px] text-slate-500 font-normal mt-0.5">Ideal for Monthly / Weekly cycles. Starts on 1st of next month.</div>
-                      </div>
-                    </label>
-
-                    <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition select-none ${mgrEditEffectiveOption === 'custom' ? 'bg-teal-50/80 border-teal-500 text-teal-950 font-semibold shadow-2xs ring-1 ring-teal-500/20' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'}`}>
-                      <input
-                        type="radio"
-                        name="mgrEffectiveDate"
-                        checked={mgrEditEffectiveOption === 'custom'}
-                        onChange={() => setMgrEditEffectiveOption('custom')}
-                        className="mt-0.5 text-teal-600 focus:ring-teal-500"
-                      />
-                      <div className="w-full">
-                        <div className="font-bold text-xs">Custom Date</div>
-                        <input
-                          type="date"
-                          value={mgrEditCustomDate}
-                          onChange={e => {
-                            setMgrEditCustomDate(e.target.value);
-                            setMgrEditEffectiveOption('custom');
-                          }}
-                          className="w-full mt-1.5 px-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] font-medium text-slate-800 focus:outline-none focus:border-teal-600 shadow-2xs"
-                        />
-                      </div>
-                    </label>
-                  </div>
-                </div>
+                  );
+                })()}
 
                 {/* Team Members Multi-Select Checklist */}
                 {(() => {
@@ -22655,7 +22845,7 @@ export const EvaluationTab: React.FC = () => {
                   const memberStatusMap = new Map<string, { isBlocked: boolean; badgeText: string; reason: string }>();
                   teamMembers.forEach(emp => {
                     const empId = String(emp.employee_id || '');
-                    const status = isEmpMilestoneApprovedForTargetEffectiveDate(empId, mgrEditTargetCycle, mgrEditEffectiveOption, mgrEditCustomDate);
+                    const status = isEmpMilestoneApprovedForTargetEffectiveDate(empId, mgrEditTargetCycle, mgrEditEffectiveOption, mgrEditCadence);
                     memberStatusMap.set(empId, status);
                   });
 

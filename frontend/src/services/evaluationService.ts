@@ -196,18 +196,23 @@ export const initializeYearlyWeeklyRecords = (
   return records;
 };
 
-const CYCLES_STORAGE_KEY = 'peoplehub_evaluation_cycles_v2';
-const RESPONSES_STORAGE_KEY = 'peoplehub_evaluation_responses_v2';
-const RATING_SCALE_STORAGE_KEY = 'peoplehub_rating_scale_v2';
+// Authoritative source of truth is PostgreSQL database via backend API.
+// In-memory cache is used only for active session runtime reactivity.
+let memoryCycles: EvaluationCycle[] = [];
+let memoryResponses: EvaluationResponse[] = [];
 
-// Initialize rating scale from localStorage if available
-try {
-  const cachedScale = localStorage.getItem(RATING_SCALE_STORAGE_KEY);
-  if (cachedScale) {
-    setRatingScale(JSON.parse(cachedScale));
+// Purge any legacy evaluation keys from localStorage so browser storage stays 100% clean
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('peoplehub_evaluation_responses_v2');
+    localStorage.removeItem('peoplehub_evaluation_cycles_v2');
+    localStorage.removeItem('peoplehub_rating_scale_v2');
+    localStorage.removeItem('peoplehub_evaluation_responses');
+    localStorage.removeItem('peoplehub_evaluation_cycles');
+    localStorage.removeItem('peoplehub_rating_scale');
+  } catch (e) {
+    // ignore
   }
-} catch (e) {
-  // ignore
 }
 
 export interface ManagerKpiTemplateRecord {
@@ -483,7 +488,7 @@ export const evaluationService = {
     }
   },
 
-  // Multi-user Backend API + LocalStorage Synchronization
+  // Multi-user Backend API + Database Synchronization (In-memory cache; no heavy localStorage)
   async fetchRemoteEvaluationData(): Promise<{ cycles: EvaluationCycle[]; responses: EvaluationResponse[] }> {
     try {
       const token = localStorage.getItem('token');
@@ -498,16 +503,15 @@ export const evaluationService = {
 
         if (serverRatingScale && serverRatingScale.length > 0) {
           setRatingScale(serverRatingScale);
-          localStorage.setItem(RATING_SCALE_STORAGE_KEY, JSON.stringify(serverRatingScale));
         }
 
-        // Save server data to localStorage
+        // Store live authoritative server data in memory
         this.saveCyclesLocal(serverCycles);
         this.saveResponsesLocal(serverResponses);
         return { cycles: serverCycles, responses: serverResponses };
       }
     } catch (e) {
-      console.warn('Evaluation backend API offline, using local storage cache', e);
+      console.warn('Evaluation backend API offline or unreachable, using active cache', e);
     }
     return { cycles: this.getCycles(), responses: this.getResponses() };
   },
@@ -522,7 +526,6 @@ export const evaluationService = {
         const data = await res.json();
         if (Array.isArray(data.ratingScale) && data.ratingScale.length > 0) {
           setRatingScale(data.ratingScale);
-          localStorage.setItem(RATING_SCALE_STORAGE_KEY, JSON.stringify(data.ratingScale));
           return getRatingScale();
         }
       }
@@ -534,7 +537,6 @@ export const evaluationService = {
 
   async saveRatingScale(scale: RatingLevel[]): Promise<void> {
     setRatingScale(scale);
-    localStorage.setItem(RATING_SCALE_STORAGE_KEY, JSON.stringify(scale));
     try {
       const token = localStorage.getItem('token');
       await fetch(`${API_URL}/api/performance/rating-scale`, {
@@ -551,16 +553,11 @@ export const evaluationService = {
   },
 
   getCycles(): EvaluationCycle[] {
-    try {
-      const data = localStorage.getItem(CYCLES_STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
+    return memoryCycles;
   },
 
   saveCyclesLocal(cycles: EvaluationCycle[]): void {
-    localStorage.setItem(CYCLES_STORAGE_KEY, JSON.stringify(cycles));
+    memoryCycles = Array.isArray(cycles) ? cycles : [];
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('evaluationUpdated'));
     }
@@ -584,16 +581,11 @@ export const evaluationService = {
   },
 
   getResponses(): EvaluationResponse[] {
-    try {
-      const data = localStorage.getItem(RESPONSES_STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
+    return memoryResponses;
   },
 
   saveResponsesLocal(responses: EvaluationResponse[]): void {
-    localStorage.setItem(RESPONSES_STORAGE_KEY, JSON.stringify(responses));
+    memoryResponses = Array.isArray(responses) ? responses : [];
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('evaluationUpdated'));
     }
@@ -797,7 +789,7 @@ export const evaluationService = {
     // potentially stale localStorage, wiping monthly/quarterly assignments.
     await this.saveResponses([updated]);
 
-    // Update localStorage: patch only the changed entry (or append if missing)
+    // Update in-memory cache: patch only the changed entry (or append if missing)
     const localResponses = this.getResponses();
     const localIdx = localResponses.findIndex(r => r.id === updated.id);
     if (localIdx >= 0) {
