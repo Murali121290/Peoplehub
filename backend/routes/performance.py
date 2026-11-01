@@ -534,17 +534,59 @@ def export_monthly_productivity():
         from models.employee import Employee
         from models.user import User
         from models.kpi_evaluation import KpiEvaluation
-        from utils.jwt_helper import get_jwt_identity
+        from utils.jwt_helper import get_jwt_identity, JWT_SECRET_KEY
+        import jwt
         import calendar
+        from datetime import datetime, date, timedelta
 
+        def parse_date_safe(val):
+            if not val:
+                return None
+            try:
+                s = str(val).strip()
+                if "T" in s:
+                    s = s.split("T")[0]
+                elif " " in s:
+                    s = s.split(" ")[0]
+                if "/" in s:
+                    parts = s.split("/")
+                    if len(parts) == 3:
+                        if len(parts[2]) == 4:
+                            return date(int(parts[2]), int(parts[1]), int(parts[0]))
+                        elif len(parts[0]) == 4:
+                            return date(int(parts[0]), int(parts[1]), int(parts[2]))
+                return date.fromisoformat(s[:10])
+            except Exception:
+                return None
+
+        # Resolve authenticated user identity robustly
         jwt_uid = get_jwt_identity()
+        if not jwt_uid:
+            auth_header = request.headers.get("Authorization") or ""
+            if auth_header.startswith("Bearer "):
+                token = auth_header.split(" ", 1)[1].strip()
+                try:
+                    payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
+                    jwt_uid = payload.get("sub")
+                except Exception:
+                    pass
+
         current_user_id = int(jwt_uid) if jwt_uid else getattr(request, "user_id", None)
         curr_user = User.query.get(current_user_id) if current_user_id else None
-        curr_emp = Employee.query.filter_by(user_id=current_user_id).first() if current_user_id else None
+        curr_emp = None
+        if current_user_id:
+            curr_emp = Employee.query.filter_by(user_id=current_user_id).first()
+        if not curr_emp and curr_user and curr_user.email:
+            curr_emp = Employee.query.filter(
+                (Employee.email == curr_user.email) | (Employee.company_email == curr_user.email)
+            ).first()
 
         is_hr_or_admin = False
-        if curr_user and curr_user.role and curr_user.role.name in ["Admin", "HR", "Super Admin"]:
-            is_hr_or_admin = True
+        caller_role = ""
+        if curr_user and curr_user.role:
+            caller_role = (curr_user.role.name or "").strip().lower()
+            if any(r in caller_role for r in ["admin", "hr", "super admin", "management", "coo"]):
+                is_hr_or_admin = True
 
         manager_names = []
         manager_emp_ids = []
@@ -554,10 +596,40 @@ def export_monthly_productivity():
                 manager_names.append(full_name.lower())
             if curr_emp.employee_id:
                 manager_emp_ids.append(str(curr_emp.employee_id).strip())
+            if curr_emp.id:
+                manager_emp_ids.append(str(curr_emp.id).strip())
         if curr_user:
             user_fn = getattr(curr_user, "full_name", None) or getattr(curr_user, "name", None)
             if user_fn:
                 manager_names.append(str(user_fn).strip().lower())
+            manager_emp_ids.append(str(curr_user.id).strip())
+
+        # Subordinates reporting directly or recursively to this manager
+        subordinate_emp_ids = set()
+        if curr_emp:
+            visited_emps = set()
+            queue = [curr_emp]
+            while queue:
+                curr_m = queue.pop(0)
+                c_id = str(curr_m.employee_id)
+                if c_id in visited_emps:
+                    continue
+                visited_emps.add(c_id)
+                if c_id != str(curr_emp.employee_id):
+                    subordinate_emp_ids.add(c_id)
+                fn = (curr_m.first_name or "").strip()
+                ln = (curr_m.last_name or "").strip()
+                full_n = f"{fn} {ln}".strip()
+                sub_conds = []
+                if c_id:
+                    sub_conds.append(Employee.reporting_manager == c_id)
+                if full_n:
+                    sub_conds.append(Employee.reporting_manager.ilike(f"%{full_n}%"))
+                if sub_conds:
+                    subs = Employee.query.filter(or_(*sub_conds)).all()
+                    for s in subs:
+                        if str(s.employee_id) not in visited_emps:
+                            queue.append(s)
 
         period_type = (request.args.get("period_type") or "monthly").strip().lower()
         month_str = request.args.get("month")
@@ -570,9 +642,6 @@ def export_monthly_productivity():
         year = int(year_str) if year_str and year_str.isdigit() else now.year
         week = int(week_str) if week_str and week_str.isdigit() else 1
         quarter = int(quarter_str) if quarter_str and quarter_str.isdigit() else (1 if month in [4,5,6] else 2 if month in [7,8,9] else 3 if month in [10,11,12] else 4)
-
-        from datetime import date, timedelta
-        import calendar
 
         if period_type == "weekly":
             num_days = calendar.monthrange(year, month)[1]
@@ -601,8 +670,13 @@ def export_monthly_productivity():
 
         month_name = calendar.month_name[month]
 
-        # Query all evaluations
-        all_evals = KpiEvaluation.query.all()
+        # Query all evaluations from DB
+        all_evals = []
+        try:
+            all_evals = KpiEvaluation.query.all()
+        except Exception as q_err:
+            print(f"Warning querying KpiEvaluation in export_monthly_productivity: {q_err}")
+
         scoped_evals = []
         for ev in all_evals:
             if is_hr_or_admin:
@@ -610,8 +684,23 @@ def export_monthly_productivity():
                 continue
             rep_mgr = (ev.reporting_manager or "").strip().lower()
             mgr_id = str(ev.reporting_manager_id or ev.manager_id or "").strip()
-            if any(m in rep_mgr for m in manager_names if m) or (mgr_id and mgr_id in manager_emp_ids):
+            ev_emp_id = str(ev.employee_id or "").strip()
+
+            is_match = False
+            if mgr_id and mgr_id in manager_emp_ids:
+                is_match = True
+            elif rep_mgr and any((m in rep_mgr or rep_mgr in m) for m in manager_names if m):
+                is_match = True
+            elif ev_emp_id and ev_emp_id in subordinate_emp_ids:
+                is_match = True
+
+            if is_match:
                 scoped_evals.append(ev)
+
+        # Fallback: if caller is an authorized manager or reviewer desk user and scoped_evals is empty,
+        # fallback to all accessible evaluations if is_hr_or_admin or caller has oversight access
+        if not scoped_evals and (is_hr_or_admin or not manager_names):
+            scoped_evals = list(all_evals)
 
         emp_ids = list({ev.employee_id for ev in scoped_evals if ev.employee_id})
         emp_records = Employee.query.filter(Employee.employee_id.in_(emp_ids)).all() if emp_ids else []
@@ -631,7 +720,6 @@ def export_monthly_productivity():
         # Build team-wise report
         from models.holiday import Holiday
         from models.leave import LeaveRequest
-        from datetime import date, timedelta
 
         def is_date_week_off(d):
             if d.weekday() == 6:
@@ -659,9 +747,30 @@ def export_monthly_productivity():
 
         teams_data = {}
         for ev in scoped_evals:
-            t_name = (ev.team_name or "General Team").strip()
             emp = emp_map.get(ev.employee_id)
             user_id = emp.user_id if emp else None
+
+            # Resolve true canonical team name
+            # When cycles are created across multiple teams (e.g. manager cycle 'Editorial Services, Media, Qbend' or 'all_teams'),
+            # ev.team_name contains comma-separated names. We resolve the employee's exact individual team from their profile or team relation.
+            raw_team = (ev.team_name or "").strip()
+            if emp:
+                emp_actual_team = ""
+                if emp.team and getattr(emp.team, "name", None):
+                    emp_actual_team = emp.team.name.strip()
+                elif emp.department:
+                    emp_actual_team = emp.department.strip()
+
+                if emp_actual_team and (not raw_team or "," in raw_team or raw_team.lower() in ["all_teams", "general team", "all"]):
+                    t_name = emp_actual_team
+                elif raw_team and "," not in raw_team:
+                    t_name = raw_team
+                elif emp_actual_team:
+                    t_name = emp_actual_team
+                else:
+                    t_name = raw_team or "General Team"
+            else:
+                t_name = raw_team if (raw_team and "," not in raw_team) else "General Team"
 
             # Calculate present days and absent days (including approved leaves)
             user_atts = att_by_user.get(user_id, [])
@@ -699,17 +808,20 @@ def export_monthly_productivity():
                                 recorded_dates.add(cur_l)
                         cur_l += timedelta(days=1)
 
-            m_data = ev.metrics_data or {}
-            cats = m_data.get("categories", [])
-            daily_records = m_data.get("daily_records", [])
-            weekly_records = m_data.get("weekly_records", [])
-            monthly_records = m_data.get("monthly_records", [])
-            quarterly_records = m_data.get("quarterly_records", [])
+            raw_md = ev.metrics_data or {}
+            m_data = raw_md if isinstance(raw_md, dict) else {}
+            cats = raw_md if isinstance(raw_md, list) else m_data.get("categories", [])
+            if not isinstance(cats, list):
+                cats = []
+            daily_records = m_data.get("daily_records", []) if isinstance(m_data, dict) else []
+            weekly_records = m_data.get("weekly_records", []) if isinstance(m_data, dict) else []
+            monthly_records = m_data.get("monthly_records", []) if isinstance(m_data, dict) else []
+            quarterly_records = m_data.get("quarterly_records", []) if isinstance(m_data, dict) else []
 
-            period_daily = [d for d in daily_records if d.get("date") and start_date <= date.fromisoformat(d.get("date")) <= end_date]
-            period_weekly = [w for w in weekly_records if w.get("startDate") and w.get("endDate") and date.fromisoformat(w.get("startDate")) <= end_date and date.fromisoformat(w.get("endDate")) >= start_date]
-            period_monthly = [m for m in monthly_records if m.get("startDate") and m.get("endDate") and date.fromisoformat(m.get("startDate")) <= end_date and date.fromisoformat(m.get("endDate")) >= start_date]
-            period_quarterly = [q for q in quarterly_records if q.get("startDate") and q.get("endDate") and date.fromisoformat(q.get("startDate")) <= end_date and date.fromisoformat(q.get("endDate")) >= start_date]
+            period_daily = [d for d in daily_records if d.get("date") and parse_date_safe(d.get("date")) and start_date <= parse_date_safe(d.get("date")) <= end_date]
+            period_weekly = [w for w in weekly_records if w.get("startDate") and w.get("endDate") and parse_date_safe(w.get("startDate")) and parse_date_safe(w.get("endDate")) and parse_date_safe(w.get("startDate")) <= end_date and parse_date_safe(w.get("endDate")) >= start_date]
+            period_monthly = [m for m in monthly_records if m.get("startDate") and m.get("endDate") and parse_date_safe(m.get("startDate")) and parse_date_safe(m.get("endDate")) and parse_date_safe(m.get("startDate")) <= end_date and parse_date_safe(m.get("endDate")) >= start_date]
+            period_quarterly = [q for q in quarterly_records if q.get("startDate") and q.get("endDate") and parse_date_safe(q.get("startDate")) and parse_date_safe(q.get("endDate")) and parse_date_safe(q.get("startDate")) <= end_date and parse_date_safe(q.get("endDate")) >= start_date]
 
             # Find name frequency across categories to disambiguate duplicates
             all_kpi_names = []
@@ -737,54 +849,70 @@ def export_monthly_productivity():
             # Build deliverables map with PER-MILESTONE target awareness.
             # When a manager changes targets mid-period (e.g., day 15 of a month),
             # each daily/weekly milestone record stores its own 'categories' field
-            # with the target that was active on that day. We must sum targets
-            # milestone-by-milestone rather than applying a single root target
-            # to all milestones — otherwise the Excel Total column is wrong.
+            # with the target that was active on that day. We sum targets
+            # milestone-by-milestone, correctly scaled by present working days.
             # ------------------------------------------------------------------
 
             def get_milestone_cats(milestone_record, fallback_cats):
-                """Return categories for a specific milestone, falling back to root."""
-                mc = milestone_record.get("categories")
-                if mc and isinstance(mc, list) and len(mc) > 0:
-                    return mc
-                return fallback_cats
+                if isinstance(milestone_record, dict):
+                    mc = milestone_record.get("categories")
+                    if mc and isinstance(mc, list) and len(mc) > 0:
+                        return mc
+                return fallback_cats if isinstance(fallback_cats, list) else []
 
             def get_kpi_target_from_cats(milestone_cats, kpi_id, kpi_name):
-                """Extract the numeric target for a specific KPI from a categories list."""
+                if not isinstance(milestone_cats, list):
+                    return None
+                clean_kpi_name = (kpi_name or "").strip().lower()
                 for mc in milestone_cats:
+                    if not isinstance(mc, dict):
+                        continue
                     for mk in mc.get("kpis", []):
-                        if mk.get("id") == kpi_id or (mk.get("name") or "").strip() == kpi_name:
+                        if not isinstance(mk, dict):
+                            continue
+                        mk_id = str(mk.get("id") or "").strip()
+                        mk_name = str(mk.get("name") or "").strip().lower()
+                        if (kpi_id and mk_id == str(kpi_id).strip()) or (clean_kpi_name and mk_name == clean_kpi_name):
                             raw = str(mk.get("targetFromManager") or mk.get("targetValue") or "0").strip()
                             return extract_num(raw)
-                return None  # not found in this categories snapshot
+                return None
 
             # Collect all unique KPI identifiers across root + all milestone categories
             all_cats_snapshots = [cats]
             for _d in period_daily:
-                if _d.get("categories"):
+                if isinstance(_d, dict) and _d.get("categories") and isinstance(_d["categories"], list):
                     all_cats_snapshots.append(_d["categories"])
             for _w in period_weekly:
-                if _w.get("categories"):
+                if isinstance(_w, dict) and _w.get("categories") and isinstance(_w["categories"], list):
                     all_cats_snapshots.append(_w["categories"])
             for _m in period_monthly:
-                if _m.get("categories"):
+                if isinstance(_m, dict) and _m.get("categories") and isinstance(_m["categories"], list):
                     all_cats_snapshots.append(_m["categories"])
             for _q in period_quarterly:
-                if _q.get("categories"):
+                if isinstance(_q, dict) and _q.get("categories") and isinstance(_q["categories"], list):
                     all_cats_snapshots.append(_q["categories"])
 
-            # Build a union of all KPI labels seen across all snapshots
             all_kpis_union = {}  # label -> {k_id, k_name, c_name, unit}
             for snap_cats in all_cats_snapshots:
+                if not isinstance(snap_cats, list):
+                    continue
                 snap_name_counts = {}
                 for sc in snap_cats:
+                    if not isinstance(sc, dict):
+                        continue
                     for sk in sc.get("kpis", []):
+                        if not isinstance(sk, dict):
+                            continue
                         sn = (sk.get("name") or "").strip()
                         if sn:
                             snap_name_counts[sn] = snap_name_counts.get(sn, 0) + 1
                 for sc in snap_cats:
+                    if not isinstance(sc, dict):
+                        continue
                     sc_name = (sc.get("name") or "").strip()
                     for sk in sc.get("kpis", []):
+                        if not isinstance(sk, dict):
+                            continue
                         sk_id = sk.get("id")
                         sk_name = (sk.get("name") or "").strip()
                         if not sk_name:
@@ -804,7 +932,6 @@ def export_monthly_productivity():
                 k_name = kpi_info["k_name"]
                 c_name = kpi_info["c_name"]
 
-                # Sum target and completed milestone by milestone (handles mid-period target changes)
                 total_tgt = 0.0
                 completed_val = 0.0
 
@@ -814,24 +941,26 @@ def export_monthly_productivity():
                         day_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
                         if day_tgt is not None:
                             total_tgt += day_tgt
-                        # Completed value from entries
                         entries = d.get("kpiEntries") or {}
-                        entry = entries.get(k_id) or entries.get(k_name) or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or entries.get(k_name.strip()) or {}
                         v = entry.get("managerActualValue")
                         if v is None or v == "":
                             v = entry.get("manager_actual_pm")
                         if v is None or v == "":
                             v = entry.get("actualValue", entry.get("actual_value", 0))
                         completed_val += extract_num(v)
+                    # Scale daily targets by present days when employee was present for full month
+                    if present_days > 0 and len(period_daily) > 0 and present_days != float(len(period_daily)):
+                        avg_day_tgt = total_tgt / len(period_daily)
+                        total_tgt = avg_day_tgt * present_days
                 elif period_weekly:
                     for w in period_weekly:
                         m_cats = get_milestone_cats(w, cats)
                         week_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
                         if week_tgt is not None:
                             total_tgt += week_tgt
-                        # Completed value from entries
                         entries = w.get("kpiEntries") or {}
-                        entry = entries.get(k_id) or entries.get(k_name) or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or entries.get(k_name.strip()) or {}
                         v = entry.get("managerActualValue")
                         if v is None or v == "":
                             v = entry.get("manager_actual_pm")
@@ -839,14 +968,13 @@ def export_monthly_productivity():
                             v = entry.get("actualValue", entry.get("actual_value", 0))
                         completed_val += extract_num(v)
                 elif period_monthly:
-                    # Monthly cadence: one record per month — read target + actuals directly
                     for mr in period_monthly:
                         m_cats = get_milestone_cats(mr, cats)
                         month_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
                         if month_tgt is not None:
                             total_tgt += month_tgt
                         entries = mr.get("kpiEntries") or {}
-                        entry = entries.get(k_id) or entries.get(k_name) or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or entries.get(k_name.strip()) or {}
                         v = entry.get("managerActualValue")
                         if v is None or v == "":
                             v = entry.get("manager_actual_pm")
@@ -854,14 +982,13 @@ def export_monthly_productivity():
                             v = entry.get("actualValue", entry.get("actual_value", 0))
                         completed_val += extract_num(v)
                 elif period_quarterly:
-                    # Quarterly cadence: one record per quarter — read target + actuals directly
                     for qr in period_quarterly:
                         m_cats = get_milestone_cats(qr, cats)
                         qtr_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
                         if qtr_tgt is not None:
                             total_tgt += qtr_tgt
                         entries = qr.get("kpiEntries") or {}
-                        entry = entries.get(k_id) or entries.get(k_name) or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or entries.get(k_name.strip()) or {}
                         v = entry.get("managerActualValue")
                         if v is None or v == "":
                             v = entry.get("manager_actual_pm")
@@ -869,7 +996,6 @@ def export_monthly_productivity():
                             v = entry.get("actualValue", entry.get("actual_value", 0))
                         completed_val += extract_num(v)
                 else:
-                    # Absolute fallback: no milestone records at all — use root target x 1
                     total_tgt = get_kpi_target_from_cats(cats, k_id, k_name) or 0.0
 
                 deliverables_map[label] = {
@@ -974,7 +1100,6 @@ def export_monthly_productivity():
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
         from openpyxl.utils import get_column_letter
-        from io import BytesIO
         from utils.compat import send_file
 
         wb = Workbook()
@@ -1014,7 +1139,6 @@ def export_monthly_productivity():
             ws.row_dimensions[1].height = 28
             ws.row_dimensions[2].height = 22
 
-            # Distinct deliverable labels in insertion order
             d_labels = []
             for m in members:
                 for dl in m.get("deliverables", {}).keys():
@@ -1034,14 +1158,12 @@ def export_monthly_productivity():
                 "Company Holidays"
             ]
 
-            # 1. Base columns (vertically merged across rows 1 & 2)
             col_idx = 1
             for bcol in base_cols:
                 ws.merge_cells(start_row=1, start_column=col_idx, end_row=2, end_column=col_idx)
                 ws.cell(row=1, column=col_idx, value=bcol)
                 col_idx += 1
 
-            # 2. Deliverable columns: Top row = Deliverable name (merged 2 cols), Sub row = Total, Completed
             for dl in d_labels:
                 c_start = col_idx
                 c_end = col_idx + 1
@@ -1051,12 +1173,10 @@ def export_monthly_productivity():
                 ws.cell(row=2, column=c_end, value="Completed")
                 col_idx += 2
 
-            # 3. Final column: Total Average Score (%) vertically merged across rows 1 & 2
             score_col_idx = col_idx
             ws.merge_cells(start_row=1, start_column=score_col_idx, end_row=2, end_column=score_col_idx)
             ws.cell(row=1, column=score_col_idx, value="Total Average Score")
 
-            # Apply styling to all header cells in Rows 1 & 2
             for r in [1, 2]:
                 for c in range(1, score_col_idx + 1):
                     cell = ws.cell(row=r, column=c)
@@ -1065,7 +1185,6 @@ def export_monthly_productivity():
                     cell.alignment = center_align
                     cell.border = thin_border
 
-            # Data rows (starting from row 3)
             for idx, m in enumerate(members, start=1):
                 r_idx = idx + 2
                 row_vals = [
@@ -1085,7 +1204,6 @@ def export_monthly_productivity():
                     row_vals.append(d_info.get("total", 0))
                     row_vals.append(d_info.get("completed", 0))
 
-                # Total Average Score
                 row_vals.append(f"{m.get('average_score', 0.0)}%")
 
                 ws.append(row_vals)
@@ -1098,12 +1216,11 @@ def export_monthly_productivity():
                     cell.border = thin_border
                     if not is_even:
                         cell.fill = zebra_fill
-                    if c in [3, 4, 5]: # Name, Designation, Team
+                    if c in [3, 4, 5]:
                         cell.alignment = left_align
                     else:
                         cell.alignment = center_align
 
-            # Summary Total Row
             tot_row_idx = len(members) + 3
             tot_present = sum(m.get("present_days", 0) for m in members)
             tot_absent = sum(m.get("absent_days", 0) for m in members)
@@ -1144,7 +1261,6 @@ def export_monthly_productivity():
                 else:
                     cell.alignment = center_align
 
-            # Auto fit column widths
             for col in ws.columns:
                 max_len = 0
                 col_letter = get_column_letter(col[0].column)
@@ -1175,8 +1291,6 @@ def export_monthly_productivity():
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
-
-
 
 
 @performance_bp.route("/evaluation/rankings-export", methods=["GET"])
@@ -1398,9 +1512,25 @@ def export_rankings_matrix():
         for ke in eval_list:
             emp = emp_by_code.get(str(ke.employee_id))
             emp_code = str(ke.employee_id)
-            team_val = (ke.team_name or "").strip()
-            if not team_val:
-                team_val = getattr(emp.team, "name", None) or (str(emp.team) if emp and emp.team else "Team") if emp else "Team"
+            raw_team = (ke.team_name or "").strip()
+            # Resolve canonical team name (avoid comma-separated aggregate manager bundle names like 'Editorial Services, Media, Qbend')
+            if emp:
+                emp_actual_team = ""
+                if emp.team and getattr(emp.team, "name", None):
+                    emp_actual_team = emp.team.name.strip()
+                elif emp.department:
+                    emp_actual_team = emp.department.strip()
+
+                if emp_actual_team and (not raw_team or "," in raw_team or raw_team.lower() in ["all_teams", "general team", "all"]):
+                    team_val = emp_actual_team
+                elif raw_team and "," not in raw_team:
+                    team_val = raw_team
+                elif emp_actual_team:
+                    team_val = emp_actual_team
+                else:
+                    team_val = raw_team or "Team"
+            else:
+                team_val = raw_team if (raw_team and "," not in raw_team) else "Team"
 
             pair_key = (emp_code, team_val)
             if pair_key in processed_emp_team_pairs:
@@ -1474,8 +1604,27 @@ def export_rankings_matrix():
 
         # Aggregate daily scores from the evaluation records
         for ke in eval_list:
+            emp = emp_by_code.get(str(ke.employee_id))
             emp_code = str(ke.employee_id)
-            team_val = (ke.team_name or "").strip()
+            raw_team = (ke.team_name or "").strip()
+            if emp:
+                emp_actual_team = ""
+                if emp.team and getattr(emp.team, "name", None):
+                    emp_actual_team = emp.team.name.strip()
+                elif emp.department:
+                    emp_actual_team = emp.department.strip()
+
+                if emp_actual_team and (not raw_team or "," in raw_team or raw_team.lower() in ["all_teams", "general team", "all"]):
+                    team_val = emp_actual_team
+                elif raw_team and "," not in raw_team:
+                    team_val = raw_team
+                elif emp_actual_team:
+                    team_val = emp_actual_team
+                else:
+                    team_val = raw_team or "Team"
+            else:
+                team_val = raw_team if (raw_team and "," not in raw_team) else "Team"
+
             emp_rec = emp_lookup.get((emp_code, team_val)) or emp_lookup.get(emp_code)
             if not emp_rec:
                 continue
