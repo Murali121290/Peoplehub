@@ -285,11 +285,11 @@ export const calculateKPIScore = (
     }
   }
 
-  // 4. Standard Exact Target (higher is better ratio, capped at 100% targetScore)
+  // 4. Standard Exact Target (higher is better ratio; allows exceeding 100% when actual exceeds target)
   const targetNum = target > 0 ? target : 1;
   const ratio = Math.max(0, numericActual / targetNum);
-  const achievementPercentage = Number((Math.min(100, ratio * 100)).toFixed(2));
-  const earnedScore = Number((Math.min(maxScore, ratio * maxScore)).toFixed(2));
+  const achievementPercentage = Number((ratio * 100).toFixed(2));
+  const earnedScore = Number((ratio * maxScore).toFixed(2));
 
   return {
     achievementPercentage,
