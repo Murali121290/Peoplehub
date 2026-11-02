@@ -460,8 +460,8 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                 <th className="p-4 pl-6">Employee</th>
                 <th className="p-4">Emp ID</th>
                 <th className="p-4">Request Type</th>
-                <th className="p-4">Current Shift / Mode</th>
-                <th className="p-4">Requested Shift / Mode</th>
+                <th className="p-4">{isOdwOnly ? "From Time" : "Current Shift / Mode"}</th>
+                <th className="p-4">{isOdwOnly ? "To Time" : "Requested Shift / Mode"}</th>
                 <th className="p-4">Date Range</th>
                 <th className="p-4">Reason</th>
                 <th className="p-4">Applied On</th>
