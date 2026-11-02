@@ -199,18 +199,8 @@ def read_employee_evaluations(employee_id: str) -> list:
 
 
 def write_employee_evaluations(employee_id: str, responses: list):
-    """Writes evaluation responses for a specific employee into their evaluation.json file."""
-    if not employee_id:
-        return
-    clean_emp = str(employee_id).strip().lower().replace("emp-", "").replace("emp_", "")
-    path = get_employee_eval_path(clean_emp)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({
-            "employee_id": clean_emp,
-            "updated_at": datetime.utcnow().isoformat(),
-            "responses": responses
-        }, f, ensure_ascii=False, indent=2)
+    """No-op: All evaluations are stored 100% in PostgreSQL (kpi_evaluations)."""
+    return
 
 
 def read_all_employee_evaluations() -> list:
