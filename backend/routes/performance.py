@@ -7,11 +7,14 @@ from utils.compat import Blueprint, request, jsonify
 from utils.uploads import get_uploads_dir
 from models.database import db
 from models.employee import Employee
+from models.user import User
 from models.performance import EmployeePerformance
 from models.kpi_evaluation import KpiEvaluation
 from models.manager_kpi_template import ManagerKpiTemplate
 from middleware.auth import auth_required, access_level_required
 from services.kpi_evaluation_rollup_service import calculate_evaluation_working_days
+from utils.jwt_helper import get_jwt_identity, decode_and_set_jwt_context, JWT_SECRET_KEY
+import jwt
 
 performance_bp = Blueprint("performance", __name__)
 
@@ -459,6 +462,12 @@ def merge_kpi_responses_into_categories(categories, responses_dict):
                     if resp.get("managerRemarks") is not None and resp.get("managerRemarks") != "":
                         new_k["managerRemarks"] = resp.get("managerRemarks")
                         new_k["manager_remark"] = resp.get("managerRemarks")
+                    if resp.get("isWaived") is not None:
+                        new_k["isWaived"] = bool(resp.get("isWaived"))
+                        new_k["fullCreditGranted"] = bool(resp.get("isWaived"))
+                    elif resp.get("fullCreditGranted") is not None:
+                        new_k["isWaived"] = bool(resp.get("fullCreditGranted"))
+                        new_k["fullCreditGranted"] = bool(resp.get("fullCreditGranted"))
                 
                 new_kpis.append(new_k)
             new_cat["kpis"] = new_kpis
@@ -494,6 +503,7 @@ def extract_kpi_responses_from_metrics_data(metrics_data):
                             mgr_act = kpi.get("managerActualValue", kpi.get("manager_actual_pm", ""))
                             mgr_sc = kpi.get("managerScore", kpi.get("manager_score"))
                             mgr_rem = kpi.get("managerRemarks", kpi.get("manager_remark", ""))
+                            is_waived = bool(kpi.get("isWaived", kpi.get("fullCreditGranted", False)))
                             item_obj = {
                                 "kpiId": k_id,
                                 "name": kpi.get("name", ""),
@@ -505,13 +515,1741 @@ def extract_kpi_responses_from_metrics_data(metrics_data):
                                 "is_insufficient": is_insufficient,
                                 "managerActualValue": mgr_act,
                                 "managerScore": mgr_sc,
-                                "managerRemarks": mgr_rem
+                                "managerRemarks": mgr_rem,
+                                "isWaived": is_waived,
+                                "fullCreditGranted": is_waived
                             }
                             res[k_id] = item_obj
                             if kpi.get("name"):
                                 res[kpi.get("name")] = item_obj
         return res
     return {}
+
+
+@performance_bp.route("/evaluation/monthly-productivity-export", methods=["GET"])
+@auth_required
+def export_monthly_productivity():
+    try:
+        from models.attendance import Attendance
+        from models.employee import Employee
+        from models.user import User
+        from models.kpi_evaluation import KpiEvaluation
+        from utils.jwt_helper import get_jwt_identity, JWT_SECRET_KEY
+        import jwt
+        import calendar
+        from datetime import datetime, date, timedelta
+
+        def parse_date_safe(val):
+            if not val:
+                return None
+            try:
+                s = str(val).strip()
+                if "T" in s:
+                    s = s.split("T")[0]
+                elif " " in s:
+                    s = s.split(" ")[0]
+                if "/" in s:
+                    parts = s.split("/")
+                    if len(parts) == 3:
+                        if len(parts[2]) == 4:
+                            return date(int(parts[2]), int(parts[1]), int(parts[0]))
+                        elif len(parts[0]) == 4:
+                            return date(int(parts[0]), int(parts[1]), int(parts[2]))
+                return date.fromisoformat(s[:10])
+            except Exception:
+                return None
+
+        # Resolve authenticated user identity robustly
+        jwt_uid = get_jwt_identity()
+        if not jwt_uid:
+            auth_header = request.headers.get("Authorization") or ""
+            if auth_header.startswith("Bearer "):
+                token = auth_header.split(" ", 1)[1].strip()
+                try:
+                    payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
+                    jwt_uid = payload.get("sub")
+                except Exception:
+                    pass
+
+        current_user_id = int(jwt_uid) if jwt_uid else getattr(request, "user_id", None)
+        curr_user = User.query.get(current_user_id) if current_user_id else None
+        curr_emp = None
+        if current_user_id:
+            curr_emp = Employee.query.filter_by(user_id=current_user_id).first()
+        if not curr_emp and curr_user and curr_user.email:
+            curr_emp = Employee.query.filter(
+                (Employee.email == curr_user.email) | (Employee.company_email == curr_user.email)
+            ).first()
+
+        is_hr_or_admin = False
+        caller_role = ""
+        if curr_user and curr_user.role:
+            caller_role = (curr_user.role.name or "").strip().lower()
+            if any(r in caller_role for r in ["admin", "hr", "super admin", "management", "coo"]):
+                is_hr_or_admin = True
+
+        manager_names = []
+        manager_emp_ids = []
+        if curr_emp:
+            full_name = f"{curr_emp.first_name or ''} {curr_emp.last_name or ''}".strip()
+            if full_name:
+                manager_names.append(full_name.lower())
+            if curr_emp.employee_id:
+                manager_emp_ids.append(str(curr_emp.employee_id).strip())
+            if curr_emp.id:
+                manager_emp_ids.append(str(curr_emp.id).strip())
+        if curr_user:
+            user_fn = getattr(curr_user, "full_name", None) or getattr(curr_user, "name", None)
+            if user_fn:
+                manager_names.append(str(user_fn).strip().lower())
+            manager_emp_ids.append(str(curr_user.id).strip())
+
+        # Subordinates reporting directly or recursively to this manager
+        subordinate_emp_ids = set()
+        if curr_emp:
+            visited_emps = set()
+            queue = [curr_emp]
+            while queue:
+                curr_m = queue.pop(0)
+                c_id = str(curr_m.employee_id)
+                if c_id in visited_emps:
+                    continue
+                visited_emps.add(c_id)
+                if c_id != str(curr_emp.employee_id):
+                    subordinate_emp_ids.add(c_id)
+                fn = (curr_m.first_name or "").strip()
+                ln = (curr_m.last_name or "").strip()
+                full_n = f"{fn} {ln}".strip()
+                sub_conds = []
+                if c_id:
+                    sub_conds.append(Employee.reporting_manager == c_id)
+                if full_n:
+                    sub_conds.append(Employee.reporting_manager.ilike(f"%{full_n}%"))
+                if sub_conds:
+                    subs = Employee.query.filter(or_(*sub_conds)).all()
+                    for s in subs:
+                        if str(s.employee_id) not in visited_emps:
+                            queue.append(s)
+
+        period_type = (request.args.get("period_type") or "monthly").strip().lower()
+        month_str = request.args.get("month")
+        year_str = request.args.get("year")
+        week_str = request.args.get("week")
+        quarter_str = request.args.get("quarter")
+
+        now = datetime.now()
+        month = int(month_str) if month_str and month_str.isdigit() else now.month
+        year = int(year_str) if year_str and year_str.isdigit() else now.year
+        week = int(week_str) if week_str and week_str.isdigit() else 1
+        quarter = int(quarter_str) if quarter_str and quarter_str.isdigit() else (1 if month in [4,5,6] else 2 if month in [7,8,9] else 3 if month in [10,11,12] else 4)
+
+        if period_type == "weekly":
+            num_days = calendar.monthrange(year, month)[1]
+            w_starts = [1, 8, 15, 22, 29]
+            w_ends = [7, 14, 21, 28, num_days]
+            w_idx = min(max(week - 1, 0), len(w_starts) - 1)
+            start_date = date(year, month, w_starts[w_idx])
+            end_date = date(year, month, min(w_ends[w_idx], num_days))
+            period_label = f"Week {week} ({start_date.strftime('%d/%m')} - {end_date.strftime('%d/%m/%Y')})"
+        elif period_type == "quarterly":
+            if quarter == 1:
+                start_date, end_date, period_label = date(year, 4, 1), date(year, 6, 30), f"Q1 (Apr - Jun) {year}"
+            elif quarter == 2:
+                start_date, end_date, period_label = date(year, 7, 1), date(year, 9, 30), f"Q2 (Jul - Sep) {year}"
+            elif quarter == 3:
+                start_date, end_date, period_label = date(year, 10, 1), date(year, 12, 31), f"Q3 (Oct - Dec) {year}"
+            else:
+                start_date, end_date, period_label = date(year + 1, 1, 1), date(year + 1, 3, 31), f"Q4 (Jan - Mar) {year + 1}"
+        elif period_type == "yearly":
+            start_date, end_date, period_label = date(year, 4, 1), date(year + 1, 3, 31), f"FY {year}-{year+1}"
+        else: # monthly
+            num_days = calendar.monthrange(year, month)[1]
+            start_date = date(year, month, 1)
+            end_date = date(year, month, num_days)
+            period_label = f"{calendar.month_name[month]} {year}"
+
+        month_name = calendar.month_name[month]
+
+        # Query all evaluations from DB
+        all_evals = []
+        try:
+            all_evals = KpiEvaluation.query.all()
+        except Exception as q_err:
+            print(f"Warning querying KpiEvaluation in export_monthly_productivity: {q_err}")
+
+        scoped_evals = []
+        for ev in all_evals:
+            if is_hr_or_admin:
+                scoped_evals.append(ev)
+                continue
+            rep_mgr = (ev.reporting_manager or "").strip().lower()
+            mgr_id = str(ev.reporting_manager_id or ev.manager_id or "").strip()
+            ev_emp_id = str(ev.employee_id or "").strip()
+
+            is_match = False
+            if mgr_id and mgr_id in manager_emp_ids:
+                is_match = True
+            elif rep_mgr and any((m in rep_mgr or rep_mgr in m) for m in manager_names if m):
+                is_match = True
+            elif ev_emp_id and ev_emp_id in subordinate_emp_ids:
+                is_match = True
+
+            if is_match:
+                scoped_evals.append(ev)
+
+        # Fallback: if caller is an authorized manager or reviewer desk user and scoped_evals is empty,
+        # fallback to all accessible evaluations if is_hr_or_admin or caller has oversight access
+        if not scoped_evals and (is_hr_or_admin or not manager_names):
+            scoped_evals = list(all_evals)
+
+        emp_ids = list({ev.employee_id for ev in scoped_evals if ev.employee_id})
+        emp_records = Employee.query.filter(Employee.employee_id.in_(emp_ids)).all() if emp_ids else []
+        emp_map = {e.employee_id: e for e in emp_records}
+        user_ids = [e.user_id for e in emp_records if e.user_id]
+
+        att_records = Attendance.query.filter(
+            Attendance.user_id.in_(user_ids),
+            Attendance.attendance_date >= start_date,
+            Attendance.attendance_date <= end_date
+        ).all() if user_ids else []
+
+        att_by_user = {}
+        for a in att_records:
+            att_by_user.setdefault(a.user_id, []).append(a)
+
+        # Build team-wise report
+        from models.holiday import Holiday
+        from models.leave import LeaveRequest
+
+        def is_date_week_off(d):
+            if d.weekday() == 6:
+                return True
+            if d.weekday() == 5:
+                sat_count = 0
+                for day_num in range(1, d.day + 1):
+                    if date(d.year, d.month, day_num).weekday() == 5:
+                        sat_count += 1
+                return sat_count in [2, 4]
+            return False
+
+        hols = Holiday.query.filter(Holiday.date >= start_date, Holiday.date <= end_date).all()
+        holiday_dates = {h.date for h in hols}
+
+        week_off_dates = set()
+        cur_d = start_date
+        while cur_d <= end_date:
+            if is_date_week_off(cur_d) and cur_d not in holiday_dates:
+                week_off_dates.add(cur_d)
+            cur_d += timedelta(days=1)
+
+        total_holidays = len(holiday_dates)
+        total_weekoffs = len(week_off_dates)
+
+        teams_data = {}
+        for ev in scoped_evals:
+            emp = emp_map.get(ev.employee_id)
+            user_id = emp.user_id if emp else None
+
+            # Resolve true canonical team name
+            # When cycles are created across multiple teams (e.g. manager cycle 'Editorial Services, Media, Qbend' or 'all_teams'),
+            # ev.team_name contains comma-separated names. We resolve the employee's exact individual team from their profile or team relation.
+            raw_team = (ev.team_name or "").strip()
+            if emp:
+                emp_actual_team = ""
+                if emp.team and getattr(emp.team, "name", None):
+                    emp_actual_team = emp.team.name.strip()
+                elif emp.department:
+                    emp_actual_team = emp.department.strip()
+
+                if emp_actual_team and (not raw_team or "," in raw_team or raw_team.lower() in ["all_teams", "general team", "all"]):
+                    t_name = emp_actual_team
+                elif raw_team and "," not in raw_team:
+                    t_name = raw_team
+                elif emp_actual_team:
+                    t_name = emp_actual_team
+                else:
+                    t_name = raw_team or "General Team"
+            else:
+                t_name = raw_team if (raw_team and "," not in raw_team) else "General Team"
+
+            # Calculate present days and absent days (including approved leaves)
+            user_atts = att_by_user.get(user_id, [])
+            present_days = 0.0
+            absent_days = 0.0
+            recorded_dates = set()
+
+            for a in user_atts:
+                recorded_dates.add(a.attendance_date)
+                st = (a.status or "").strip().lower()
+                if st == "present":
+                    present_days += 1.0
+                elif st in ["half day", "half-day", "halfday"]:
+                    present_days += 0.5
+                    absent_days += 0.5
+                elif st in ["absent", "lop", "leave", "pl", "cl", "sl", "cl/sl"]:
+                    absent_days += 1.0
+
+            # Include approved leaves from LeaveRequest for any unrecorded days in attendance
+            if emp:
+                leaves = LeaveRequest.query.filter(
+                    LeaveRequest.employee_id == str(emp.employee_id),
+                    LeaveRequest.from_date <= end_date,
+                    LeaveRequest.to_date >= start_date,
+                    LeaveRequest.status.ilike("%approve%")
+                ).all()
+
+                for l in leaves:
+                    cur_l = max(l.from_date, start_date)
+                    end_l = min(l.to_date, end_date)
+                    while cur_l <= end_l:
+                        if cur_l not in holiday_dates and not is_date_week_off(cur_l):
+                            if cur_l not in recorded_dates:
+                                absent_days += float(l.total_days if l.from_date == l.to_date else 1.0)
+                                recorded_dates.add(cur_l)
+                        cur_l += timedelta(days=1)
+
+            raw_md = ev.metrics_data or {}
+            m_data = raw_md if isinstance(raw_md, dict) else {}
+            cats = raw_md if isinstance(raw_md, list) else m_data.get("categories", [])
+            if not isinstance(cats, list):
+                cats = []
+            daily_records = m_data.get("daily_records", []) if isinstance(m_data, dict) else []
+            weekly_records = m_data.get("weekly_records", []) if isinstance(m_data, dict) else []
+            monthly_records = m_data.get("monthly_records", []) if isinstance(m_data, dict) else []
+            quarterly_records = m_data.get("quarterly_records", []) if isinstance(m_data, dict) else []
+
+            period_daily = [d for d in daily_records if d.get("date") and parse_date_safe(d.get("date")) and start_date <= parse_date_safe(d.get("date")) <= end_date]
+            period_weekly = [w for w in weekly_records if w.get("startDate") and w.get("endDate") and parse_date_safe(w.get("startDate")) and parse_date_safe(w.get("endDate")) and parse_date_safe(w.get("startDate")) <= end_date and parse_date_safe(w.get("endDate")) >= start_date]
+            period_monthly = [m for m in monthly_records if m.get("startDate") and m.get("endDate") and parse_date_safe(m.get("startDate")) and parse_date_safe(m.get("endDate")) and parse_date_safe(m.get("startDate")) <= end_date and parse_date_safe(m.get("endDate")) >= start_date]
+            period_quarterly = [q for q in quarterly_records if q.get("startDate") and q.get("endDate") and parse_date_safe(q.get("startDate")) and parse_date_safe(q.get("endDate")) and parse_date_safe(q.get("startDate")) <= end_date and parse_date_safe(q.get("endDate")) >= start_date]
+
+            # Find name frequency across categories to disambiguate duplicates
+            all_kpi_names = []
+            for c in cats:
+                for k in c.get("kpis", []):
+                    kn = (k.get("name") or "").strip()
+                    if kn:
+                        all_kpi_names.append(kn)
+            name_counts = {n: all_kpi_names.count(n) for n in all_kpi_names}
+
+            # Helper to extract actual number
+            def extract_num(val):
+                if val is None or val == "":
+                    return 0.0
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    s = str(val).strip().rstrip("%").lstrip("<>=")
+                    try:
+                        return float(s)
+                    except Exception:
+                        return 0.0
+
+            # ------------------------------------------------------------------
+            # Build deliverables map with PER-MILESTONE target awareness.
+            # When a manager changes targets mid-period (e.g., day 15 of a month),
+            # each daily/weekly milestone record stores its own 'categories' field
+            # with the target that was active on that day. We sum targets
+            # milestone-by-milestone, correctly scaled by present working days.
+            # ------------------------------------------------------------------
+
+            def get_milestone_cats(milestone_record, fallback_cats):
+                if isinstance(milestone_record, dict):
+                    mc = milestone_record.get("categories")
+                    if mc and isinstance(mc, list) and len(mc) > 0:
+                        return mc
+                return fallback_cats if isinstance(fallback_cats, list) else []
+
+            def get_kpi_target_from_cats(milestone_cats, kpi_id, kpi_name):
+                if not isinstance(milestone_cats, list):
+                    return None
+                clean_kpi_name = (kpi_name or "").strip().lower()
+                for mc in milestone_cats:
+                    if not isinstance(mc, dict):
+                        continue
+                    for mk in mc.get("kpis", []):
+                        if not isinstance(mk, dict):
+                            continue
+                        mk_id = str(mk.get("id") or "").strip()
+                        mk_name = str(mk.get("name") or "").strip().lower()
+                        if (kpi_id and mk_id == str(kpi_id).strip()) or (clean_kpi_name and mk_name == clean_kpi_name):
+                            raw = str(mk.get("targetFromManager") or mk.get("targetValue") or "0").strip()
+                            return extract_num(raw)
+                return None
+
+            # Collect all unique KPI identifiers across root + all milestone categories
+            all_cats_snapshots = [cats]
+            for _d in period_daily:
+                if isinstance(_d, dict) and _d.get("categories") and isinstance(_d["categories"], list):
+                    all_cats_snapshots.append(_d["categories"])
+            for _w in period_weekly:
+                if isinstance(_w, dict) and _w.get("categories") and isinstance(_w["categories"], list):
+                    all_cats_snapshots.append(_w["categories"])
+            for _m in period_monthly:
+                if isinstance(_m, dict) and _m.get("categories") and isinstance(_m["categories"], list):
+                    all_cats_snapshots.append(_m["categories"])
+            for _q in period_quarterly:
+                if isinstance(_q, dict) and _q.get("categories") and isinstance(_q["categories"], list):
+                    all_cats_snapshots.append(_q["categories"])
+
+            all_kpis_union = {}  # label -> {k_id, k_name, c_name, unit}
+            for snap_cats in all_cats_snapshots:
+                if not isinstance(snap_cats, list):
+                    continue
+                snap_name_counts = {}
+                for sc in snap_cats:
+                    if not isinstance(sc, dict):
+                        continue
+                    for sk in sc.get("kpis", []):
+                        if not isinstance(sk, dict):
+                            continue
+                        sn = (sk.get("name") or "").strip()
+                        if sn:
+                            snap_name_counts[sn] = snap_name_counts.get(sn, 0) + 1
+                for sc in snap_cats:
+                    if not isinstance(sc, dict):
+                        continue
+                    sc_name = (sc.get("name") or "").strip()
+                    for sk in sc.get("kpis", []):
+                        if not isinstance(sk, dict):
+                            continue
+                        sk_id = sk.get("id")
+                        sk_name = (sk.get("name") or "").strip()
+                        if not sk_name:
+                            continue
+                        label = f"{sc_name} - {sk_name}" if snap_name_counts.get(sk_name, 0) > 1 else sk_name
+                        if label not in all_kpis_union:
+                            all_kpis_union[label] = {
+                                "k_id": sk_id,
+                                "k_name": sk_name,
+                                "c_name": sc_name,
+                                "unit": sk.get("unit", "")
+                            }
+
+            deliverables_map = {}
+            for label, kpi_info in all_kpis_union.items():
+                k_id = kpi_info["k_id"]
+                k_name = kpi_info["k_name"]
+                c_name = kpi_info["c_name"]
+
+                total_tgt = 0.0
+                completed_val = 0.0
+
+                if period_daily:
+                    for d in period_daily:
+                        m_cats = get_milestone_cats(d, cats)
+                        day_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
+                        if day_tgt is not None:
+                            total_tgt += day_tgt
+                        entries = d.get("kpiEntries") or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or entries.get(k_name.strip()) or {}
+                        v = entry.get("managerActualValue")
+                        if v is None or v == "":
+                            v = entry.get("manager_actual_pm")
+                        if v is None or v == "":
+                            v = entry.get("actualValue", entry.get("actual_value", 0))
+                        completed_val += extract_num(v)
+                    # Scale daily targets by present days when employee was present for full month
+                    if present_days > 0 and len(period_daily) > 0 and present_days != float(len(period_daily)):
+                        avg_day_tgt = total_tgt / len(period_daily)
+                        total_tgt = avg_day_tgt * present_days
+                elif period_weekly:
+                    for w in period_weekly:
+                        m_cats = get_milestone_cats(w, cats)
+                        week_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
+                        if week_tgt is not None:
+                            total_tgt += week_tgt
+                        entries = w.get("kpiEntries") or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or entries.get(k_name.strip()) or {}
+                        v = entry.get("managerActualValue")
+                        if v is None or v == "":
+                            v = entry.get("manager_actual_pm")
+                        if v is None or v == "":
+                            v = entry.get("actualValue", entry.get("actual_value", 0))
+                        completed_val += extract_num(v)
+                elif period_monthly:
+                    for mr in period_monthly:
+                        m_cats = get_milestone_cats(mr, cats)
+                        month_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
+                        if month_tgt is not None:
+                            total_tgt += month_tgt
+                        entries = mr.get("kpiEntries") or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or entries.get(k_name.strip()) or {}
+                        v = entry.get("managerActualValue")
+                        if v is None or v == "":
+                            v = entry.get("manager_actual_pm")
+                        if v is None or v == "":
+                            v = entry.get("actualValue", entry.get("actual_value", 0))
+                        completed_val += extract_num(v)
+                elif period_quarterly:
+                    for qr in period_quarterly:
+                        m_cats = get_milestone_cats(qr, cats)
+                        qtr_tgt = get_kpi_target_from_cats(m_cats, k_id, k_name)
+                        if qtr_tgt is not None:
+                            total_tgt += qtr_tgt
+                        entries = qr.get("kpiEntries") or {}
+                        entry = entries.get(k_id) or entries.get(k_name) or entries.get(k_name.strip()) or {}
+                        v = entry.get("managerActualValue")
+                        if v is None or v == "":
+                            v = entry.get("manager_actual_pm")
+                        if v is None or v == "":
+                            v = entry.get("actualValue", entry.get("actual_value", 0))
+                        completed_val += extract_num(v)
+                else:
+                    total_tgt = get_kpi_target_from_cats(cats, k_id, k_name) or 0.0
+
+                deliverables_map[label] = {
+                    "name": k_name,
+                    "category": c_name,
+                    "unit": kpi_info["unit"],
+                    "total": round(total_tgt, 1),
+                    "completed": round(completed_val, 1),
+                    "actual": round(completed_val, 1)
+                }
+
+            # Calculate average score for this period
+            scores_list = []
+            if period_daily:
+                for d in period_daily:
+                    s = d.get("managerScore")
+                    if s is None or s == "":
+                        s = d.get("employeeScore")
+                    if s is not None and s != "":
+                        try:
+                            scores_list.append(float(str(s).rstrip("%")))
+                        except Exception:
+                            pass
+            elif period_weekly:
+                for w in period_weekly:
+                    s = w.get("managerScore")
+                    if s is None or s == "":
+                        s = w.get("employeeScore")
+                    if s is not None and s != "":
+                        try:
+                            scores_list.append(float(str(s).rstrip("%")))
+                        except Exception:
+                            pass
+            elif period_monthly:
+                for mr in period_monthly:
+                    s = mr.get("managerScore")
+                    if s is None or s == "":
+                        s = mr.get("employeeScore")
+                    if s is not None and s != "":
+                        try:
+                            scores_list.append(float(str(s).rstrip("%")))
+                        except Exception:
+                            pass
+            elif period_quarterly:
+                for qr in period_quarterly:
+                    s = qr.get("managerScore")
+                    if s is None or s == "":
+                        s = qr.get("employeeScore")
+                    if s is not None and s != "":
+                        try:
+                            scores_list.append(float(str(s).rstrip("%")))
+                        except Exception:
+                            pass
+
+            if scores_list:
+                emp_avg_score = round(sum(scores_list) / len(scores_list), 1)
+            else:
+                fallback_s = ev.manager_score or ev.earned_score or ev.employee_overall_score or 0
+                try:
+                    emp_avg_score = round(float(fallback_s), 1)
+                except Exception:
+                    emp_avg_score = 0.0
+
+            emp_row = {
+                "employee_id": ev.employee_id or "",
+                "employee_name": ev.employee_name or (f"{emp.first_name} {emp.last_name}" if emp else "Unknown"),
+                "designation": emp.designation or "Team Member" if emp else "Team Member",
+                "team_name": t_name,
+                "month_name": month_name,
+                "year": year,
+                "period_label": period_label,
+                "present_days": present_days,
+                "absent_days": absent_days,
+                "week_off_days": total_weekoffs,
+                "holiday_days": total_holidays,
+                "deliverables": deliverables_map,
+                "all_deliverables": deliverables_map,
+                "average_score": emp_avg_score
+            }
+
+            teams_data.setdefault(t_name, []).append(emp_row)
+
+        format_type = request.args.get("format", "excel")
+        if format_type == "json":
+            return jsonify({
+                "success": True,
+                "period_type": period_type,
+                "period_label": period_label,
+                "month": month,
+                "month_name": month_name,
+                "year": year,
+                "teams": teams_data
+            })
+
+        if not teams_data:
+            return jsonify({
+                "success": False,
+                "error": f"No employee evaluation records found for {period_label}."
+            }), 404
+
+        from io import BytesIO
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+        from openpyxl.utils import get_column_letter
+        from utils.compat import send_file
+
+        wb = Workbook()
+        wb.remove(wb.active)
+
+        # Brand colors matching PeopleHub attendance styling
+        header_fill = PatternFill(fill_type="solid", fgColor="1F7A8C")
+        sub_header_fill = PatternFill(fill_type="solid", fgColor="288B9E")
+        total_fill = PatternFill(fill_type="solid", fgColor="F0FDFA")
+        zebra_fill = PatternFill(fill_type="solid", fgColor="F8FAFC")
+
+        header_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        sub_header_font = Font(name="Calibri", size=9.5, bold=True, color="FFFFFF")
+        regular_font = Font(name="Calibri", size=10, bold=False, color="1E293B")
+        total_font = Font(name="Calibri", size=10, bold=True, color="0F172A")
+
+        thin_border = Border(
+            left=Side(style="thin", color="CBD5E1"),
+            right=Side(style="thin", color="CBD5E1"),
+            top=Side(style="thin", color="CBD5E1"),
+            bottom=Side(style="thin", color="CBD5E1")
+        )
+        total_border = Border(
+            left=Side(style="thin", color="CBD5E1"),
+            right=Side(style="thin", color="CBD5E1"),
+            top=Side(style="thin", color="94A3B8"),
+            bottom=Side(style="double", color="0F766E")
+        )
+
+        center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        left_align = Alignment(horizontal="left", vertical="center")
+
+        for t_name, members in teams_data.items():
+            clean_title = t_name.replace(":", "_").replace("/", "_").replace("\\", "_")[:31]
+            ws = wb.create_sheet(title=clean_title)
+            ws.views.sheetView[0].showGridLines = True
+            ws.row_dimensions[1].height = 28
+            ws.row_dimensions[2].height = 22
+
+            d_labels = []
+            for m in members:
+                for dl in m.get("deliverables", {}).keys():
+                    if dl not in d_labels:
+                        d_labels.append(dl)
+
+            base_cols = [
+                "S.No",
+                "Emp Code",
+                "Emp Name",
+                "Designation",
+                "Team",
+                "Period",
+                "Present Days",
+                "Absent Days",
+                "Week Off",
+                "Company Holidays"
+            ]
+
+            col_idx = 1
+            for bcol in base_cols:
+                ws.merge_cells(start_row=1, start_column=col_idx, end_row=2, end_column=col_idx)
+                ws.cell(row=1, column=col_idx, value=bcol)
+                col_idx += 1
+
+            for dl in d_labels:
+                c_start = col_idx
+                c_end = col_idx + 1
+                ws.merge_cells(start_row=1, start_column=c_start, end_row=1, end_column=c_end)
+                ws.cell(row=1, column=c_start, value=dl)
+                ws.cell(row=2, column=c_start, value="Total")
+                ws.cell(row=2, column=c_end, value="Completed")
+                col_idx += 2
+
+            score_col_idx = col_idx
+            ws.merge_cells(start_row=1, start_column=score_col_idx, end_row=2, end_column=score_col_idx)
+            ws.cell(row=1, column=score_col_idx, value="Total Average Score")
+
+            for r in [1, 2]:
+                for c in range(1, score_col_idx + 1):
+                    cell = ws.cell(row=r, column=c)
+                    cell.fill = header_fill if r == 1 else sub_header_fill
+                    cell.font = header_font if r == 1 else sub_header_font
+                    cell.alignment = center_align
+                    cell.border = thin_border
+
+            for idx, m in enumerate(members, start=1):
+                r_idx = idx + 2
+                row_vals = [
+                    idx,
+                    m.get("employee_id", ""),
+                    m.get("employee_name", ""),
+                    m.get("designation", ""),
+                    m.get("team_name", ""),
+                    m.get("period_label", period_label),
+                    m.get("present_days", 0),
+                    m.get("absent_days", 0),
+                    m.get("week_off_days", 0),
+                    m.get("holiday_days", 0)
+                ]
+                for dl in d_labels:
+                    d_info = m.get("deliverables", {}).get(dl, {})
+                    row_vals.append(d_info.get("total", 0))
+                    row_vals.append(d_info.get("completed", 0))
+
+                row_vals.append(f"{m.get('average_score', 0.0)}%")
+
+                ws.append(row_vals)
+                ws.row_dimensions[r_idx].height = 24
+                is_even = (r_idx % 2 == 0)
+
+                for c in range(1, len(row_vals) + 1):
+                    cell = ws.cell(row=r_idx, column=c)
+                    cell.font = regular_font
+                    cell.border = thin_border
+                    if not is_even:
+                        cell.fill = zebra_fill
+                    if c in [3, 4, 5]:
+                        cell.alignment = left_align
+                    else:
+                        cell.alignment = center_align
+
+            tot_row_idx = len(members) + 3
+            tot_present = sum(m.get("present_days", 0) for m in members)
+            tot_absent = sum(m.get("absent_days", 0) for m in members)
+            tot_weekoff = sum(m.get("week_off_days", 0) for m in members)
+            tot_holiday = sum(m.get("holiday_days", 0) for m in members)
+            team_avg_score = round(sum(m.get("average_score", 0.0) for m in members) / len(members), 1) if members else 0.0
+
+            tot_vals = [
+                "",
+                "",
+                "TEAM TOTAL",
+                "",
+                t_name,
+                period_label,
+                round(tot_present, 1),
+                round(tot_absent, 1),
+                round(tot_weekoff, 1),
+                round(tot_holiday, 1)
+            ]
+            for dl in d_labels:
+                sum_total = sum(m.get("deliverables", {}).get(dl, {}).get("total", 0) for m in members)
+                sum_comp = sum(m.get("deliverables", {}).get(dl, {}).get("completed", 0) for m in members)
+                tot_vals.append(round(sum_total, 1))
+                tot_vals.append(round(sum_comp, 1))
+
+            tot_vals.append(f"{team_avg_score}%")
+
+            ws.append(tot_vals)
+            ws.row_dimensions[tot_row_idx].height = 26
+
+            for c in range(1, len(tot_vals) + 1):
+                cell = ws.cell(row=tot_row_idx, column=c)
+                cell.fill = total_fill
+                cell.font = total_font
+                cell.border = total_border
+                if c in [3, 4, 5]:
+                    cell.alignment = left_align
+                else:
+                    cell.alignment = center_align
+
+            for col in ws.columns:
+                max_len = 0
+                col_letter = get_column_letter(col[0].column)
+                for cell in col:
+                    v_str = str(cell.value or "")
+                    if "\n" in v_str:
+                        max_len = max(max_len, max(len(line) for line in v_str.split("\n")))
+                    else:
+                        max_len = max(max_len, len(v_str))
+                ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+            ws.freeze_panes = "A3"
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        safe_label = period_label.replace(" ", "_").replace("(", "").replace(")", "").replace("/", "-").replace("\\", "_")
+        filename = f"Productivity_Report_{safe_label}.xlsx"
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@performance_bp.route("/evaluation/rankings-export", methods=["GET"])
+def export_rankings_matrix():
+    """
+    Exports Neat Team-wise Daily Evaluation Matrix for Top Performers (Weekly, Monthly, Quarterly, Yearly).
+    Matching PeopleHub Executive Teal styling (#1F7A8C), frozen panes at A3, daily score columns,
+    Average Score (%), Present Days, and Absent Days (including approved leaves), with Team Summary Total row.
+    Strictly scoped to the manager's assigned teams and evaluations using employee_id and manager_id.
+    """
+    try:
+        from models.employee import Employee
+        from models.user import User
+        from models.kpi_evaluation import KpiEvaluation
+        from models.attendance import Attendance
+        from models.holiday import Holiday
+        from models.leave import LeaveRequest
+        import calendar
+        from datetime import datetime, date, timedelta
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+        from openpyxl.utils import get_column_letter
+        from io import BytesIO
+        from utils.compat import send_file
+        from utils.jwt_helper import get_jwt_identity
+
+        period_type = (request.args.get("period_type") or "weekly").lower().strip()
+        year_str = request.args.get("year")
+        month_str = request.args.get("month")
+        week_str = request.args.get("week")
+        quarter_str = request.args.get("quarter")
+        selected_team_param = (request.args.get("team") or request.args.get("team_name") or request.args.get("team_id") or "").strip()
+        selected_manager_param = (request.args.get("manager") or request.args.get("manager_name") or request.args.get("reporting_manager") or "").strip()
+
+        now = datetime.now()
+        cur_year = int(year_str) if year_str and year_str.isdigit() else now.year
+        cur_month = int(month_str) if month_str and month_str.isdigit() else now.month
+
+        # Calculate exact start_date and end_date based on period_type
+        if period_type == "weekly":
+            w_num = int(week_str) if week_str and week_str.isdigit() else 1
+            max_d = calendar.monthrange(cur_year, cur_month)[1]
+            if w_num == 1:
+                s_day, e_day = 1, min(7, max_d)
+            elif w_num == 2:
+                s_day, e_day = 8, min(14, max_d)
+            elif w_num == 3:
+                s_day, e_day = 15, min(21, max_d)
+            elif w_num == 4:
+                s_day, e_day = 22, min(28, max_d)
+            else:
+                s_day, e_day = 29, max_d
+            start_date = date(cur_year, cur_month, s_day)
+            end_date = date(cur_year, cur_month, e_day)
+            period_title = f"Weekly Report - Week {w_num} ({start_date.strftime('%d/%m')} - {end_date.strftime('%d/%m/%Y')})"
+            period_label = f"Weekly_Report_W{w_num}_{cur_month}_{cur_year}"
+        elif period_type == "monthly":
+            max_d = calendar.monthrange(cur_year, cur_month)[1]
+            start_date = date(cur_year, cur_month, 1)
+            end_date = date(cur_year, cur_month, max_d)
+            m_name = calendar.month_name[cur_month]
+            period_title = f"Monthly Report - {m_name} {cur_year}"
+            period_label = f"Monthly_Report_{m_name}_{cur_year}"
+        elif period_type == "quarterly":
+            q_num = int(quarter_str) if quarter_str and quarter_str.isdigit() else 1
+            if q_num == 1:
+                start_date = date(cur_year, 4, 1)
+                end_date = date(cur_year, 6, 30)
+                q_label = f"Q1_Apr-Jun_{cur_year}"
+            elif q_num == 2:
+                start_date = date(cur_year, 7, 1)
+                end_date = date(cur_year, 9, 30)
+                q_label = f"Q2_Jul-Sep_{cur_year}"
+            elif q_num == 3:
+                start_date = date(cur_year, 10, 1)
+                end_date = date(cur_year, 12, 31)
+                q_label = f"Q3_Oct-Dec_{cur_year}"
+            else:
+                start_date = date(cur_year + 1, 1, 1)
+                end_date = date(cur_year + 1, 3, 31)
+                q_label = f"Q4_Jan-Mar_{cur_year + 1}"
+            period_title = f"Quarterly Report - {q_label}"
+            period_label = f"Quarterly_Report_{q_label}"
+        elif period_type == "yearly":
+            start_date = date(cur_year, 4, 1)
+            end_date = date(cur_year + 1, 3, 31)
+            period_title = f"Annual Report (FY {cur_year}-{cur_year + 1})"
+            period_label = f"Annual_Report_FY{cur_year}-{cur_year + 1}"
+        else:
+            max_d = calendar.monthrange(cur_year, cur_month)[1]
+            start_date = date(cur_year, cur_month, 1)
+            end_date = date(cur_year, cur_month, max_d)
+            m_name = calendar.month_name[cur_month]
+            period_title = f"Monthly Report - {m_name} {cur_year}"
+            period_label = f"Monthly_Report_{m_name}_{cur_year}"
+
+        # Calendar columns: dates within range (skip Sundays for clean reading)
+        cur_d = start_date
+        date_cols = []
+        while cur_d <= end_date:
+            if cur_d.weekday() != 6:  # Skip Sundays
+                date_cols.append(cur_d.strftime("%Y-%m-%d"))
+            cur_d += timedelta(days=1)
+
+        # Scoping logic: accurately filter by employee_id and manager_id
+        jwt_uid = get_jwt_identity()
+        current_user_id = int(jwt_uid) if jwt_uid else getattr(request, "user_id", None)
+        current_user = User.query.filter_by(id=current_user_id).first() if current_user_id else None
+        caller_role = (current_user.role.name if (current_user and current_user.role) else "").lower()
+        is_admin_scope = any(x in caller_role for x in ["super admin", "admin", "management", "coo"])
+
+        # Fetch evaluations scoped strictly to caller's manager assignments
+        if is_admin_scope or not current_user:
+            eval_list = KpiEvaluation.query.all()
+        else:
+            mgr_emp = Employee.query.filter_by(user_id=current_user.id).first()
+            mgr_emp_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else ""
+            mgr_user_id = str(current_user.id)
+            mgr_name = f"{mgr_emp.first_name or ''} {mgr_emp.last_name or ''}".strip() if mgr_emp else ""
+
+            manager_identifiers = [mgr_user_id]
+            if mgr_emp_id:
+                manager_identifiers.append(mgr_emp_id)
+
+            from sqlalchemy import or_
+
+            # Upward/Downward hierarchy traversal:
+            # Collect all recursive downline subordinates under this manager
+            downline_emp_ids = set()
+            if mgr_emp:
+                visited_emps = set()
+                queue = [mgr_emp]
+                while queue:
+                    curr_m = queue.pop(0)
+                    c_id = str(curr_m.employee_id)
+                    if c_id in visited_emps:
+                        continue
+                    visited_emps.add(c_id)
+                    if c_id != str(mgr_emp.employee_id):
+                        downline_emp_ids.add(c_id)
+                    fn = (curr_m.first_name or "").strip()
+                    ln = (curr_m.last_name or "").strip()
+                    full_n = f"{fn} {ln}".strip()
+                    
+                    sub_conds = []
+                    if c_id:
+                        sub_conds.append(Employee.reporting_manager == c_id)
+                    if full_n:
+                        sub_conds.append(Employee.reporting_manager.ilike(f"%{full_n}%"))
+                    if sub_conds:
+                        subs = Employee.query.filter(or_(*sub_conds)).all()
+                        for s in subs:
+                            if str(s.employee_id) not in visited_emps:
+                                queue.append(s)
+
+            eval_filters = [
+                KpiEvaluation.manager_id.in_(manager_identifiers),
+                KpiEvaluation.reporting_manager_id.in_(manager_identifiers),
+            ]
+            if mgr_name:
+                eval_filters.append(KpiEvaluation.reporting_manager.ilike(f"%{mgr_name}%"))
+            if downline_emp_ids:
+                eval_filters.append(KpiEvaluation.employee_id.in_(list(downline_emp_ids)))
+
+            eval_list = KpiEvaluation.query.filter(or_(*eval_filters)).all()
+
+        # Build list of active employee IDs from the scoped evaluations
+        scoped_emp_codes = set()
+        for ke in eval_list:
+            if ke.employee_id:
+                scoped_emp_codes.add(str(ke.employee_id))
+
+        if is_admin_scope or not current_user:
+            employees = Employee.query.order_by(Employee.department, Employee.first_name).all()
+        else:
+            if scoped_emp_codes:
+                employees = Employee.query.filter(
+                    Employee.employee_id.in_(scoped_emp_codes)
+                ).order_by(Employee.department, Employee.first_name).all()
+            else:
+                employees = []
+
+        # Map STRICTLY by employee_id (e.g. employee_id "75" -> Shyam R, NOT table primary key id 75 which is Visali)
+        emp_by_code = {str(e.employee_id).strip(): e for e in employees if e.employee_id}
+
+        # Attendance calculation helpers
+        def is_date_week_off(d):
+            if d.weekday() == 6:
+                return True
+            if d.weekday() == 5:
+                sat_count = 0
+                for day_num in range(1, d.day + 1):
+                    if date(d.year, d.month, day_num).weekday() == 5:
+                        sat_count += 1
+                return sat_count in [2, 4]
+            return False
+
+        hols = Holiday.query.filter(Holiday.date >= start_date, Holiday.date <= end_date).all()
+        holiday_dates = {h.date for h in hols}
+
+        user_ids = [e.user_id for e in employees if e.user_id]
+        attendances = Attendance.query.filter(
+            Attendance.user_id.in_(user_ids),
+            Attendance.attendance_date >= start_date,
+            Attendance.attendance_date <= end_date
+        ).all() if user_ids else []
+
+        att_by_user = {}
+        for a in attendances:
+            att_by_user.setdefault(a.user_id, []).append(a)
+
+        # Build employee records grouped STRICTLY by the evaluation team_name
+        emp_records_by_team = {}
+        emp_lookup = {}
+
+        # First, organize by scoped evaluations so each team has its exact assigned members
+        processed_emp_team_pairs = set()
+
+        for ke in eval_list:
+            emp = emp_by_code.get(str(ke.employee_id))
+            emp_code = str(ke.employee_id)
+            raw_team = (ke.team_name or "").strip()
+            # Resolve canonical team name (avoid comma-separated aggregate manager bundle names like 'Editorial Services, Media, Qbend')
+            if emp:
+                emp_actual_team = ""
+                if emp.team and getattr(emp.team, "name", None):
+                    emp_actual_team = emp.team.name.strip()
+                elif emp.department:
+                    emp_actual_team = emp.department.strip()
+
+                if emp_actual_team and (not raw_team or "," in raw_team or raw_team.lower() in ["all_teams", "general team", "all"]):
+                    team_val = emp_actual_team
+                elif raw_team and "," not in raw_team:
+                    team_val = raw_team
+                elif emp_actual_team:
+                    team_val = emp_actual_team
+                else:
+                    team_val = raw_team or "Team"
+            else:
+                team_val = raw_team if (raw_team and "," not in raw_team) else "Team"
+
+            pair_key = (emp_code, team_val)
+            if pair_key in processed_emp_team_pairs:
+                continue
+            processed_emp_team_pairs.add(pair_key)
+
+            if emp:
+                fn = emp.first_name or ""
+                ln = emp.last_name or ""
+                full_name = f"{fn} {ln}".strip() or ke.employee_name or f"Employee {emp_code}"
+                dept = emp.department or team_val
+                user_id = emp.user_id
+            else:
+                full_name = ke.employee_name or f"Employee {emp_code}"
+                dept = team_val
+                user_id = None
+
+            # Attendance calculation
+            user_atts = att_by_user.get(user_id, []) if user_id else []
+            present_days = 0.0
+            absent_days = 0.0
+            recorded_dates = set()
+
+            for a in user_atts:
+                recorded_dates.add(a.attendance_date)
+                st = (a.status or "").strip().lower()
+                if st == "present":
+                    present_days += 1.0
+                elif st in ["half day", "half-day", "halfday"]:
+                    present_days += 0.5
+                    absent_days += 0.5
+                elif st in ["absent", "lop", "leave", "pl", "cl", "sl", "cl/sl"]:
+                    absent_days += 1.0
+
+            # Approved leaves from LeaveRequest
+            if emp:
+                leaves = LeaveRequest.query.filter(
+                    LeaveRequest.employee_id == str(emp.employee_id),
+                    LeaveRequest.from_date <= end_date,
+                    LeaveRequest.to_date >= start_date,
+                    LeaveRequest.status.ilike("%approve%")
+                ).all()
+
+                for l in leaves:
+                    cur_l = max(l.from_date, start_date)
+                    end_l = min(l.to_date, end_date)
+                    while cur_l <= end_l:
+                        if cur_l not in holiday_dates and not is_date_week_off(cur_l):
+                            if cur_l not in recorded_dates:
+                                absent_days += float(l.total_days if l.from_date == l.to_date else 1.0)
+                                recorded_dates.add(cur_l)
+                        cur_l += timedelta(days=1)
+
+            rep_mgr = (getattr(ke, 'reporting_manager', None) or (getattr(emp, 'reporting_manager', None) if emp else None) or "").strip()
+            rec = {
+                "emp_obj": emp,
+                "dept": dept,
+                "team": team_val,
+                "designation": (emp.designation if emp and emp.designation else "") or team_val,
+                "name": full_name,
+                "code": emp_code,
+                "reporting_manager": rep_mgr,
+                "present_days": present_days,
+                "absent_days": absent_days,
+                "daily_scores": {},
+            }
+
+            emp_records_by_team.setdefault(team_val, []).append(rec)
+            emp_lookup[(emp_code, team_val)] = rec
+            emp_lookup[emp_code] = rec
+
+        # Aggregate daily scores from the evaluation records
+        for ke in eval_list:
+            emp = emp_by_code.get(str(ke.employee_id))
+            emp_code = str(ke.employee_id)
+            raw_team = (ke.team_name or "").strip()
+            if emp:
+                emp_actual_team = ""
+                if emp.team and getattr(emp.team, "name", None):
+                    emp_actual_team = emp.team.name.strip()
+                elif emp.department:
+                    emp_actual_team = emp.department.strip()
+
+                if emp_actual_team and (not raw_team or "," in raw_team or raw_team.lower() in ["all_teams", "general team", "all"]):
+                    team_val = emp_actual_team
+                elif raw_team and "," not in raw_team:
+                    team_val = raw_team
+                elif emp_actual_team:
+                    team_val = emp_actual_team
+                else:
+                    team_val = raw_team or "Team"
+            else:
+                team_val = raw_team if (raw_team and "," not in raw_team) else "Team"
+
+            emp_rec = emp_lookup.get((emp_code, team_val)) or emp_lookup.get(emp_code)
+            if not emp_rec:
+                continue
+            if not emp_rec.get("reporting_manager") and getattr(ke, "reporting_manager", None):
+                emp_rec["reporting_manager"] = str(ke.reporting_manager).strip()
+
+            m_data = ke.metrics_data
+            if isinstance(m_data, str):
+                try:
+                    m_data = json.loads(m_data)
+                except Exception:
+                    m_data = {}
+
+            # 1. Process daily_records (for daily cadence evaluations)
+            daily_recs = m_data.get("daily_records", []) if isinstance(m_data, dict) else []
+            if isinstance(daily_recs, list):
+                for d in daily_recs:
+                    d_str = d.get("date")
+                    if not d_str or d_str not in date_cols:
+                        continue
+                    status = d.get("status")
+                    mgr_sc = d.get("managerScore")
+                    emp_sc = d.get("employeeScore") or d.get("earnedScore")
+                    if status in ["manager_approved", "approved"] or (mgr_sc is not None and float(mgr_sc) > 0):
+                        score = float(mgr_sc if mgr_sc is not None else emp_sc or 0)
+                        emp_rec["daily_scores"][d_str] = round(score, 2)
+                    elif status in ["submitted_to_manager", "submitted"]:
+                        emp_rec["daily_scores"][d_str] = "Approval needed"
+                    else:
+                        if d_str not in emp_rec["daily_scores"]:
+                            emp_rec["daily_scores"][d_str] = "Not Filled"
+
+            # 2. Process weekly_records (for weekly cadence evaluations like Media & Qbend teams)
+            weekly_recs = m_data.get("weekly_records", []) if isinstance(m_data, dict) else []
+            if isinstance(weekly_recs, list):
+                for w in weekly_recs:
+                    w_start_str = w.get("startDate")
+                    w_end_str = w.get("endDate")
+                    if not w_start_str or not w_end_str:
+                        continue
+                    try:
+                        ws_d = date.fromisoformat(w_start_str)
+                        we_d = date.fromisoformat(w_end_str)
+                    except Exception:
+                        continue
+
+                    status = w.get("status")
+                    mgr_sc = w.get("managerScore")
+                    emp_sc = w.get("employeeScore") or w.get("earnedScore")
+                    if status in ["manager_approved", "approved"] or (mgr_sc is not None and float(mgr_sc) > 0):
+                        w_val = round(float(mgr_sc if mgr_sc is not None else emp_sc or 0), 2)
+                    elif status in ["submitted_to_manager", "submitted"]:
+                        w_val = "Approval needed"
+                    else:
+                        w_val = "Not Filled"
+
+                    for d_str in date_cols:
+                        try:
+                            dt = date.fromisoformat(d_str)
+                            if ws_d <= dt <= we_d:
+                                # Prioritize daily score if already present, otherwise set weekly score
+                                if d_str not in emp_rec["daily_scores"] or emp_rec["daily_scores"][d_str] == "Not Filled":
+                                    emp_rec["daily_scores"][d_str] = w_val
+                        except Exception:
+                            pass
+
+            # 3. Process periodic / monthly / quarterly / annual evaluations
+            # If evaluation period overlaps with requested period (e.g. October monthly, Q3 quarterly)
+            from_d = ke.from_date
+            to_d = ke.to_date
+            if from_d and to_d and not (to_d < start_date or from_d > end_date):
+                eff_to = min(to_d, end_date)
+                if eff_to < end_date and to_d.month == end_date.month and to_d.year == end_date.year:
+                    eff_to = end_date
+
+                st = str(ke.status or "").lower().strip()
+                mgr_sc = ke.manager_score
+                emp_sc = ke.employee_overall_score
+                is_appr = (st in ["manager_approved", "approved", "completed"]) or (mgr_sc is not None and float(mgr_sc) > 0)
+                is_subm = (st in ["submitted_to_manager", "submitted", "manager_review"]) or ("submit" in st)
+
+                if is_appr:
+                    period_val = round(float(mgr_sc if mgr_sc is not None else emp_sc or 0), 2)
+                elif is_subm:
+                    period_val = "Approval needed"
+                else:
+                    period_val = "Not Filled"
+
+                for d_str in date_cols:
+                    try:
+                        dt = date.fromisoformat(d_str)
+                        if from_d <= dt <= eff_to:
+                            # Set if no score yet or currently Not Filled
+                            cur_val = emp_rec["daily_scores"].get(d_str)
+                            if cur_val is None or cur_val == "" or (cur_val == "Not Filled" and period_val != "Not Filled"):
+                                emp_rec["daily_scores"][d_str] = period_val
+                    except Exception:
+                        pass
+
+        # Initialize Workbook with Executive Teal UI styling matching previous export
+        wb = Workbook()
+        wb.remove(wb.active)  # remove default sheet
+
+        teal_header_fill = PatternFill(start_color="1F7A8C", end_color="1F7A8C", fill_type="solid")
+        teal_total_fill = PatternFill(start_color="F0FDFA", end_color="F0FDFA", fill_type="solid")
+        zebra_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+        not_filled_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+        approval_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+
+        header_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        regular_font = Font(name="Calibri", size=10, bold=False, color="1E293B")
+        score_bold_font = Font(name="Calibri", size=10, bold=True, color="0F766E")
+        not_filled_font = Font(name="Calibri", size=9, bold=False, color="C00000")
+        approval_font = Font(name="Calibri", size=9, bold=False, color="7F6000")
+        total_font = Font(name="Calibri", size=10, bold=True, color="0F172A")
+
+        thin_side = Side(border_style="thin", color="CBD5E1")
+        data_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+        total_border = Border(left=thin_side, right=thin_side, top=Side(style="thin", color="94A3B8"), bottom=Side(style="double", color="0F766E"))
+
+        center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        left_align = Alignment(horizontal="left", vertical="center")
+
+        # Styles for Top Performers Section below TEAM TOTAL
+        top_perf_header_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+        top_perf_header_font = Font(name="Segoe UI Emoji", size=10, bold=True, color="1E293B")
+        top_perf_rank1_font = Font(name="Segoe UI Emoji", size=10, bold=True, color="D97706")
+        top_perf_rank2_font = Font(name="Segoe UI Emoji", size=10, bold=True, color="64748B")
+        top_perf_rank3_font = Font(name="Segoe UI Emoji", size=10, bold=True, color="B45309")
+        top_perf_regular_font = Font(name="Calibri", size=10, bold=False, color="1E293B")
+        top_perf_score_font = Font(name="Calibri", size=10, bold=True, color="0F172A")
+        top_perf_box_border = Border(
+            left=Side(style="thin", color="E2E8F0"),
+            right=Side(style="thin", color="E2E8F0"),
+            top=Side(style="thin", color="E2E8F0"),
+            bottom=Side(style="thin", color="E2E8F0")
+        )
+
+        headers = ["S.No", "Department", "Team", "Emp Code", "Name Of the Employee"] + date_cols + ["Score", "Composite Score", "Present Days", "Absent Days"]
+
+        # Filter by selected_team_param or selected_manager_param
+        teams_to_export = {}
+        for t_k, members in emp_records_by_team.items():
+            if selected_team_param and selected_team_param.lower() != "all":
+                if not (t_k.lower() == selected_team_param.lower() or selected_team_param.lower() in t_k.lower()):
+                    continue
+            if selected_manager_param and selected_manager_param.lower() != "all":
+                filtered_m = [
+                    m for m in members
+                    if selected_manager_param.lower() in (m.get("reporting_manager") or "").lower()
+                ]
+                if filtered_m:
+                    teams_to_export[t_k] = filtered_m
+            else:
+                teams_to_export[t_k] = members
+        if not teams_to_export and not selected_manager_param:
+            teams_to_export = emp_records_by_team
+
+        banner_title_font = Font(name="Calibri", size=13, bold=True, color="1F7A8C")
+        banner_sub_font = Font(name="Calibri", size=9, italic=True, color="64748B")
+
+        # Top Performers Summary Sheet styles (matching Image 2)
+        top_sheet_header_fill = PatternFill(start_color="1F7A8C", end_color="1F7A8C", fill_type="solid")
+        top_sheet_header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        top_sheet_rank_font = Font(name="Calibri", size=10, bold=True, color="1E293B")
+        top_sheet_score_font = Font(name="Calibri", size=10, bold=True, color="0F766E")
+
+        # -------------------------------------------------------------
+        # 1. "Top Performers" / "All Teams" Summary Sheet (First Sheet)
+        # -------------------------------------------------------------
+        # Show all ranked employees across all teams with their Average Score
+        all_evaluated_members = []
+        for t_k, m_list in emp_records_by_team.items():
+            for m in m_list:
+                num_scs = [v for v in m["daily_scores"].values() if isinstance(v, (int, float))]
+                avg_sc = (sum(num_scs) / len(num_scs)) if num_scs else -1.0
+                m["calc_avg_score"] = avg_sc
+                abs_cnt = float(m.get("absent_days", 0.0))
+                m["perf_composite_score"] = round(avg_sc - (abs_cnt * 0.5), 3) if avg_sc >= 0 else -999.0
+                if avg_sc >= 0:
+                    all_evaluated_members.append(m)
+
+        def all_teams_sort_key(m):
+            return (
+                -m["perf_composite_score"],
+                m.get("absent_days", 0.0),
+                -m.get("present_days", 0.0),
+                m.get("name", "")
+            )
+
+        all_evaluated_members = sorted(all_evaluated_members, key=all_teams_sort_key)
+
+        # Create Top Performers sheet as the very first sheet:
+        # If a specific team is selected (e.g. Editorial Services), scope Top Performers to that specific team!
+        # If "All Teams", show all ranked employees across all teams.
+        is_all_teams = (not selected_team_param) or (selected_team_param.lower() == "all")
+        top_performers_list = all_evaluated_members
+        if not is_all_teams and teams_to_export:
+            selected_team_members = []
+            for t_k, m_list in teams_to_export.items():
+                for m in m_list:
+                    if m.get("calc_avg_score", -1.0) >= 0:
+                        selected_team_members.append(m)
+            top_performers_list = sorted(selected_team_members, key=all_teams_sort_key)
+
+        ws_top = wb.create_sheet(title="Top Performers")
+        ws_top.views.sheetView[0].showGridLines = True
+
+        # Row 1: Title
+        top_perf_title_suffix = f" — {selected_team_param}" if not is_all_teams and selected_team_param else ""
+        ws_top.row_dimensions[1].height = 24
+        ws_top.cell(1, 1, f"{period_title} — Top Performers{top_perf_title_suffix}").font = banner_title_font
+        ws_top.cell(1, 1).alignment = Alignment(horizontal="left", vertical="center")
+
+        # Row 2: Date subtitle
+        ws_top.row_dimensions[2].height = 18
+        ws_top.cell(2, 1, f"Evaluation Period: {start_date.strftime('%d/%m/%Y')} to {end_date.strftime('%d/%m/%Y')} | Generated on {datetime.now().strftime('%d/%m/%Y')}").font = banner_sub_font
+        ws_top.cell(2, 1).alignment = Alignment(horizontal="left", vertical="center")
+
+        # Row 3: Blank separator
+        ws_top.row_dimensions[3].height = 6
+
+        # Top 3 Podium Cards at the Top of the Sheet (matching user request image)
+        top_3_overall = top_performers_list[:3]
+        if top_3_overall:
+            podium_card_title = f"Top Performers - {selected_team_param}" if not is_all_teams and selected_team_param else "Top Performers"
+            # Row 4: Card Title Header merged across B4:F4
+            ws_top.row_dimensions[4].height = 24
+            ws_top.merge_cells("B4:F4")
+            hdr_cell = ws_top.cell(4, 2, podium_card_title)
+            hdr_cell.fill = top_perf_header_fill
+            hdr_cell.font = top_perf_header_font
+            hdr_cell.alignment = left_align
+            for col_c in range(2, 7):
+                c = ws_top.cell(4, col_c)
+                c.border = top_perf_box_border
+                c.fill = top_perf_header_fill
+
+            medals = ["🥇 1.", "🥈 2.", "🥉 3."]
+            rank_fonts = [top_perf_rank1_font, top_perf_rank2_font, top_perf_rank3_font]
+
+            for r_i, tm in enumerate(top_3_overall):
+                podium_row = 5 + r_i
+                ws_top.row_dimensions[podium_row].height = 21
+
+                # Rank Medal (Column B)
+                c_medal = ws_top.cell(podium_row, 2, medals[r_i])
+                c_medal.font = rank_fonts[r_i]
+                c_medal.alignment = Alignment(horizontal="center", vertical="center")
+                c_medal.border = top_perf_box_border
+
+                # Employee Name (Columns C:E merged)
+                ws_top.merge_cells(start_row=podium_row, start_column=3, end_row=podium_row, end_column=5)
+                c_name = ws_top.cell(podium_row, 3, tm["name"])
+                c_name.font = top_perf_regular_font
+                c_name.alignment = left_align
+                for col_c in range(3, 6):
+                    ws_top.cell(podium_row, col_c).border = top_perf_box_border
+
+                # Average Score (Column F)
+                c_sc = ws_top.cell(podium_row, 6, f"Score: {round(tm['calc_avg_score'], 2)}%")
+                c_sc.font = top_perf_score_font
+                c_sc.alignment = Alignment(horizontal="center", vertical="center")
+                c_sc.border = top_perf_box_border
+
+            # Blank separator row after podium card
+            table_header_row = 10
+            ws_top.row_dimensions[8].height = 20
+            banner_row = 9
+        else:
+            banner_row = 4
+            table_header_row = 5
+
+        # Period Label Banner (e.g. Oct '26)
+        ws_top.row_dimensions[banner_row].height = 20
+        p_cell = ws_top.cell(banner_row, 1, start_date.strftime("%b '%y"))
+        p_cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        p_cell.fill = top_sheet_header_fill
+        p_cell.alignment = Alignment(horizontal="left", vertical="center")
+        for c in range(2, 7):
+            ws_top.cell(banner_row, c).fill = top_sheet_header_fill
+
+        # Table Header
+        ws_top.row_dimensions[table_header_row].height = 26
+        top_headers = ["Rank", "Employee", "Employee Code", "Department", "Designation", "Score"]
+        for c_idx, h_text in enumerate(top_headers, 1):
+            h_cell = ws_top.cell(table_header_row, c_idx, h_text)
+            h_cell.fill = top_sheet_header_fill
+            h_cell.font = top_sheet_header_font
+            h_cell.border = data_border
+            h_cell.alignment = center_align if c_idx in [1, 3, 6] else left_align
+
+        # Data rows
+        for r_idx, m_emp in enumerate(top_performers_list, 1):
+            row_num = table_header_row + r_idx
+            ws_top.row_dimensions[row_num].height = 20
+            is_zebra = (r_idx % 2 == 0)
+            row_fill = zebra_fill if is_zebra else None
+
+            c_rank = ws_top.cell(row_num, 1, r_idx)
+            c_emp = ws_top.cell(row_num, 2, m_emp["name"])
+            c_code = ws_top.cell(row_num, 3, m_emp["code"])
+            c_dept = ws_top.cell(row_num, 4, m_emp["dept"])
+            c_team = ws_top.cell(row_num, 5, m_emp.get("designation") or m_emp["team"])
+            c_avg = ws_top.cell(row_num, 6, f"{round(m_emp['calc_avg_score'], 2)}%")
+
+            c_rank.font = top_sheet_rank_font
+            c_emp.font = regular_font
+            c_code.font = regular_font
+            c_dept.font = regular_font
+            c_team.font = regular_font
+            c_avg.font = top_sheet_score_font
+
+            c_rank.alignment = center_align
+            c_code.alignment = center_align
+            c_emp.alignment = left_align
+            c_dept.alignment = left_align
+            c_team.alignment = left_align
+            c_avg.alignment = center_align
+
+            for c in [c_rank, c_emp, c_code, c_dept, c_team, c_avg]:
+                c.border = data_border
+                if row_fill:
+                    c.fill = row_fill
+
+        # Auto-fit columns for Top Performers sheet
+        for col in ws_top.columns:
+            max_len = 0
+            col_letter = get_column_letter(col[0].column)
+            for cell in col:
+                v_str = str(cell.value or "")
+                max_len = max(max_len, len(v_str))
+            ws_top.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+        ws_top.column_dimensions["A"].width = 8
+        ws_top.column_dimensions["B"].width = 24
+        ws_top.column_dimensions["C"].width = 15
+        ws_top.column_dimensions["D"].width = 22
+        ws_top.column_dimensions["E"].width = 28
+        ws_top.column_dimensions["F"].width = 16
+        freeze_row = table_header_row + 1
+        ws_top.freeze_panes = f"A{freeze_row}"
+        # Enable Excel dropdown filter on headers
+        last_top_row = max(table_header_row + len(top_performers_list), table_header_row + 1)
+        ws_top.auto_filter.ref = f"A{table_header_row}:F{last_top_row}" 
+
+        for t_name, members in teams_to_export.items():
+            clean_title = t_name.replace(":", "_").replace("/", "_").replace("\\", "_")[:31]
+            ws = wb.create_sheet(title=clean_title)
+            ws.views.sheetView[0].showGridLines = True
+
+            # Row 1: Period Title Banner (e.g. Monthly Performance Report - October 2026 - Project Management)
+            ws.row_dimensions[1].height = 24
+            ws.cell(1, 1, f"{period_title} — {t_name}").font = banner_title_font
+            ws.cell(1, 1).alignment = Alignment(horizontal="left", vertical="center")
+
+            # Row 2: Date Range & Generation Metadata
+            ws.row_dimensions[2].height = 18
+            ws.cell(2, 1, f"Evaluation Period: {start_date.strftime('%d/%m/%Y')} to {end_date.strftime('%d/%m/%Y')} | Generated on {datetime.now().strftime('%d/%m/%Y')}").font = banner_sub_font
+            ws.cell(2, 1).alignment = Alignment(horizontal="left", vertical="center")
+
+            # Row 3: Empty separator row
+            ws.row_dimensions[3].height = 6
+
+            # Row 4: Table Headers
+            ws.row_dimensions[4].height = 28
+            for c_idx, h_text in enumerate(headers, 1):
+                cell = ws.cell(4, c_idx, h_text)
+                cell.fill = teal_header_fill
+                cell.font = header_font
+                cell.border = data_border
+                cell.alignment = center_align
+
+            # Pre-compute average numeric score and attendance-weighted performance score
+            # A low absent days count gives higher merit:
+            # Net Performance Score = Average Score - (Absent Days * 0.5)
+            # This ensures consistent high attendance (0 absent days) ranks above equal/near-equal scores with absences!
+            for m in members:
+                num_scs = [v for v in m["daily_scores"].values() if isinstance(v, (int, float))]
+                avg_sc = (sum(num_scs) / len(num_scs)) if num_scs else -1.0
+                m["calc_avg_score"] = avg_sc
+                abs_cnt = float(m.get("absent_days", 0.0))
+                # Attendance penalty: 0.5 mark deduction per absent day for composite ranking
+                m["perf_composite_score"] = round(avg_sc - (abs_cnt * 0.5), 3) if avg_sc >= 0 else -999.0
+
+            # Sort members by:
+            # 1. Net Performance Score (Higher score + Lower absent days ranks first)
+            # 2. Absent Days (Lower absent days ranks first as tie-breaker)
+            # 3. Present Days (Higher present days ranks first)
+            # 4. Name (Alphabetical)
+            def ranking_sort_key(m):
+                return (
+                    -m["perf_composite_score"],
+                    m.get("absent_days", 0.0),
+                    -m.get("present_days", 0.0),
+                    m.get("name", "")
+                )
+
+            sorted_members = sorted(members, key=ranking_sort_key)
+
+            all_emp_averages = []
+            total_present = 0.0
+            total_absent = 0.0
+
+            row_idx = 5
+            for s_idx, emp in enumerate(sorted_members, 1):
+                ws.row_dimensions[row_idx].height = 20
+                is_zebra = (row_idx % 2 == 1)
+                row_fill = zebra_fill if is_zebra else None
+
+                # Base fields (S.No, Department, Team, Emp Code, Name Of the Employee)
+                c_sno = ws.cell(row_idx, 1, s_idx)
+                c_dept = ws.cell(row_idx, 2, emp["dept"])
+                c_team = ws.cell(row_idx, 3, emp["team"])
+                c_code = ws.cell(row_idx, 4, emp["code"])
+                c_name = ws.cell(row_idx, 5, emp["name"])
+
+                c_sno.alignment = center_align
+                c_code.alignment = center_align
+                c_dept.alignment = left_align
+                c_team.alignment = left_align
+                c_name.alignment = left_align
+
+                for c in [c_sno, c_dept, c_team, c_code, c_name]:
+                    c.font = regular_font
+                    c.border = data_border
+                    if row_fill:
+                        c.fill = row_fill
+
+                # Date score cells (Starting from column 6)
+                numeric_scores = []
+                for d_idx, d_str in enumerate(date_cols, 6):
+                    val = emp["daily_scores"].get(d_str, "")
+                    cell = ws.cell(row_idx, d_idx)
+                    cell.border = data_border
+
+                    if isinstance(val, (int, float)):
+                        cell.value = float(val)
+                        cell.font = regular_font
+                        cell.alignment = center_align
+                        cell.number_format = "0.00"
+                        if row_fill:
+                            cell.fill = row_fill
+                        numeric_scores.append(float(val))
+                    elif val == "Approval needed":
+                        cell.value = "Approval needed"
+                        cell.fill = approval_fill
+                        cell.font = approval_font
+                        cell.alignment = center_align
+                    elif val == "Not Filled":
+                        cell.value = "Not Filled"
+                        cell.fill = not_filled_fill
+                        cell.font = not_filled_font
+                        cell.alignment = center_align
+                    else:
+                        cell.value = ""
+                        cell.font = regular_font
+                        cell.alignment = center_align
+                        if row_fill:
+                            cell.fill = row_fill
+
+                # Average Score Column (Column 5 + len(date_cols) + 1)
+                avg_col_idx = 5 + len(date_cols) + 1
+                avg_cell = ws.cell(row_idx, avg_col_idx)
+                avg_cell.border = data_border
+                if row_fill:
+                    avg_cell.fill = row_fill
+
+                # Composite Score Column: Average Score - (Absent Days * 0.5)
+                comp_col_idx = avg_col_idx + 1
+                comp_cell = ws.cell(row_idx, comp_col_idx)
+                comp_cell.border = data_border
+                if row_fill:
+                    comp_cell.fill = row_fill
+
+                if numeric_scores:
+                    emp_avg = round(sum(numeric_scores) / len(numeric_scores), 2)
+                    avg_cell.value = f"{emp_avg}%"
+                    avg_cell.font = score_bold_font
+                    avg_cell.alignment = center_align
+                    all_emp_averages.append(emp_avg)
+
+                    # Compute composite score
+                    comp_score = round(emp_avg - (emp["absent_days"] * 0.5), 2)
+                    comp_cell.value = f"{comp_score}%"
+                    comp_cell.font = score_bold_font
+                    comp_cell.alignment = center_align
+                else:
+                    avg_cell.value = "—"
+                    avg_cell.font = regular_font
+                    avg_cell.alignment = center_align
+
+                    comp_cell.value = "—"
+                    comp_cell.font = regular_font
+                    comp_cell.alignment = center_align
+
+                # Present Days Column
+                pres_col_idx = comp_col_idx + 1
+                pres_cell = ws.cell(row_idx, pres_col_idx, round(emp["present_days"], 1))
+                pres_cell.font = regular_font
+                pres_cell.border = data_border
+                pres_cell.alignment = center_align
+                if row_fill:
+                    pres_cell.fill = row_fill
+                total_present += emp["present_days"]
+
+                # Absent Days Column
+                abs_col_idx = pres_col_idx + 1
+                abs_cell = ws.cell(row_idx, abs_col_idx, round(emp["absent_days"], 1))
+                abs_cell.font = regular_font
+                abs_cell.border = data_border
+                abs_cell.alignment = center_align
+                if row_fill:
+                    abs_cell.fill = row_fill
+                total_absent += emp["absent_days"]
+
+                row_idx += 1
+
+            # Team Total Summary Row at bottom
+            tot_row_idx = row_idx
+            ws.row_dimensions[tot_row_idx].height = 24
+            team_avg = f"{round(sum(all_emp_averages) / len(all_emp_averages), 1)}%" if all_emp_averages else "—"
+
+            tot_vals = ["", "", "TEAM TOTAL", "", f"{len(sorted_members)} Members"] + ["" for _ in date_cols] + [team_avg, "", round(total_present, 1), round(total_absent, 1)]
+            for col_i, v in enumerate(tot_vals, 1):
+                cell = ws.cell(tot_row_idx, col_i, v)
+                cell.fill = teal_total_fill
+                cell.font = total_font
+                cell.border = total_border
+                if col_i in [3, 5]:
+                    cell.alignment = left_align
+                else:
+                    cell.alignment = center_align
+
+            # Top 3 Performers section below TEAM TOTAL
+            # Eligible members with evaluated scores (calc_avg_score >= 0)
+            eligible_top = [m for m in sorted_members if m.get("calc_avg_score", -1.0) >= 0]
+            top_3 = eligible_top[:3]
+
+            if top_3:
+                start_card_row = tot_row_idx + 2
+                ws.row_dimensions[start_card_row].height = 24
+
+                # Card Header: "Top Performers - <Team Name>" (Columns B to E)
+                ws.merge_cells(start_row=start_card_row, start_column=2, end_row=start_card_row, end_column=5)
+                hdr_cell = ws.cell(start_card_row, 2, f"Top Performers - {t_name}")
+                hdr_cell.fill = top_perf_header_fill
+                hdr_cell.font = top_perf_header_font
+                hdr_cell.alignment = left_align
+
+                for col_c in range(2, 6):
+                    c = ws.cell(start_card_row, col_c)
+                    c.border = top_perf_box_border
+                    c.fill = top_perf_header_fill
+
+                # Medal icons and ranks
+                medals = ["🥇 1.", "🥈 2.", "🥉 3."]
+                rank_fonts = [top_perf_rank1_font, top_perf_rank2_font, top_perf_rank3_font]
+
+                for r_i, tm in enumerate(top_3):
+                    cur_card_row = start_card_row + 1 + r_i
+                    ws.row_dimensions[cur_card_row].height = 20
+
+                    # Rank Medal (Column B)
+                    c_medal = ws.cell(cur_card_row, 2, medals[r_i])
+                    c_medal.font = rank_fonts[r_i]
+                    c_medal.alignment = Alignment(horizontal="center", vertical="center")
+                    c_medal.border = top_perf_box_border
+
+                    # Employee Name (Column C)
+                    c_name = ws.cell(cur_card_row, 3, tm["name"])
+                    c_name.font = top_perf_regular_font
+                    c_name.alignment = left_align
+                    c_name.border = top_perf_box_border
+
+                    # Average Score (Column D)
+                    c_sc = ws.cell(cur_card_row, 4, f"Score: {round(tm['calc_avg_score'], 2)}%")
+                    c_sc.font = top_perf_score_font
+                    c_sc.alignment = Alignment(horizontal="center", vertical="center")
+                    c_sc.border = top_perf_box_border
+
+                    # Composite Score (Column E)
+                    c_comp_sc = ws.cell(cur_card_row, 5, f"Composite: {round(tm['perf_composite_score'], 2)}%")
+                    c_comp_sc.font = top_perf_score_font
+                    c_comp_sc.alignment = Alignment(horizontal="right", vertical="center")
+                    c_comp_sc.border = top_perf_box_border
+
+            # Column dimensions autofit
+            for col in ws.columns:
+                max_len = 0
+                col_letter = get_column_letter(col[0].column)
+                for cell in col:
+                    v_str = str(cell.value or "")
+                    max_len = max(max_len, len(v_str))
+                ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+            ws.column_dimensions["A"].width = 7
+            ws.column_dimensions["D"].width = 12
+            ws.column_dimensions["E"].width = 24
+
+            ws.freeze_panes = "F5"
+            # Enable Excel dropdown filter on table headers (Row 4)
+            last_member_row = max(row_idx - 1, 5)
+            last_hdr_letter = get_column_letter(len(headers))
+            ws.auto_filter.ref = f"A4:{last_hdr_letter}{last_member_row}" 
+
+        out = BytesIO()
+        wb.save(out)
+        out.seek(0)
+
+        mgr_file_part = f"_Mgr_{selected_manager_param.replace(' ', '_')}" if selected_manager_param and selected_manager_param.lower() != "all" else ""
+        team_file_part = f"_{selected_team_param.replace(' ', '_')}" if selected_team_param and selected_team_param.lower() != "all" else mgr_file_part
+        filename = f"{period_label}{team_file_part}.xlsx"
+        return send_file(
+            out,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 @performance_bp.route("/evaluation/data", methods=["GET"])
 def get_evaluation_data():
@@ -616,7 +2354,12 @@ def get_evaluation_data():
         # 2. Add cycles dynamically built from PostgreSQL KpiEvaluation records
         for g_key, g_info in team_eval_groups.items():
             if g_key not in seen_cycle_keys:
-                categories_from_db = g_info["metrics_data"] if isinstance(g_info["metrics_data"], list) else []
+                if isinstance(g_info["metrics_data"], dict):
+                    categories_from_db = g_info["metrics_data"].get("categories") or []
+                elif isinstance(g_info["metrics_data"], list):
+                    categories_from_db = g_info["metrics_data"]
+                else:
+                    categories_from_db = []
                 new_c_id = f"cycle_db_{abs(hash(g_key)) % 1000000}"
                 if new_c_id not in seen_cycle_ids:
                     seen_cycle_ids.add(new_c_id)
@@ -934,6 +2677,43 @@ def save_evaluation_cycle():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+def check_is_hr_or_admin_caller():
+    try:
+        # 1. First check explicit headers if passed
+        user_role_hdr = (request.headers.get("X-User-Role") or "").lower()
+        access_level_hdr = (request.headers.get("X-Access-Level") or "").lower()
+        if any(r in user_role_hdr for r in ["admin", "super admin", "super_admin", "hr", "hr_admin"]) or \
+           any(r in access_level_hdr for r in ["admin", "super admin", "super_admin", "hr", "hr_admin"]):
+            return True
+
+        # 2. Extract identity from JWT or request
+        jwt_uid = get_jwt_identity()
+        if not jwt_uid:
+            auth_header = request.headers.get("Authorization") or ""
+            if auth_header.startswith("Bearer "):
+                token = auth_header.split(" ", 1)[1].strip()
+                try:
+                    payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
+                    jwt_uid = payload.get("sub")
+                except Exception:
+                    pass
+
+        user_id = int(jwt_uid) if jwt_uid else getattr(request, "user_id", None)
+        if not user_id:
+            return False
+
+        user = User.query.get(user_id)
+        if not user:
+            return False
+
+        caller_role = (user.role.name if user.role else "").lower()
+        caller_access = (user.access_level or "").lower()
+        return any(r in caller_role for r in ["admin", "super admin", "super_admin", "hr", "hr_admin"]) or \
+               any(r in caller_access for r in ["admin", "super admin", "super_admin", "hr", "hr_admin"])
+    except Exception as e:
+        print(f"[check_is_hr_or_admin_caller] Error: {e}")
+        return False
+
 @performance_bp.route("/evaluation/cycles/<cycle_id>", methods=["DELETE"])
 def delete_evaluation_cycle(cycle_id):
     try:
@@ -1030,10 +2810,12 @@ def delete_evaluation_cycle(cycle_id):
 
         if db_query_conditions:
             candidate_records = KpiEvaluation.query.filter(or_(*db_query_conditions)).all()
+            is_caller_admin = check_is_hr_or_admin_caller()
             for rec in candidate_records:
-                # Protect published/calibrated records with manager score
-                if rec.manager_score is not None or rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
-                    continue
+                # Only non-admin users cannot delete completed/calibrated evaluations; HR and Admin can delete from DB
+                if not is_caller_admin:
+                    if rec.manager_score is not None or rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
+                        continue
                 # If emp_ids filter exists, ensure this employee belongs to the cycle if form/team was broad
                 if emp_ids and str(rec.employee_id or "").strip() not in emp_ids and rec.id not in db_ids:
                     # Also check if team matches
@@ -1087,8 +2869,9 @@ def delete_evaluation_response(resp_id_or_emp_id):
                             target_resp = r
                             break
 
-            # Prevent deleting calibrated/published/submitted records
-            if target_resp:
+            is_caller_admin = check_is_hr_or_admin_caller()
+            # Non-admin users cannot delete submitted/calibrated evaluations; HR/Admin are authorized to delete permanently
+            if target_resp and not is_caller_admin:
                 s_val = str(target_resp.get("status") or "").lower()
                 is_sub = target_resp.get("employeeSubmittedAt") or "submitted" in s_val or "manager_review" in s_val
                 if target_resp.get("managerScore") is not None or is_sub or s_val in ["calibrated & approved", "published", "approved", "completed"]:
@@ -1207,10 +2990,11 @@ def delete_evaluation_response(resp_id_or_emp_id):
                         db_recs_to_delete.append(r_item)
 
             for rec in db_recs_to_delete:
-                s_rec = str(rec.status or "").lower()
-                is_rec_sub = bool(rec.submitted_at) or "submitted" in s_rec or "manager_review" in s_rec
-                if rec.manager_score is not None or is_rec_sub or rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
-                    return jsonify({"error": "Submitted, published, and calibrated evaluation records cannot be deleted."}), 400
+                if not is_caller_admin:
+                    s_rec = str(rec.status or "").lower()
+                    is_rec_sub = bool(rec.submitted_at) or "submitted" in s_rec or "manager_review" in s_rec
+                    if rec.manager_score is not None or is_rec_sub or rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
+                        return jsonify({"error": "Submitted, published, and calibrated evaluation records cannot be deleted."}), 400
                 db.session.delete(rec)
 
             db.session.commit()
@@ -2358,7 +4142,21 @@ def assign_kpi_metrics():
                     existing_resp["frequency"] = frequency
                     existing_resp["startDate"] = from_str
                     existing_resp["endDate"] = to_str
-                    existing_resp["daily_records"] = data.get("daily_records") or []
+
+                    # Preserve daily milestone history if effective_from is given
+                    new_daily_records = data.get("daily_records") or []
+                    existing_daily_records = existing_resp.get("daily_records") or []
+                    effective_from_val = str(data.get("effective_from") or data.get("effectiveDate") or data.get("startDate") or "").strip()[:10]
+                    if effective_from_val and existing_daily_records and new_daily_records:
+                        merged_daily = []
+                        for ed, nd in zip(existing_daily_records, new_daily_records):
+                            d_date = ed.get("date") or nd.get("date") or ""
+                            is_history = (d_date < effective_from_val) or (ed.get("status") in ["manager_approved", "approved", "submitted_to_manager"]) or bool(ed.get("kpiEntries"))
+                            merged_daily.append(ed if is_history else nd)
+                        existing_resp["daily_records"] = merged_daily
+                    elif new_daily_records:
+                        existing_resp["daily_records"] = new_daily_records
+
                     existing_resp["weekly_records"] = []
                     existing_resp["milestone_frequency"] = milestone_freq_val
                     existing_resp["status"] = "Assigned to Employee"
@@ -2461,18 +4259,76 @@ def assign_kpi_metrics():
 
             existing_records = KpiEvaluation.query.filter(*filter_conditions).order_by(KpiEvaluation.id.desc()).all()
 
+            effective_from_str = str(data.get("effective_from") or data.get("effectiveDate") or data.get("startDate") or "").strip()[:10]
+
             if existing_records:
                 record = existing_records[0]
                 # Clean up any duplicates in DB if present so strictly 1 row exists
                 for extra in existing_records[1:]:
                     db.session.delete(extra)
+
+                # Merge / slice milestone records to preserve history if effective_from is given
+                updated_metrics_data = final_metrics_data
+                if effective_from_str and isinstance(record.metrics_data, dict) and isinstance(final_metrics_data, dict):
+                    updated_metrics_data = dict(record.metrics_data)
+                    updated_metrics_data["categories"] = categories_data
+                    if data.get("template_key"):
+                        updated_metrics_data["template_key"] = data.get("template_key")
+                    if data.get("template_name"):
+                        updated_metrics_data["template_name"] = data.get("template_name")
+
+                    # 1. Daily records preservation
+                    existing_d = record.metrics_data.get("daily_records") or []
+                    new_d = final_metrics_data.get("daily_records") or []
+                    if existing_d and new_d:
+                        merged_d = []
+                        for ed, nd in zip(existing_d, new_d):
+                            d_date = ed.get("date") or nd.get("date") or ""
+                            # If milestone date is before effective_from OR already has submitted/approved score, preserve existing
+                            is_history = (d_date < effective_from_str) or (ed.get("status") in ["manager_approved", "approved", "submitted_to_manager"]) or bool(ed.get("kpiEntries"))
+                            merged_d.append(ed if is_history else nd)
+                        updated_metrics_data["daily_records"] = merged_d
+
+                    # 2. Weekly records preservation
+                    existing_w = record.metrics_data.get("weekly_records") or []
+                    new_w = final_metrics_data.get("weekly_records") or []
+                    if existing_w and new_w:
+                        merged_w = []
+                        for ew, nw in zip(existing_w, new_w):
+                            w_start = ew.get("startDate") or nw.get("startDate") or ""
+                            is_history = (w_start < effective_from_str) or (ew.get("status") in ["manager_approved", "approved", "submitted_to_manager"]) or bool(ew.get("kpiEntries"))
+                            merged_w.append(ew if is_history else nw)
+                        updated_metrics_data["weekly_records"] = merged_w
+
+                    # 3. Monthly records preservation
+                    existing_m = record.metrics_data.get("monthly_records") or []
+                    new_m = final_metrics_data.get("monthly_records") or []
+                    if existing_m and new_m:
+                        merged_m = []
+                        for em, nm in zip(existing_m, new_m):
+                            m_start = em.get("startDate") or nm.get("startDate") or ""
+                            is_history = (m_start < effective_from_str) or (em.get("status") in ["manager_approved", "approved", "submitted_to_manager"]) or bool(em.get("kpiEntries"))
+                            merged_m.append(em if is_history else nm)
+                        updated_metrics_data["monthly_records"] = merged_m
+
+                    # 4. Quarterly records preservation
+                    existing_q = record.metrics_data.get("quarterly_records") or []
+                    new_q = final_metrics_data.get("quarterly_records") or []
+                    if existing_q and new_q:
+                        merged_q = []
+                        for eq, nq in zip(existing_q, new_q):
+                            q_start = eq.get("startDate") or nq.get("startDate") or ""
+                            is_history = (q_start < effective_from_str) or (eq.get("status") in ["manager_approved", "approved", "submitted_to_manager"]) or bool(eq.get("kpiEntries"))
+                            merged_q.append(eq if is_history else nq)
+                        updated_metrics_data["quarterly_records"] = merged_q
+
                 # Update existing row with latest assigned metrics JSON, form title, and team
                 record.form = form_name
                 record.performance_metrics = form_name
                 record.description = desc_text
                 record.team_id = str(team_id) if team_id else record.team_id
                 record.team_name = team_name if team_name else record.team_name
-                record.metrics_data = final_metrics_data
+                record.metrics_data = updated_metrics_data
                 record.target_score = "100"
                 record.weightage = "100"
                 record.reporting_manager = reporting_manager if reporting_manager else record.reporting_manager
@@ -2648,6 +4504,172 @@ def assign_kpi_metrics():
     except Exception as e:
         import traceback
         traceback.print_exc()
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@performance_bp.route("/kpi-evaluations/update-deliverables-matrix", methods=["POST"])
+@auth_required
+def update_deliverables_matrix():
+    """Updates the deliverables matrix for existing evaluation records and preserving historical data."""
+    try:
+        data = request.get_json() or {}
+        categories = data.get("categories") or []
+        effective_from = str(data.get("effective_from") or data.get("effectiveDate") or "").strip()[:10]
+        employees = data.get("employees") or []
+        emp_ids = [str(e.get("employee_id") or e.get("id") or "").strip() for e in employees if str(e.get("employee_id") or e.get("id") or "").strip()]
+        
+        cycle_name = str(data.get("form") or "").strip()
+        team_id = str(data.get("team_id") or "").strip()
+        team_name = str(data.get("team_name") or "").strip()
+
+        if not categories:
+            return jsonify({"error": "Categories are required"}), 400
+        if not emp_ids:
+            return jsonify({"error": "At least one employee must be selected"}), 400
+
+        query = KpiEvaluation.query.filter(
+            KpiEvaluation.employee_id.in_(emp_ids),
+            or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None))
+        )
+        if cycle_name:
+            query = query.filter(KpiEvaluation.form == cycle_name)
+        elif team_name:
+            query = query.filter(KpiEvaluation.team_name == team_name)
+
+        matched_records = query.all()
+        if not matched_records:
+            # Fallback by employee_id alone
+            matched_records = KpiEvaluation.query.filter(
+                KpiEvaluation.employee_id.in_(emp_ids),
+                or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None))
+            ).all()
+
+        updated_count = 0
+        now = datetime.utcnow()
+        for rec in matched_records:
+            metrics_data = rec.metrics_data
+            if isinstance(metrics_data, dict):
+                updated_md = dict(metrics_data)
+
+                # ------------------------------------------------------------------
+                # ROOT CATEGORIES PROTECTION:
+                # When effective_from is set, we must NOT blindly overwrite the
+                # root-level 'categories' on the record.  The frontend falls back
+                # to root categories for any milestone that has no milestone-level
+                # categories stored.  Overwriting root categories would therefore
+                # silently change what past / approved milestones display.
+                # Strategy:
+                #   - If there is ANY started / approved history before effective_from,
+                #     preserve root categories (old ones stay as fallback for history).
+                #   - Future / empty milestones get categories injected at the
+                #     milestone level below, so they override root correctly.
+                #   - If no history exists at all, update root freely.
+                # ------------------------------------------------------------------
+                has_any_history = False
+                if effective_from:
+                    for _ww in (updated_md.get("weekly_records") or []):
+                        _ws = str(_ww.get("startDate") or "")[:10]
+                        if (_ws and _ws < effective_from) or str(_ww.get("status") or "") in ["manager_approved", "approved", "submitted_to_manager"] or bool(_ww.get("kpiEntries")):
+                            has_any_history = True
+                            break
+                if effective_from and not has_any_history:
+                    for _dd in (updated_md.get("daily_records") or []):
+                        _ds = str(_dd.get("date") or "")[:10]
+                        if (_ds and _ds < effective_from) or str(_dd.get("status") or "") in ["manager_approved", "approved", "submitted_to_manager"] or bool(_dd.get("kpiEntries")):
+                            has_any_history = True
+                            break
+                if effective_from and not has_any_history:
+                    for _mm in (updated_md.get("monthly_records") or []):
+                        _me = str(_mm.get("endDate") or "")[:10]
+                        if (_me and _me < effective_from) or str(_mm.get("status") or "") in ["manager_approved", "approved", "submitted_to_manager"] or bool(_mm.get("kpiEntries")):
+                            has_any_history = True
+                            break
+                if effective_from and not has_any_history:
+                    for _qq in (updated_md.get("quarterly_records") or []):
+                        _qe = str(_qq.get("endDate") or "")[:10]
+                        if (_qe and _qe < effective_from) or str(_qq.get("status") or "") in ["manager_approved", "approved", "submitted_to_manager"] or bool(_qq.get("kpiEntries")):
+                            has_any_history = True
+                            break
+
+                # Only update root categories when safe (no approved/started history)
+                if not effective_from or not has_any_history:
+                    updated_md["categories"] = categories
+
+                # Slicing for weekly records if effective_from given
+                if effective_from and "weekly_records" in updated_md and isinstance(updated_md["weekly_records"], list):
+                    merged_w = []
+                    for w in updated_md["weekly_records"]:
+                        w_start = str(w.get("startDate") or "")[:10]
+                        w_status = str(w.get("status") or "")
+                        # Preserve history: prior to effective_from OR approved/submitted/has entries
+                        if (w_start and w_start < effective_from) or w_status in ["manager_approved", "approved", "submitted_to_manager"] or bool(w.get("kpiEntries")):
+                            merged_w.append(w)
+                        else:
+                            # Inject new categories at milestone level so it overrides root fallback
+                            new_w = dict(w)
+                            new_w["categories"] = categories
+                            merged_w.append(new_w)
+                    updated_md["weekly_records"] = merged_w
+
+                # Slicing for daily records if effective_from given
+                if effective_from and "daily_records" in updated_md and isinstance(updated_md["daily_records"], list):
+                    merged_d = []
+                    for d in updated_md["daily_records"]:
+                        d_date = str(d.get("date") or "")[:10]
+                        d_status = str(d.get("status") or "")
+                        if (d_date and d_date < effective_from) or d_status in ["manager_approved", "approved", "submitted_to_manager"] or bool(d.get("kpiEntries")):
+                            merged_d.append(d)
+                        else:
+                            new_d = dict(d)
+                            new_d["categories"] = categories
+                            merged_d.append(new_d)
+                    updated_md["daily_records"] = merged_d
+
+                # Slicing for monthly records if effective_from given
+                if effective_from and "monthly_records" in updated_md and isinstance(updated_md["monthly_records"], list):
+                    merged_m = []
+                    for m in updated_md["monthly_records"]:
+                        m_end = str(m.get("endDate") or "")[:10]
+                        m_status = str(m.get("status") or "")
+                        if (m_end and m_end < effective_from) or m_status in ["manager_approved", "approved", "submitted_to_manager"] or bool(m.get("kpiEntries")):
+                            merged_m.append(m)
+                        else:
+                            new_m = dict(m)
+                            new_m["categories"] = categories
+                            merged_m.append(new_m)
+                    updated_md["monthly_records"] = merged_m
+
+                # Slicing for quarterly records if effective_from given
+                if effective_from and "quarterly_records" in updated_md and isinstance(updated_md["quarterly_records"], list):
+                    merged_q = []
+                    for q in updated_md["quarterly_records"]:
+                        q_end = str(q.get("endDate") or "")[:10]
+                        q_status = str(q.get("status") or "")
+                        if (q_end and q_end < effective_from) or q_status in ["manager_approved", "approved", "submitted_to_manager"] or bool(q.get("kpiEntries")):
+                            merged_q.append(q)
+                        else:
+                            new_q = dict(q)
+                            new_q["categories"] = categories
+                            merged_q.append(new_q)
+                    updated_md["quarterly_records"] = merged_q
+
+                rec.metrics_data = updated_md
+            elif isinstance(metrics_data, list):
+                rec.metrics_data = categories
+            else:
+                rec.metrics_data = categories
+
+            rec.updated_at = now
+            updated_count += 1
+
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": f"Updated deliverables matrix for {updated_count} record(s).",
+            "updated_count": updated_count
+        }), 200
+    except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 

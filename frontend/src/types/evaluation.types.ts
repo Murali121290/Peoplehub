@@ -137,6 +137,7 @@ export interface YearlyMonthRecord {
   managerScore?: number;
   employeeRemarks?: string;
   managerRemarks?: string;
+  categories?: KPICategory[];
   kpiEntries: Record<string, YearlyMonthKPIEntry>;
 }
 
@@ -155,6 +156,7 @@ export interface YearlyWeekRecord {
   managerScore?: number;
   employeeRemarks?: string;
   managerRemarks?: string;
+  categories?: KPICategory[];
   kpiEntries: Record<string, YearlyMonthKPIEntry>;
 }
 
@@ -170,6 +172,7 @@ export interface YearlyDailyRecord {
   managerScore?: number;
   employeeRemarks?: string;
   managerRemarks?: string;
+  categories?: KPICategory[];
   kpiEntries: Record<string, YearlyMonthKPIEntry>;
 }
 
@@ -190,6 +193,7 @@ export interface YearlyQuarterRecord {
   managerScore?: number;
   employeeRemarks?: string;
   managerRemarks?: string;
+  categories?: KPICategory[];
   kpiEntries: Record<string, YearlyMonthKPIEntry>;
 }
 
