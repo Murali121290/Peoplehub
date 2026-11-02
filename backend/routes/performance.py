@@ -1691,38 +1691,49 @@ def export_rankings_matrix():
                         except Exception:
                             pass
 
-            # 3. Process periodic / monthly / quarterly / annual evaluations
-            # If evaluation period overlaps with requested period (e.g. October monthly, Q3 quarterly)
-            from_d = ke.from_date
-            to_d = ke.to_date
-            if from_d and to_d and not (to_d < start_date or from_d > end_date):
-                eff_to = min(to_d, end_date)
-                if eff_to < end_date and to_d.month == end_date.month and to_d.year == end_date.year:
-                    eff_to = end_date
+            # 3. Process periodic / single-milestone evaluations ONLY when no daily/weekly/monthly sub-records exist
+            has_sub_records = bool(daily_recs or weekly_recs or (isinstance(m_data, dict) and m_data.get('monthly_records')))
+            if not has_sub_records:
+                # 3. Process periodic / monthly / quarterly / annual evaluations
+                # If evaluation period overlaps with requested period (e.g. October monthly, Q3 quarterly)
+                from_d = ke.from_date
+                to_d = ke.to_date
+                if from_d and to_d and not (to_d < start_date or from_d > end_date):
+                    eff_to = min(to_d, end_date)
+                    if eff_to < end_date and to_d.month == end_date.month and to_d.year == end_date.year:
+                        eff_to = end_date
 
-                st = str(ke.status or "").lower().strip()
-                mgr_sc = ke.manager_score
-                emp_sc = ke.employee_overall_score
-                is_appr = (st in ["manager_approved", "approved", "completed"]) or (mgr_sc is not None and float(mgr_sc) > 0)
-                is_subm = (st in ["submitted_to_manager", "submitted", "manager_review"]) or ("submit" in st)
+                    st = str(ke.status or "").lower().strip()
+                    mgr_sc = ke.manager_score
+                    emp_sc = ke.employee_overall_score
+                    is_appr = (st in ["manager_approved", "approved", "completed"]) or (mgr_sc is not None and float(mgr_sc) > 0)
+                    is_subm = (st in ["submitted_to_manager", "submitted", "manager_review"]) or ("submit" in st)
 
-                if is_appr:
-                    period_val = round(float(mgr_sc if mgr_sc is not None else emp_sc or 0), 2)
-                elif is_subm:
-                    period_val = "Approval needed"
-                else:
-                    period_val = "Not Filled"
+                    if is_appr:
+                        period_val = round(float(mgr_sc if mgr_sc is not None else emp_sc or 0), 2)
+                    elif is_subm:
+                        period_val = "Approval needed"
+                    else:
+                        period_val = "Not Filled"
 
+                    for d_str in date_cols:
+                        try:
+                            dt = date.fromisoformat(d_str)
+                            if from_d <= dt <= eff_to:
+                                # Set if no score yet or currently Not Filled
+                                cur_val = emp_rec["daily_scores"].get(d_str)
+                                if cur_val is None or cur_val == "" or (cur_val == "Not Filled" and period_val != "Not Filled"):
+                                    emp_rec["daily_scores"][d_str] = period_val
+                        except Exception:
+                            pass
+
+
+        # Fill any remaining unassigned dates in date_cols as Not Filled
+        for t_k, m_list in emp_records_by_team.items():
+            for m in m_list:
                 for d_str in date_cols:
-                    try:
-                        dt = date.fromisoformat(d_str)
-                        if from_d <= dt <= eff_to:
-                            # Set if no score yet or currently Not Filled
-                            cur_val = emp_rec["daily_scores"].get(d_str)
-                            if cur_val is None or cur_val == "" or (cur_val == "Not Filled" and period_val != "Not Filled"):
-                                emp_rec["daily_scores"][d_str] = period_val
-                    except Exception:
-                        pass
+                    if d_str not in m['daily_scores']:
+                        m['daily_scores'][d_str] = 'Not Filled'
 
         # Initialize Workbook with Executive Teal UI styling matching previous export
         wb = Workbook()
