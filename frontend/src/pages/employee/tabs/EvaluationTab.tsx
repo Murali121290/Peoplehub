@@ -11642,7 +11642,7 @@ export const EvaluationTab: React.FC = () => {
         try {
           const errData = await res.json();
           if (errData && errData.error) errMessage = errData.error;
-        } catch {}
+        } catch { }
         showAlert(errMessage, "Export Failed", "danger");
         return;
       }
@@ -11728,10 +11728,10 @@ export const EvaluationTab: React.FC = () => {
       const cadenceLabel = exportPeriodType === 'weekly'
         ? `W${exportWeek}_M${exportMonth}`
         : exportPeriodType === 'quarterly'
-        ? `Q${exportQuarter}`
-        : exportPeriodType === 'yearly'
-        ? `FY${exportYear}-${exportYear + 1}`
-        : `M${exportMonth}`;
+          ? `Q${exportQuarter}`
+          : exportPeriodType === 'yearly'
+            ? `FY${exportYear}-${exportYear + 1}`
+            : `M${exportMonth}`;
       a.download = `Productivity_Report_${exportPeriodType.toUpperCase()}_${cadenceLabel}_${exportYear}.xlsx`;
       document.body.appendChild(a);
       a.click();
@@ -15701,23 +15701,23 @@ export const EvaluationTab: React.FC = () => {
                                         <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
                                       </button>
                                       <button
-                                      type="button"
-                                      onClick={() => handleYearlyDailySubmit(activeYearlyDailyIndex)}
-                                      disabled={isSubmittingEmp || isSavingDraft}
-                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
-                                    >
-                                      {isSubmittingEmp ? (
-                                        <>
-                                          <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                                          <span>Submitting {dayLabel}...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <CheckCircleIcon className="w-4 h-4" />
-                                          <span>Submit {dayLabel} Deliverables to Manager</span>
-                                        </>
-                                      )}
-                                    </button>
+                                        type="button"
+                                        onClick={() => handleYearlyDailySubmit(activeYearlyDailyIndex)}
+                                        disabled={isSubmittingEmp || isSavingDraft}
+                                        className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
+                                      >
+                                        {isSubmittingEmp ? (
+                                          <>
+                                            <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                            <span>Submitting {dayLabel}...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <CheckCircleIcon className="w-4 h-4" />
+                                            <span>Submit {dayLabel} Deliverables to Manager</span>
+                                          </>
+                                        )}
+                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -15815,23 +15815,23 @@ export const EvaluationTab: React.FC = () => {
                                         <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
                                       </button>
                                       <button
-                                      type="button"
-                                      onClick={() => handleYearlyQuarterSubmit(activeYearlyQuarterIndex)}
-                                      disabled={isSubmittingEmp || isSavingDraft}
-                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
-                                    >
-                                      {isSubmittingEmp ? (
-                                        <>
-                                          <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                                          <span>Submitting {quarterName}...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <CheckCircleIcon className="w-4 h-4" />
-                                          <span>Submit {quarterName} Deliverables to Manager</span>
-                                        </>
-                                      )}
-                                    </button>
+                                        type="button"
+                                        onClick={() => handleYearlyQuarterSubmit(activeYearlyQuarterIndex)}
+                                        disabled={isSubmittingEmp || isSavingDraft}
+                                        className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
+                                      >
+                                        {isSubmittingEmp ? (
+                                          <>
+                                            <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                            <span>Submitting {quarterName}...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <CheckCircleIcon className="w-4 h-4" />
+                                            <span>Submit {quarterName} Deliverables to Manager</span>
+                                          </>
+                                        )}
+                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -15932,23 +15932,23 @@ export const EvaluationTab: React.FC = () => {
                                         <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
                                       </button>
                                       <button
-                                      type="button"
-                                      onClick={() => handleYearlyWeekSubmit(activeYearlyWeekIndex)}
-                                      disabled={isSubmittingEmp || isSavingDraft}
-                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
-                                    >
-                                      {isSubmittingEmp ? (
-                                        <>
-                                          <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                                          <span>Submitting {weekLabel}...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <CheckCircleIcon className="w-4 h-4" />
-                                          <span>Submit {weekLabel} Deliverables to Manager</span>
-                                        </>
-                                      )}
-                                    </button>
+                                        type="button"
+                                        onClick={() => handleYearlyWeekSubmit(activeYearlyWeekIndex)}
+                                        disabled={isSubmittingEmp || isSavingDraft}
+                                        className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
+                                      >
+                                        {isSubmittingEmp ? (
+                                          <>
+                                            <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                            <span>Submitting {weekLabel}...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <CheckCircleIcon className="w-4 h-4" />
+                                            <span>Submit {weekLabel} Deliverables to Manager</span>
+                                          </>
+                                        )}
+                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -16000,51 +16000,51 @@ export const EvaluationTab: React.FC = () => {
 
                             return (
                               <div className="flex items-center gap-2.5 self-end sm:self-auto flex-nowrap shrink-0">
-                                  {currentActiveCatIdx > 0 && !allCatsOpen && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
-                                        const prevCat = filteredCategories[prevIdx];
-                                        if (prevCat) {
-                                          setExpandedCategories({ [prevCat.id]: true });
-                                        }
-                                      }}
-                                      className="inline-flex items-center justify-center gap-1.5 h-11 px-4 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-semibold shadow-xs transition-all duration-150 cursor-pointer select-none shrink-0"
-                                    >
-                                      <ArrowLeftIcon className="w-3.5 h-3.5" />
-                                      <span>Previous</span>
-                                    </button>
-                                  )}
+                                {currentActiveCatIdx > 0 && !allCatsOpen && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
+                                      const prevCat = filteredCategories[prevIdx];
+                                      if (prevCat) {
+                                        setExpandedCategories({ [prevCat.id]: true });
+                                      }
+                                    }}
+                                    className="inline-flex items-center justify-center gap-1.5 h-11 px-4 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-semibold shadow-xs transition-all duration-150 cursor-pointer select-none shrink-0"
+                                  >
+                                    <ArrowLeftIcon className="w-3.5 h-3.5" />
+                                    <span>Previous</span>
+                                  </button>
+                                )}
 
-                                  {!isLastCategory ? (
+                                {!isLastCategory ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
+                                      const nextCat = filteredCategories[nextIdx];
+                                      if (nextCat) {
+                                        setExpandedCategories({ [nextCat.id]: true });
+                                      }
+                                    }}
+                                    className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 transition-all duration-150 cursor-pointer select-none shrink-0"
+                                  >
+                                    <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
+                                    <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
+                                  </button>
+                                ) : (
+                                  <div className="inline-flex items-center gap-2.5 flex-nowrap shrink-0">
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
-                                        const nextCat = filteredCategories[nextIdx];
-                                        if (nextCat) {
-                                          setExpandedCategories({ [nextCat.id]: true });
-                                        }
-                                      }}
-                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 transition-all duration-150 cursor-pointer select-none shrink-0"
+                                      onClick={handleEmployeeSaveMilestoneDraft}
+                                      disabled={isSubmittingEmp || isSavingDraft}
+                                      className="inline-flex items-center justify-center gap-2 h-11 px-5 bg-white hover:bg-teal-50/80 active:bg-teal-100/60 text-teal-700 hover:text-teal-900 border border-teal-300 hover:border-teal-400 rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
+                                      title="Save your entered values as draft without submitting to manager"
                                     >
-                                      <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
-                                      <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
+                                      {isSavingDraft ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin text-teal-600" /> : <ClipboardDocumentCheckIcon className="w-3.5 h-3.5 text-teal-600" />}
+                                      <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
                                     </button>
-                                  ) : (
-                                    <div className="inline-flex items-center gap-2.5 flex-nowrap shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={handleEmployeeSaveMilestoneDraft}
-                                        disabled={isSubmittingEmp || isSavingDraft}
-                                        className="inline-flex items-center justify-center gap-2 h-11 px-5 bg-white hover:bg-teal-50/80 active:bg-teal-100/60 text-teal-700 hover:text-teal-900 border border-teal-300 hover:border-teal-400 rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
-                                        title="Save your entered values as draft without submitting to manager"
-                                      >
-                                        {isSavingDraft ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin text-teal-600" /> : <ClipboardDocumentCheckIcon className="w-3.5 h-3.5 text-teal-600" />}
-                                        <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
-                                      </button>
-                                      <button
+                                    <button
                                       type="button"
                                       onClick={() => handleYearlyMonthSubmit(activeYearlyFiscalMonth)}
                                       disabled={isSubmittingEmp || isSavingDraft}
@@ -16062,9 +16062,9 @@ export const EvaluationTab: React.FC = () => {
                                         </>
                                       )}
                                     </button>
-                                    </div>
-                                  )}
-                                </div>
+                                  </div>
+                                )}
+                              </div>
                             );
                           })() : (
                             isEmpSubmitted ? (
@@ -16137,23 +16137,23 @@ export const EvaluationTab: React.FC = () => {
                                         <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
                                       </button>
                                       <button
-                                      type="button"
-                                      onClick={handleEmployeeSubmit}
-                                      disabled={isSubmittingEmp || isSavingDraft}
-                                      className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
-                                    >
-                                      {isSubmittingEmp ? (
-                                        <>
-                                          <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                                          <span>Submitting...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <CheckCircleIcon className="w-4 h-4" />
-                                          <span>Submit Self-Assessment</span>
-                                        </>
-                                      )}
-                                    </button>
+                                        type="button"
+                                        onClick={handleEmployeeSubmit}
+                                        disabled={isSubmittingEmp || isSavingDraft}
+                                        className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/15 hover:shadow-lg hover:shadow-teal-900/20 transition-all duration-150 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none shrink-0"
+                                      >
+                                        {isSubmittingEmp ? (
+                                          <>
+                                            <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                            <span>Submitting...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <CheckCircleIcon className="w-4 h-4" />
+                                            <span>Submit Self-Assessment</span>
+                                          </>
+                                        )}
+                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -18074,9 +18074,9 @@ export const EvaluationTab: React.FC = () => {
                               className="w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20 transition cursor-pointer"
                             >
                               <option value="yearly">⚡ Automatically Assign Milestones (Yearly Rollout)</option>
-                              {/* <option value="quarterly">Quarterly</option>
+                              <option value="quarterly">Quarterly</option>
                               <option value="monthly">Monthly</option>
-                              <option value="weekly">Weekly</option> */}
+                              <option value="weekly">Weekly</option>
                             </select>
                           </div>
 
@@ -19686,51 +19686,51 @@ export const EvaluationTab: React.FC = () => {
                                   (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
                                 );
                               }) || teamGroup.members.map(m => cycles.find(c => c.id === m.response?.cycleId)).find(Boolean)
-                              || teamGroup.members.map(m => {
-                                const mCode = String(m.employeeCode || m.response?.employeeId || '').toLowerCase();
-                                return cycles.find(c => (c.employeeIds || []).some(id => String(id).toLowerCase() === mCode));
-                              }).find(Boolean)
-                              || (() => {
-                                const memberWithResp = teamGroup.members.find(m =>
-                                  m.response && (
-                                    (Array.isArray((m.response as any).categories) && (m.response as any).categories.length > 0) ||
-                                    (m.response.kpiResponses && Object.keys(m.response.kpiResponses).length > 0) ||
-                                    m.response.status === 'approved' ||
-                                    m.response.managerScore != null ||
-                                    Boolean((m.response as any).monthly_records) ||
-                                    Boolean((m.response as any).daily_records) ||
-                                    Boolean((m.response as any).weekly_records) ||
-                                    Boolean((m.response as any).quarterly_records)
-                                  )
-                                );
-                                if (memberWithResp?.response) {
-                                  const r = memberWithResp.response;
-                                  const rCats = (r as any).categories || (r as any).metrics_data?.categories || [];
-                                  return {
-                                    id: r.cycleId || `cycle_team_${teamGroup.teamName.toLowerCase().replace(/\s+/g, '_')}`,
-                                    name: (r as any).form || `${teamGroup.teamName} Performance Metrics`,
-                                    form: (r as any).form || `${teamGroup.teamName} Performance Metrics`,
-                                    frequency: (r as any).frequency || getResponseCadence(r) || 'monthly',
-                                    startDate: (r as any).startDate || '',
-                                    endDate: (r as any).endDate || '',
-                                    periodName: (r as any).periodName || (r as any).form || '',
-                                    description: (r as any).description || `Evaluation matrix for ${teamGroup.teamName}`,
-                                    teamId: r.teamId || teamGroup.teamName,
-                                    teamName: teamGroup.teamName,
-                                    managerId: (r as any).reporting_manager_id || (r as any).managerId || '',
-                                    managerName: (r as any).reporting_manager || (r as any).managerName || '',
-                                    serviceManagerId: '',
-                                    serviceManagerName: '',
-                                    categories: rCats,
-                                    employeeIds: teamGroup.members.map(m => String(m.employeeCode || m.response?.employeeId)),
-                                    isActive: true,
-                                    status: 'active',
-                                    createdAt: (r as any).createdAt || (r as any).created_at || new Date().toISOString(),
-                                    updatedAt: (r as any).updatedAt || (r as any).updated_at || new Date().toISOString()
-                                  } as unknown as EvaluationCycle;
-                                }
-                                return undefined;
-                              })();
+                                || teamGroup.members.map(m => {
+                                  const mCode = String(m.employeeCode || m.response?.employeeId || '').toLowerCase();
+                                  return cycles.find(c => (c.employeeIds || []).some(id => String(id).toLowerCase() === mCode));
+                                }).find(Boolean)
+                                || (() => {
+                                  const memberWithResp = teamGroup.members.find(m =>
+                                    m.response && (
+                                      (Array.isArray((m.response as any).categories) && (m.response as any).categories.length > 0) ||
+                                      (m.response.kpiResponses && Object.keys(m.response.kpiResponses).length > 0) ||
+                                      m.response.status === 'approved' ||
+                                      m.response.managerScore != null ||
+                                      Boolean((m.response as any).monthly_records) ||
+                                      Boolean((m.response as any).daily_records) ||
+                                      Boolean((m.response as any).weekly_records) ||
+                                      Boolean((m.response as any).quarterly_records)
+                                    )
+                                  );
+                                  if (memberWithResp?.response) {
+                                    const r = memberWithResp.response;
+                                    const rCats = (r as any).categories || (r as any).metrics_data?.categories || [];
+                                    return {
+                                      id: r.cycleId || `cycle_team_${teamGroup.teamName.toLowerCase().replace(/\s+/g, '_')}`,
+                                      name: (r as any).form || `${teamGroup.teamName} Performance Metrics`,
+                                      form: (r as any).form || `${teamGroup.teamName} Performance Metrics`,
+                                      frequency: (r as any).frequency || getResponseCadence(r) || 'monthly',
+                                      startDate: (r as any).startDate || '',
+                                      endDate: (r as any).endDate || '',
+                                      periodName: (r as any).periodName || (r as any).form || '',
+                                      description: (r as any).description || `Evaluation matrix for ${teamGroup.teamName}`,
+                                      teamId: r.teamId || teamGroup.teamName,
+                                      teamName: teamGroup.teamName,
+                                      managerId: (r as any).reporting_manager_id || (r as any).managerId || '',
+                                      managerName: (r as any).reporting_manager || (r as any).managerName || '',
+                                      serviceManagerId: '',
+                                      serviceManagerName: '',
+                                      categories: rCats,
+                                      employeeIds: teamGroup.members.map(m => String(m.employeeCode || m.response?.employeeId)),
+                                      isActive: true,
+                                      status: 'active',
+                                      createdAt: (r as any).createdAt || (r as any).created_at || new Date().toISOString(),
+                                      updatedAt: (r as any).updatedAt || (r as any).updated_at || new Date().toISOString()
+                                    } as unknown as EvaluationCycle;
+                                  }
+                                  return undefined;
+                                })();
 
                               const cycleLockedInfo = getCycleLockedInfo(teamCycle);
 
@@ -20191,11 +20191,10 @@ export const EvaluationTab: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setSubmissionGroupBy('team')}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
-                          submissionGroupBy === 'team'
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${submissionGroupBy === 'team'
                             ? 'bg-white text-teal-800 shadow-xs'
                             : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'
-                        }`}
+                          }`}
                       >
                         <BuildingOffice2Icon className="w-3.5 h-3.5" />
                         <span>By Teams</span>
@@ -20203,11 +20202,10 @@ export const EvaluationTab: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setSubmissionGroupBy('manager')}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
-                          submissionGroupBy === 'manager'
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${submissionGroupBy === 'manager'
                             ? 'bg-white text-teal-800 shadow-xs'
                             : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'
-                        }`}
+                          }`}
                       >
                         <UserGroupIcon className="w-3.5 h-3.5" />
                         <span>By Reporting Manager</span>
@@ -20683,10 +20681,10 @@ export const EvaluationTab: React.FC = () => {
                         const defaultCadence = reportViewTab === 'top_weekly'
                           ? 'weekly'
                           : reportViewTab === 'top_quarterly'
-                          ? 'quarterly'
-                          : reportViewTab === 'top_annual'
-                          ? 'yearly'
-                          : 'monthly';
+                            ? 'quarterly'
+                            : reportViewTab === 'top_annual'
+                              ? 'yearly'
+                              : 'monthly';
                         setRankingsExportCadence(defaultCadence as any);
                         setIsRankingsExportModalOpen(true);
                       }}
@@ -22307,10 +22305,10 @@ export const EvaluationTab: React.FC = () => {
                                           <div className="flex flex-col items-center justify-center gap-1">
                                             <label
                                               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all select-none text-xs font-semibold ${isWaived
-                                                  ? 'bg-teal-600 text-white border-teal-700 shadow-xs ring-2 ring-teal-300/40 cursor-pointer'
-                                                  : hasGap
-                                                    ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-2xs cursor-pointer'
-                                                    : 'bg-slate-100/80 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                                                ? 'bg-teal-600 text-white border-teal-700 shadow-xs ring-2 ring-teal-300/40 cursor-pointer'
+                                                : hasGap
+                                                  ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-2xs cursor-pointer'
+                                                  : 'bg-slate-100/80 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
                                                 }`}
                                               title={
                                                 !hasGap
@@ -22904,33 +22902,30 @@ export const EvaluationTab: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setMgrEditMemberFilterTab('all')}
-                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                              mgrEditMemberFilterTab === 'all'
+                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${mgrEditMemberFilterTab === 'all'
                                 ? 'bg-white text-slate-900 shadow-2xs'
                                 : 'text-slate-600 hover:text-slate-900'
-                            }`}
+                              }`}
                           >
                             All ({teamMembers.length})
                           </button>
                           <button
                             type="button"
                             onClick={() => setMgrEditMemberFilterTab('selected')}
-                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                              mgrEditMemberFilterTab === 'selected'
+                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${mgrEditMemberFilterTab === 'selected'
                                 ? 'bg-teal-600 text-white shadow-2xs'
                                 : 'text-slate-600 hover:text-slate-900'
-                            }`}
+                              }`}
                           >
                             Selected ({activeSelectedCount})
                           </button>
                           <button
                             type="button"
                             onClick={() => setMgrEditMemberFilterTab('unselected')}
-                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                              mgrEditMemberFilterTab === 'unselected'
+                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${mgrEditMemberFilterTab === 'unselected'
                                 ? 'bg-white text-slate-900 shadow-2xs'
                                 : 'text-slate-600 hover:text-slate-900'
-                            }`}
+                              }`}
                           >
                             Excluded ({unselectedCount})
                           </button>
@@ -22962,11 +22957,10 @@ export const EvaluationTab: React.FC = () => {
                             type="button"
                             onClick={toggleAll}
                             disabled={assignableIds.length === 0}
-                            className={`h-8 px-3 text-xs font-semibold rounded-xl border shadow-2xs transition shrink-0 cursor-pointer ${
-                              assignableIds.length === 0
+                            className={`h-8 px-3 text-xs font-semibold rounded-xl border shadow-2xs transition shrink-0 cursor-pointer ${assignableIds.length === 0
                                 ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
                                 : 'bg-white hover:bg-teal-50 text-teal-700 border-teal-200'
-                            }`}
+                              }`}
                           >
                             {isAllSelected ? 'Deselect All' : 'Select All'}
                           </button>
@@ -22993,13 +22987,12 @@ export const EvaluationTab: React.FC = () => {
                                 key={empId}
                                 onClick={() => toggleOne(empId, isBlocked)}
                                 title={isBlocked ? (status?.reason || 'Evaluation already approved for this period.') : `Click to ${isSelected ? 'deselect' : 'select'}`}
-                                className={`flex items-center justify-between gap-2 p-2.5 rounded-2xl border transition select-none ${
-                                  isBlocked
+                                className={`flex items-center justify-between gap-2 p-2.5 rounded-2xl border transition select-none ${isBlocked
                                     ? 'bg-slate-50/70 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
                                     : isSelected
                                       ? 'bg-teal-50/70 border-teal-400 ring-1 ring-teal-500/20 shadow-xs cursor-pointer'
                                       : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs cursor-pointer text-slate-700'
-                                }`}
+                                  }`}
                               >
                                 <div className="min-w-0 flex-1">
                                   <div className={`text-xs truncate font-medium ${isBlocked ? 'text-slate-400' : isSelected ? 'text-slate-900 font-bold' : 'text-slate-800'}`}>
@@ -23649,14 +23642,14 @@ export const EvaluationTab: React.FC = () => {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-base font-bold text-slate-800">Download Rankings Report</h3>
                     <span className="px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200 text-[11px] font-bold">
-                      {rankingsExportCadence === 'monthly' && `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][rankingsExportMonth - 1]} ${rankingsExportYear}`}
-                      {rankingsExportCadence === 'weekly' && `Week ${rankingsExportWeek} - ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][rankingsExportMonth - 1]} ${rankingsExportYear}`}
+                      {rankingsExportCadence === 'monthly' && `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][rankingsExportMonth - 1]} ${rankingsExportYear}`}
+                      {rankingsExportCadence === 'weekly' && `Week ${rankingsExportWeek} - ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][rankingsExportMonth - 1]} ${rankingsExportYear}`}
                       {rankingsExportCadence === 'quarterly' && `Q${rankingsExportQuarter} (FY ${rankingsExportYear}-${rankingsExportYear + 1})`}
                       {rankingsExportCadence === 'yearly' && `FY ${rankingsExportYear}-${rankingsExportYear + 1}`}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Selected: <span className="font-semibold text-slate-700">{rankingsExportCadence === 'monthly' ? `${['January','February','March','April','May','June','July','August','September','October','November','December'][rankingsExportMonth - 1]} ${rankingsExportYear}` : rankingsExportCadence === 'weekly' ? `Week ${rankingsExportWeek} of ${['January','February','March','April','May','June','July','August','September','October','November','December'][rankingsExportMonth - 1]} ${rankingsExportYear}` : rankingsExportCadence === 'quarterly' ? `Q${rankingsExportQuarter} (FY ${rankingsExportYear}-${rankingsExportYear + 1})` : `FY ${rankingsExportYear}-${rankingsExportYear + 1}`}</span> • Team: <span className="font-semibold text-teal-700">{rankingsExportTeam === 'all' ? 'All Teams' : rankingsExportTeam}</span>
+                    Selected: <span className="font-semibold text-slate-700">{rankingsExportCadence === 'monthly' ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][rankingsExportMonth - 1]} ${rankingsExportYear}` : rankingsExportCadence === 'weekly' ? `Week ${rankingsExportWeek} of ${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][rankingsExportMonth - 1]} ${rankingsExportYear}` : rankingsExportCadence === 'quarterly' ? `Q${rankingsExportQuarter} (FY ${rankingsExportYear}-${rankingsExportYear + 1})` : `FY ${rankingsExportYear}-${rankingsExportYear + 1}`}</span> • Team: <span className="font-semibold text-teal-700">{rankingsExportTeam === 'all' ? 'All Teams' : rankingsExportTeam}</span>
                   </p>
                 </div>
               </div>
@@ -23688,11 +23681,10 @@ export const EvaluationTab: React.FC = () => {
                         key={tab.id}
                         type="button"
                         onClick={() => setRankingsExportCadence(tab.id as any)}
-                        className={`py-2 px-2 rounded-lg font-bold text-xs transition cursor-pointer text-center ${
-                          isSel
+                        className={`py-2 px-2 rounded-lg font-bold text-xs transition cursor-pointer text-center ${isSel
                             ? 'bg-white text-teal-800 shadow-xs border border-teal-100'
                             : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                        }`}
+                          }`}
                       >
                         {tab.label}
                       </button>
@@ -23964,11 +23956,10 @@ export const EvaluationTab: React.FC = () => {
                         key={tab.id}
                         type="button"
                         onClick={() => setExportPeriodType(tab.id as any)}
-                        className={`py-2 px-2 rounded-lg font-bold text-xs transition cursor-pointer text-center ${
-                          isSel
+                        className={`py-2 px-2 rounded-lg font-bold text-xs transition cursor-pointer text-center ${isSel
                             ? 'bg-white text-emerald-700 shadow-xs border border-emerald-100'
                             : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                        }`}
+                          }`}
                       >
                         {tab.label}
                       </button>
@@ -24168,7 +24159,7 @@ export const EvaluationTab: React.FC = () => {
         </div>
       )}
 
-{/* Website Confirmation & Alert Dialog */}
+      {/* Website Confirmation & Alert Dialog */}
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}
         title={confirmDialog.title}
