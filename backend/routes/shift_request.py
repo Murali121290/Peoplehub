@@ -100,7 +100,7 @@ def apply_shift():
         # Check if auto_approve is requested for a Flexible or PM employee
         is_auto_approve_requested = (data.get("auto_approve") is True or str(data.get("auto_approve", "")).lower() == "true")
         emp_mode_str = (employee.work_mode or "").strip().lower() if employee else ""
-        is_flexible_employee = bool(employee and emp_mode_str in ("flexible", "pm"))
+        is_flexible_employee = bool(employee and emp_mode_str in ("flexible", "pm", "hybrid"))
         is_flexible_auto_approve = is_auto_approve_requested and is_flexible_employee
 
         if employee:

@@ -832,7 +832,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
         }
 
         const todayStr = new Date().toLocaleDateString("en-CA");
-        const targetWorkMode = directMode || (wantsToChangeMode ? "WFH" : "Office");
+        const targetWorkMode = directMode || (wantsToChangeMode ? "WFH" : (currentEmployee?.work_mode || "Flexible"));
 
         const payload = {
           employee_id: currentEmployee.employee_id || currentEmployee.id,

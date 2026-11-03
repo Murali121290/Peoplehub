@@ -99,6 +99,9 @@ def get_effective_work_mode(employee, today_date=None) -> str:
     for today (or requested_work_mode is WFH), this returns 'WFH' so they are
     allowed to check in, start/stop lunch, start/stop tea break, pause timesheet,
     and check out from their home network without office network restrictions.
+    For employees whose base profile is Flexible, PM, or Hybrid, they are inherently
+    allowed remote network access, so checking in at the office does not strip their
+    remote check-out or break privileges.
     """
     if not employee:
         return "Office"
@@ -119,13 +122,24 @@ def get_effective_work_mode(employee, today_date=None) -> str:
     ).order_by(ShiftRequest.created_at.desc()).first()
 
     effective_work_mode = (employee.work_mode or "Office").strip()
+    emp_base_mode = (employee.work_mode or "").strip().lower()
+    is_flexible_profile = emp_base_mode in ("flexible", "pm", "hybrid")
+
     if approved_request:
-        if approved_request.requested_work_mode:
-            effective_work_mode = approved_request.requested_work_mode.strip()
-        elif (approved_request.request_type or "").strip().upper() == "WFH":
+        req_mode = (approved_request.requested_work_mode or "").strip()
+        req_type = (approved_request.request_type or "").strip().upper()
+
+        if req_mode.upper() == "WFH" or req_type == "WFH":
             effective_work_mode = "WFH"
-        elif (approved_request.request_type or "").strip().upper() == "OFFICE":
-            effective_work_mode = "Office"
+        elif req_mode.lower() == "office" or req_type == "OFFICE":
+            # For inherently flexible/PM/hybrid employees, office-tagged attendance
+            # documents office presence but does not lock them to the office LAN.
+            if is_flexible_profile:
+                effective_work_mode = employee.work_mode.strip()
+            else:
+                effective_work_mode = "Office"
+        elif req_mode:
+            effective_work_mode = req_mode
     return effective_work_mode
 
 
@@ -197,7 +211,10 @@ def check_in():
             elif (approved_request.request_type or "").strip().upper() == "OFFICE":
                 effective_work_mode = "Office"
 
-        if effective_work_mode.lower() == "office":
+        emp_base_mode = (employee.work_mode or "").strip().lower() if employee else ""
+        is_flexible_employee = emp_base_mode in ("flexible", "pm", "hybrid")
+
+        if effective_work_mode.lower() == "office" and not is_flexible_employee:
             if not is_office_network(client_ip):
                 return jsonify({
                     "success": False,
@@ -486,8 +503,13 @@ def check_out():
         payload_ip = (data.get("client_ip") or "").strip()
         checkout_ip = payload_ip if payload_ip else get_client_ip()
 
-        effective_work_mode = get_effective_work_mode(employee, get_ist_today()) if employee else "Office"
-        if effective_work_mode.lower() == "office":
+        # Use the attendance record's original date if available (handles post-midnight checkouts)
+        att_date = attendance.attendance_date if attendance and attendance.attendance_date else get_ist_today()
+        effective_work_mode = get_effective_work_mode(employee, att_date) if employee else "Office"
+        emp_base_mode = (employee.work_mode or "").strip().lower() if employee else ""
+        is_flexible_employee = emp_base_mode in ("flexible", "pm", "hybrid")
+
+        if effective_work_mode.lower() == "office" and not is_flexible_employee:
             if not is_office_network(checkout_ip):
                 return jsonify({
                     "success": False,
@@ -496,8 +518,8 @@ def check_out():
 
         attendance.check_out_ip = checkout_ip
 
-        # IP Mismatch check (Option B) - Only enforced for Office mode employees (ignore WFH & Hybrid)
-        is_office_mode = (effective_work_mode.lower() == "office")
+        # IP Mismatch check (Option B) - Only enforced for strict Office mode employees (ignore WFH, Flexible & Hybrid)
+        is_office_mode = (effective_work_mode.lower() == "office") and not is_flexible_employee
 
         check_in_ip = attendance.check_in_ip
         if is_office_mode and check_in_ip and check_in_ip != checkout_ip:
@@ -1022,7 +1044,9 @@ def lunch_break():
         employee = Employee.query.filter_by(user_id=data.get("user_id")).first()
         if employee:
             effective_mode = get_effective_work_mode(employee, get_ist_today())
-            if effective_mode.lower() == "office":
+            emp_base_mode = (employee.work_mode or "").strip().lower()
+            is_flexible_employee = emp_base_mode in ("flexible", "pm", "hybrid")
+            if effective_mode.lower() == "office" and not is_flexible_employee:
                 payload_ip = (data.get("client_ip") or "").strip()
                 client_ip = payload_ip if payload_ip else get_client_ip()
                 if not is_office_network(client_ip):
@@ -1144,7 +1168,9 @@ def tea_break():
         employee = Employee.query.filter_by(user_id=data.get("user_id")).first()
         if employee:
             effective_mode = get_effective_work_mode(employee, get_ist_today())
-            if effective_mode.lower() == "office":
+            emp_base_mode = (employee.work_mode or "").strip().lower()
+            is_flexible_employee = emp_base_mode in ("flexible", "pm", "hybrid")
+            if effective_mode.lower() == "office" and not is_flexible_employee:
                 payload_ip = (data.get("client_ip") or "").strip()
                 client_ip = payload_ip if payload_ip else get_client_ip()
                 if not is_office_network(client_ip):
@@ -1278,7 +1304,9 @@ def pause_attendance():
         employee = Employee.query.filter_by(user_id=data.get("user_id")).first()
         if employee:
             effective_mode = get_effective_work_mode(employee, get_ist_today())
-            if effective_mode.lower() == "office":
+            emp_base_mode = (employee.work_mode or "").strip().lower()
+            is_flexible_employee = emp_base_mode in ("flexible", "pm", "hybrid")
+            if effective_mode.lower() == "office" and not is_flexible_employee:
                 payload_ip = (data.get("client_ip") or "").strip()
                 client_ip = payload_ip if payload_ip else get_client_ip()
                 if not is_office_network(client_ip):
