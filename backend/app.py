@@ -21,7 +21,7 @@ if "localhost" in redis_env or "127.0.0.1" in redis_env or not redis_env:
 
 
 # Import models & database
-from models.database import init_db, engine, db_session
+from models.database import init_db, engine, db_session, POOL_SIZE, MAX_OVERFLOW
 # pyrefly: ignore [missing-import]
 from sqlalchemy import text
 from utils.uploads import get_uploads_dir, ensure_upload_dir
@@ -93,7 +93,7 @@ def create_app():
     async def _raise_threadpool_limit():
         import anyio
         import asyncio
-        anyio.to_thread.current_default_thread_limiter().total_tokens = 100
+        anyio.to_thread.current_default_thread_limiter().total_tokens = POOL_SIZE + MAX_OVERFLOW
         socketio.main_loop = asyncio.get_running_loop()
 
 
@@ -171,6 +171,8 @@ def create_app():
                 print(f"[Scheduler] Monthly leave credit: {result}")
             except Exception as e:
                 print(f"[Scheduler] Monthly leave credit error: {e}")
+            finally:
+                db_session.remove()
 
         scheduler.add_job(
             run_monthly_leave_credit,
@@ -188,6 +190,8 @@ def create_app():
                 print(f"[Scheduler] Monthly permission reset: {result}")
             except Exception as e:
                 print(f"[Scheduler] Monthly permission reset error: {e}")
+            finally:
+                db_session.remove()
 
         scheduler.add_job(
             run_monthly_permission_reset,
@@ -205,6 +209,8 @@ def create_app():
                 print(f"[Scheduler] Yearly PL credit: {result}")
             except Exception as e:
                 print(f"[Scheduler] Yearly PL credit error: {e}")
+            finally:
+                db_session.remove()
 
         scheduler.add_job(
             run_yearly_pl_credit,
@@ -223,6 +229,8 @@ def create_app():
                 print(f"[Scheduler] Nightly KPI Evaluation Rollup: {count} period(s) rolled up.")
             except Exception as e:
                 print(f"[Scheduler] Nightly KPI Evaluation Rollup error: {e}")
+            finally:
+                db_session.remove()
 
         scheduler.add_job(
             run_nightly_kpi_evaluation_rollup,

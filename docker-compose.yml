@@ -13,7 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     command: >
-      postgres -c shared_buffers=512MB -c effective_cache_size=2GB -c work_mem=16MB -c maintenance_work_mem=256MB -c max_connections=100 -c checkpoint_completion_target=0.9 -c wal_buffers=16MB -c random_page_cost=1.1 -c log_min_duration_statement=1000
+      postgres -c shared_buffers=512MB -c effective_cache_size=2GB -c work_mem=16MB -c maintenance_work_mem=256MB -c max_connections=200 -c idle_in_transaction_session_timeout=60s -c checkpoint_completion_target=0.9 -c wal_buffers=16MB -c random_page_cost=1.1 -c log_min_duration_statement=1000
 
   redis:
     image: redis:7-alpine
@@ -37,6 +37,8 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-local}
       DATABASE_URL: ${DATABASE_URL}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       TZ: ${TZ}
       SECRET_KEY: ${SECRET_KEY}
