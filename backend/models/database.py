@@ -32,15 +32,17 @@ create_database_if_not_exists(DATABASE_URL)
 
 # Each uvicorn worker process gets its own pool, so the total connection count
 # is workers * (POOL_SIZE + MAX_OVERFLOW). Keep that under Postgres
-# max_connections (4 workers * 20 = 80 by default).
-POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "10"))
-MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "10"))
+# max_connections=200 (4 workers * 30 = 120 by default, leaving headroom for
+# the scheduler, alembic and admin sessions). The host has only 4 CPUs, so a
+# bigger pool would just queue queries inside Postgres instead of in the app.
+POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "15"))
+MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "15"))
 
 engine = create_engine(
     DATABASE_URL,
     pool_size=POOL_SIZE,
     max_overflow=MAX_OVERFLOW,
-    pool_timeout=30,
+    pool_timeout=10,
     pool_recycle=300,
     pool_pre_ping=True
 )

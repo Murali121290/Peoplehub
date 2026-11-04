@@ -19,6 +19,7 @@ services:
     image: redis:7-alpine
     container_name: peoplehub_redis
     restart: always
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
 
@@ -37,8 +38,9 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-local}
       DATABASE_URL: ${DATABASE_URL}
-      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
-      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-15}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-15}
+      THREADPOOL_SIZE: ${THREADPOOL_SIZE:-40}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       TZ: ${TZ}
       SECRET_KEY: ${SECRET_KEY}

@@ -7,11 +7,34 @@ import os
 # Contextvar to store active socket session ID
 _socket_sid_var = contextvars.ContextVar("socket_sid", default=None)
 
+def _make_client_manager():
+    """Use Redis pub/sub so emits reach clients connected to ANY uvicorn worker.
+
+    Without this, with --workers N an event emitted in one worker only reaches
+    sockets connected to that same worker. Falls back to the in-memory manager
+    (single-worker behaviour) if Redis can't be reached at startup.
+    """
+    from utils.redis_client import get_redis_url
+    url = get_redis_url()
+    if not url:
+        print("[SocketIO] Redis unavailable - using in-memory manager (events won't cross workers)")
+        return None
+    try:
+        return socketio_module.AsyncRedisManager(url)
+    except Exception as e:
+        print(f"[SocketIO] Failed to create Redis manager, using in-memory: {e}")
+        return None
+
+
 class SocketIOCompat:
     def __init__(self):
         # python-socketio Server in ASGI mode
         cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5555,http://localhost:3000").split(",")
-        self.server = socketio_module.AsyncServer(cors_allowed_origins=cors_origins, async_mode="asgi")
+        server_kwargs = {"cors_allowed_origins": cors_origins, "async_mode": "asgi"}
+        client_manager = _make_client_manager()
+        if client_manager is not None:
+            server_kwargs["client_manager"] = client_manager
+        self.server = socketio_module.AsyncServer(**server_kwargs)
         self.asgi_app = None
         self.main_loop = None
 
