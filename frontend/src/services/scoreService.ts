@@ -128,8 +128,8 @@ export const parseTargetExpression = (
     return { operator: '>', threshold: isNaN(num) ? fallbackTargetValue : num, isLowerBetter: false };
   }
 
-  // Check for 0 misses / 0 escalations / 0 unplanned absences
-  if (/^0\s*(miss|unplanned|delay|escalat|error|issue)/i.test(str) || str === '0') {
+  // Check for 0 misses / 0 escalations / 0 unplanned absences (Negative / Lower-is-better KPIs only)
+  if (/^0\s*(miss|unplanned|delay|escalat|error|issue|penalty|defect)/i.test(str)) {
     return { operator: '<=', threshold: 0, isLowerBetter: true };
   }
 
@@ -255,7 +255,8 @@ export const calculateKPIScore = (
   }
 
   // 2. Zero Tolerance or Less Than or Equal To: (e.g. "0 misses", "0 escalations", "<= X")
-  if (parsed.operator === '<=' || isLowerBetter) {
+  // Only applies to negative / lower-is-better metrics where 0 is the ideal target
+  if (isLowerBetter || parsed.operator === '<=') {
     if (target === 0) {
       // 0 misses / 0 escalations: 0 gives 100%, 1 or more gives 0%
       if (numericActual <= 0) {
@@ -264,7 +265,7 @@ export const calculateKPIScore = (
         return { achievementPercentage: 0, earnedScore: 0 };
       }
     } else {
-      // Threshold > 0
+      // Threshold > 0 (e.g. <= 2 errors)
       if (numericActual <= target) {
         return { achievementPercentage: 100, earnedScore: maxScore };
       } else {
@@ -285,7 +286,17 @@ export const calculateKPIScore = (
     }
   }
 
-  // 4. Standard Exact Target (higher is better ratio; allows exceeding 100% when actual exceeds target)
+  // 4. Standard Positive Targets (Higher is better, e.g. Projects, Appreciations, Pages)
+  // If target is 0 or not set, employee must achieve >= 1 to reach target (0 actual -> 0% score)
+  if (target === 0) {
+    if (numericActual <= 0) {
+      return { achievementPercentage: 0, earnedScore: 0 };
+    } else {
+      // 1 or more achieves 100% full score
+      return { achievementPercentage: 100, earnedScore: maxScore };
+    }
+  }
+
   const targetNum = target > 0 ? target : 1;
   const ratio = Math.max(0, numericActual / targetNum);
   const achievementPercentage = Number((ratio * 100).toFixed(2));
