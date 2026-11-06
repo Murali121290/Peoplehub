@@ -7199,10 +7199,8 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
-    if (!hasAnyDeliverableFilled) {
-      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
-      return;
-    }
+    // Allow employee to submit without restricting unfilled deliverables
+    // if (!hasAnyDeliverableFilled) { ... }
 
     const missingRemarksKpi: string[] = [];
     const missingDeliverablesKpi: string[] = [];
@@ -7255,14 +7253,8 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    if (missingDeliverablesKpi.length > 0) {
-      showAlert(
-        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
-        'Deliverables Required',
-        'warning'
-      );
-      return;
-    }
+    // Unfilled deliverables allowed without restriction
+    // (missing deliverables check removed)
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -7546,10 +7538,8 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
-    if (!hasAnyDeliverableFilled) {
-      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
-      return;
-    }
+    // Allow employee to submit without restricting unfilled deliverables
+    // if (!hasAnyDeliverableFilled) { ... }
 
     const missingRemarksKpi: string[] = [];
     const missingDeliverablesKpi: string[] = [];
@@ -7602,14 +7592,8 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    if (missingDeliverablesKpi.length > 0) {
-      showAlert(
-        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
-        'Deliverables Required',
-        'warning'
-      );
-      return;
-    }
+    // Unfilled deliverables allowed without restriction
+    // (missing deliverables check removed)
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -7812,10 +7796,8 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
-    if (!hasAnyDeliverableFilled) {
-      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
-      return;
-    }
+    // Allow employee to submit without restricting unfilled deliverables
+    // if (!hasAnyDeliverableFilled) { ... }
 
     const missingRemarksKpi: string[] = [];
     const missingDeliverablesKpi: string[] = [];
@@ -7868,14 +7850,8 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    if (missingDeliverablesKpi.length > 0) {
-      showAlert(
-        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
-        'Deliverables Required',
-        'warning'
-      );
-      return;
-    }
+    // Unfilled deliverables allowed without restriction
+    // (missing deliverables check removed)
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -8186,10 +8162,8 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
-    if (!hasAnyDeliverableFilled) {
-      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
-      return;
-    }
+    // Allow employee to submit without restricting unfilled deliverables
+    // if (!hasAnyDeliverableFilled) { ... }
 
     const missingRemarksKpi: string[] = [];
     const missingDeliverablesKpi: string[] = [];
@@ -8242,14 +8216,8 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    if (missingDeliverablesKpi.length > 0) {
-      showAlert(
-        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
-        'Deliverables Required',
-        'warning'
-      );
-      return;
-    }
+    // Unfilled deliverables allowed without restriction
+    // (missing deliverables check removed)
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -12115,10 +12083,8 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
-    if (!hasAnyDeliverableFilled) {
-      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
-      return;
-    }
+    // Allow employee to submit without restricting unfilled deliverables
+    // if (!hasAnyDeliverableFilled) { ... }
 
     // Validate that Self Remarks and Deliverables are filled
     const missingRemarksKpi: string[] = [];
@@ -12182,14 +12148,8 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    if (missingDeliverablesKpi.length > 0) {
-      showAlert(
-        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
-        'Deliverables Required',
-        'warning'
-      );
-      return;
-    }
+    // Unfilled deliverables allowed without restriction
+    // (missing deliverables check removed)
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
