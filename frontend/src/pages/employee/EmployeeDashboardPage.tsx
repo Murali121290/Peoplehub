@@ -983,14 +983,19 @@ if (isHalfDayLeave(leave.total_days)) return false;
         );
       }) || currentEmployee;
 
-      const myIds = [
+      // Canonical employee_id strictly for Evaluation (E2R) matching
+      const myEvalEmpIds = [
         clean(currentDbUser?.employee_id),
-        clean(currentDbUser?.id),
         clean(user?.employee_id),
         clean((user as any)?.emp_id),
         clean((user as any)?.employeeId),
-        clean((user as any)?.id),
         clean(localStorage.getItem("employee_id")),
+      ].filter(Boolean);
+
+      const myIds = [
+        ...myEvalEmpIds,
+        clean(currentDbUser?.id),
+        clean((user as any)?.id),
         clean(localStorage.getItem("user_id")),
       ].filter(Boolean);
 
@@ -1445,10 +1450,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
         const rDbId = clean((r as any).employee_id);
         const rName = String(r.employeeName || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
-        const isCodeMatch = myIds.some(id => id && (id === rEmpCode || id === rEmpId || id === rDbId));
-        const isNameMatch = myNames.some(name => name && rName && (name === rName || rName.includes(name) || name.includes(rName)));
+        const isCodeMatch = myEvalEmpIds.some(id => id && (id === rEmpCode || id === rEmpId || id === rDbId));
 
-        return isCodeMatch || isNameMatch;
+        return isCodeMatch;
       });
 
       if (!userResponses || userResponses.length === 0) return null;

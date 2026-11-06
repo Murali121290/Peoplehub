@@ -1437,30 +1437,17 @@ export const EvaluationTab: React.FC = () => {
 
   // Canonical identifiers and team scoping resolved for current user
 
-  // Helper to match an employee response strictly for the logged in user
+  // Helper to match an employee response strictly for the logged in user using employee_id only
   const isResponseForUser = (r: EvaluationResponse) => {
     if (!r) return false;
     const clean = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
     const myCode = clean(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || '');
     const rEmpCode = clean(r.employeeCode);
     const rEmpId = clean(r.employeeId);
+    const rDbId = clean((r as any).employee_id);
 
-    // 1. Direct canonical employee code match (e.g. 2148 vs 2150)
-    if (myCode && (myCode === rEmpCode || myCode === rEmpId)) {
-      return true;
-    }
-
-    // 2. Strict exact full name match (only if both are valid and length >= 4)
-    const rName = (r.employeeName || '').trim().toLowerCase();
-    const myFullName = (
-      (currentDbUser ? `${currentDbUser.first_name || ''} ${currentDbUser.last_name || ''}`.trim() : '') ||
-      user?.full_name ||
-      `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() ||
-      userAny?.name ||
-      ''
-    ).trim().toLowerCase();
-
-    if (rName && myFullName && rName.length >= 4 && myFullName.length >= 4 && rName === myFullName) {
+    // Direct canonical employee_id match strictly (no user_id, no username, no name fallbacks)
+    if (myCode && (myCode === rEmpCode || myCode === rEmpId || myCode === rDbId)) {
       return true;
     }
 
@@ -3382,18 +3369,9 @@ export const EvaluationTab: React.FC = () => {
     const rEmpId = cleanEmpIdentifier(r.employee_id || r.employeeCode || r.employeeId);
     const rName = String(r.employeeName || r.employee_name || '').trim().toLowerCase();
 
-    // 1. Strict employee_id match
+    // 1. Strict employee_id match only (strictly no name or username fallback)
     if (targetEmpId && rEmpId) {
       return targetEmpId === rEmpId;
-    }
-
-    // 2. Exact Name match fallback (strictly exact normalized match, avoiding .includes false positives)
-    if (rName && targetEmpName) {
-      const cleanTarget = targetEmpName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
-      const cleanR = rName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
-      if (cleanTarget === cleanR) {
-        return true;
-      }
     }
 
     return false;
