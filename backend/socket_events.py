@@ -44,6 +44,8 @@ def register_socket_events(socketio):
                     print(f"Employee {employee_id} (Employee) joined 'employees' room")
     except Exception as e:
         print("Error joining role-based room:", str(e))
+    finally:
+        db.session.remove()
 
 # =====================================
 # JOIN MANAGER ROOM
@@ -196,6 +198,8 @@ def register_socket_events(socketio):
                     str(e)
             }
         )
+    finally:
+        db.session.remove()
 
 # =====================================
 # SEND MANAGER NOTIFICATION
@@ -335,3 +339,5 @@ def register_socket_events(socketio):
                 "error": str(e)
             }
         )
+    finally:
+        db.session.remove()

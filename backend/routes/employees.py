@@ -21,25 +21,7 @@ from datetime import time
 from utils.employee_cache import get_all_employees_cached, invalidate_employee_cache
 from utils.uploads import get_upload_path, ensure_upload_dir
 
-def _get_redis():
-    """Return a Redis client, or None if Redis is unavailable."""
-    try:
-        import redis
-        url = os.environ.get("REDIS_URL") or "redis://redis:6379/0"
-        urls_to_try = [url]
-        if "localhost" in url or "127.0.0.1" in url:
-            urls_to_try.append("redis://redis:6379/0")
-            urls_to_try.append("redis://peoplehub_redis:6379/0")
-        for u in urls_to_try:
-            try:
-                client = redis.from_url(u, decode_responses=True, socket_connect_timeout=0.5)
-                client.ping()
-                return client
-            except Exception:
-                continue
-        return None
-    except Exception:
-        return None
+from utils.redis_client import get_redis as _get_redis
 
 employees_bp = Blueprint("employees", __name__)
 
@@ -296,10 +278,12 @@ def create_employee():
 @employees_bp.route("/", methods=["GET"])
 def get_employees():
     import json
+    # Only an explicit query param bypasses the cache. Browsers send
+    # Cache-Control: no-cache on hard reloads, which used to send every
+    # reload straight to Postgres.
     fresh = (
         request.args.get("fresh") == "true"
         or request.args.get("force") == "true"
-        or request.headers.get("Cache-Control") == "no-cache"
     )
     r = _get_redis()
     cache_key = "peoplehub:api:employees:active:v2"

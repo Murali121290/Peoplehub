@@ -12,14 +12,7 @@ notification_bp = Blueprint(
 from datetime import datetime, date
 import json, os
 
-def _get_redis():
-    """Return a Redis client if REDIS_URL is set, else None."""
-    try:
-        import redis
-        url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
-        return redis.from_url(url, decode_responses=True, socket_connect_timeout=1)
-    except Exception:
-        return None
+from utils.redis_client import get_redis as _get_redis
 
 @notification_bp.route(
     "/<manager_name>",

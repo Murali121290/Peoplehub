@@ -1,4 +1,5 @@
 import { API_URL } from "../config/api";
+import { fetchWithTimeout } from "./fetchWithTimeout";
 
 const TTL_MS = 3_000;
 
@@ -29,7 +30,7 @@ export async function getEmployees(force = false): Promise<any[]> {
   if (token) headers["Authorization"] = `Bearer ${token}`;
   if (force) headers["Cache-Control"] = "no-cache";
 
-  inFlight = fetch(url, { headers })
+  inFlight = fetchWithTimeout(url, { headers })
     .then((res) => res.json())
     .then((data) => {
       cachedEmployees = Array.isArray(data) ? data : [];

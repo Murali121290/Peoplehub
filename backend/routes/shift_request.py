@@ -31,7 +31,7 @@ def init_db_columns():
         from sqlalchemy import text
         with db.engine.begin() as conn:
             try:
-                conn.execute(text("ALTER TABLE shift_requests ADD COLUMN supportive_document TEXT"))
+                conn.execute(text("ALTER TABLE shift_requests ADD COLUMN IF NOT EXISTS supportive_document TEXT"))
             except Exception:
                 pass
     except Exception as e:

@@ -5543,7 +5543,10 @@ def trigger_db_sync():
             user=mysql_user,
             password=mysql_password,
             database=mysql_db,
-            cursorclass=pymysql.cursors.DictCursor
+            cursorclass=pymysql.cursors.DictCursor,
+            connect_timeout=5,
+            read_timeout=30,
+            write_timeout=30
         )
         
         # 2. Query absolute MIN and MAX punch times per employee per day for the last 30 days
