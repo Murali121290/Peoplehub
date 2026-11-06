@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { getEmployees } from "../../services/employeesCache";
+import { fetchWithTimeout } from "../../services/fetchWithTimeout";
 import {
   HomeIcon,
   CheckCircleIcon,
@@ -595,9 +596,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   const loadLeaves = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/leaves/`);
+      const res = await fetchWithTimeout(`${BASE_URL}/leaves/`);
       const data = await res.json();
-      setLeaveRequests(data);
+      setLeaveRequests(Array.isArray(data) ? data : []);
     } catch (err) {
     }
   };
@@ -832,7 +833,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
         }
 
         const todayStr = new Date().toLocaleDateString("en-CA");
-        const targetWorkMode = directMode || (wantsToChangeMode ? "WFH" : "Office");
+        const targetWorkMode = directMode || (wantsToChangeMode ? "WFH" : (currentEmployee?.work_mode || "Flexible"));
 
         const payload = {
           employee_id: currentEmployee.employee_id || currentEmployee.id,
@@ -982,14 +983,19 @@ if (isHalfDayLeave(leave.total_days)) return false;
         );
       }) || currentEmployee;
 
-      const myIds = [
+      // Canonical employee_id strictly for Evaluation (E2R) matching
+      const myEvalEmpIds = [
         clean(currentDbUser?.employee_id),
-        clean(currentDbUser?.id),
         clean(user?.employee_id),
         clean((user as any)?.emp_id),
         clean((user as any)?.employeeId),
-        clean((user as any)?.id),
         clean(localStorage.getItem("employee_id")),
+      ].filter(Boolean);
+
+      const myIds = [
+        ...myEvalEmpIds,
+        clean(currentDbUser?.id),
+        clean((user as any)?.id),
         clean(localStorage.getItem("user_id")),
       ].filter(Boolean);
 
@@ -1444,10 +1450,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
         const rDbId = clean((r as any).employee_id);
         const rName = String(r.employeeName || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
-        const isCodeMatch = myIds.some(id => id && (id === rEmpCode || id === rEmpId || id === rDbId));
-        const isNameMatch = myNames.some(name => name && rName && (name === rName || rName.includes(name) || name.includes(rName)));
+        const isCodeMatch = myEvalEmpIds.some(id => id && (id === rEmpCode || id === rEmpId || id === rDbId));
 
-        return isCodeMatch || isNameMatch;
+        return isCodeMatch;
       });
 
       if (!userResponses || userResponses.length === 0) return null;
@@ -2541,43 +2546,46 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   const loadAllDashboardData = async () => {
     setIsPageLoading(true);
-    try {
-      const userId = localStorage.getItem("user_id");
+    const userId = localStorage.getItem("user_id");
 
-      // 1. Load employees first to extract employee_id
-      const empData = await getEmployees(true);
+    // Critical requests: the page renders as soon as these finish.
+    // Everything else fills in afterwards, so one slow call can't hold the
+    // whole dashboard behind the spinner.
+    const criticalPromises: Promise<unknown>[] = [];
+    const backgroundPromises: Promise<unknown>[] = [
+      fetchTodayBirthdays(),
+      fetchTodayAnniversaries(),
+      loadLeaves(),
+    ];
+
+    // Employees list (served from the backend Redis cache) -> then shift data
+    // that needs the logged-in employee's code/name.
+    const employeesPromise = getEmployees().then((empData) => {
       setEmployees(empData);
-
-      const loggedEmp = Array.isArray(empData)
+      return Array.isArray(empData)
         ? empData.find((emp: any) => Number(emp.user_id) === Number(user?.id))
         : null;
+    });
+    criticalPromises.push(employeesPromise);
 
-      // 2. Load the rest of the queries concurrently
-      const promises = [
-        fetchTodayBirthdays(),
-        fetchTodayAnniversaries(),
-        loadLeaves(),
-      ];
-
-      if (loggedEmp) {
-        promises.push(
-          fetch(`${BASE_URL}/shifts/employee/${loggedEmp.employee_id}`)
-            .then((res) => res.json())
-            .then((data) => setShiftRequests(Array.isArray(data) ? data : []))
-        );
-
+    backgroundPromises.push(
+      employeesPromise.then((loggedEmp) => {
+        if (!loggedEmp) return;
         const managerName = `${loggedEmp.first_name} ${loggedEmp.last_name}`.trim();
-        const url = `${BASE_URL}/shifts/approvals/${encodeURIComponent(managerName)}`;
-        promises.push(
-          fetch(url)
+        return Promise.allSettled([
+          fetchWithTimeout(`${BASE_URL}/shifts/employee/${loggedEmp.employee_id}`)
+            .then((res) => res.json())
+            .then((data) => setShiftRequests(Array.isArray(data) ? data : [])),
+          fetchWithTimeout(`${BASE_URL}/shifts/approvals/${encodeURIComponent(managerName)}`)
             .then((res) => (res.ok ? res.json() : []))
-            .then((data) => setManagerShiftRequests(Array.isArray(data) ? data : []))
-        );
-      }
+            .then((data) => setManagerShiftRequests(Array.isArray(data) ? data : [])),
+        ]);
+      })
+    );
 
-      if (userId) {
-        promises.push(
-          fetch(`${BASE_URL}/attendance/status/${userId}`)
+    if (userId) {
+      criticalPromises.push(
+          fetchWithTimeout(`${BASE_URL}/attendance/status/${userId}`)
             .then((res) => res.json())
             .then((data) => {
               if (data.checked_in) {
@@ -2639,8 +2647,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
             })
         );
 
-        promises.push(
-          fetch(`${BASE_URL}/attendance/history/${userId}`)
+      backgroundPromises.push(
+          fetchWithTimeout(`${BASE_URL}/attendance/history/${userId}`)
             .then((res) => res.json())
             .then((data) => {
               setAttendanceData(data);
@@ -2666,14 +2674,17 @@ if (isHalfDayLeave(leave.total_days)) return false;
               }
             })
         );
-      }
-
-      await Promise.all(promises);
-    } catch (err) {
-      console.error("Failed to load dashboard data:", err);
-    } finally {
-      setIsPageLoading(false);
     }
+
+    const critical = await Promise.allSettled(criticalPromises);
+    setIsPageLoading(false);
+
+    const background = await Promise.allSettled(backgroundPromises);
+    [...critical, ...background].forEach((r) => {
+      if (r.status === "rejected") {
+        console.error("Failed to load dashboard data:", r.reason);
+      }
+    });
   };
 
   useEffect(() => {

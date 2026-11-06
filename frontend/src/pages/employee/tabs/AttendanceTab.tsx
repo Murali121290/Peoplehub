@@ -283,8 +283,15 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         }
         return `${String(hrs).padStart(2, "0")}:${mins}`;
       };
-      setFromTime(parseTimeTo24h(resolvingWeekendCell.checkIn, "09:00"));
-      setToTime(parseTimeTo24h(resolvingWeekendCell.checkOut, "18:00"));
+      const inTime = resolvingWeekendCell.checkIn && resolvingWeekendCell.checkIn !== "-" && resolvingWeekendCell.checkIn !== "—"
+        ? resolvingWeekendCell.checkIn
+        : (resolvingWeekendCell.cardCheckIn || "09:00");
+      const outTime = resolvingWeekendCell.checkOut && resolvingWeekendCell.checkOut !== "-" && resolvingWeekendCell.checkOut !== "—"
+        ? resolvingWeekendCell.checkOut
+        : (resolvingWeekendCell.cardCheckOut || "18:00");
+
+      setFromTime(parseTimeTo24h(inTime, "09:00"));
+      setToTime(parseTimeTo24h(outTime, "18:00"));
     } else {
       setFromTime("09:00");
       setToTime("18:00");
@@ -683,6 +690,29 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       (!cell.wagesStatus || cell.wagesStatus === "Rejected" || cell.wagesStatus === "Cancelled") &&
       cell.dateStr <= todayKey
     ) {
+      // If employee is clicking on TODAY's Weekoff / Holiday:
+      // They MUST check in AND check out before applying for One Day Wages!
+      if (cell.dateStr === todayKey) {
+        const hasCheckIn = !!(
+          (cell.checkIn && cell.checkIn !== "-" && cell.checkIn !== "—") ||
+          (cell.cardCheckIn && cell.cardCheckIn !== "-" && cell.cardCheckIn !== "—")
+        );
+        const hasCheckOut = !!(
+          (cell.checkOut && cell.checkOut !== "-" && cell.checkOut !== "—") ||
+          (cell.cardCheckOut && cell.cardCheckOut !== "-" && cell.cardCheckOut !== "—")
+        );
+
+        if (!hasCheckIn) {
+          toast.error("You cannot claim One Day Wages for today without checking in. Please check in and complete your shift first.");
+          return;
+        }
+
+        if (!hasCheckOut) {
+          toast.error("You are currently checked in. Please complete your check-out at the end of your shift before claiming One Day Wages.");
+          return;
+        }
+      }
+
       setResolvingWeekendCell(cell);
     } else if (
       isResolvable &&
@@ -2268,26 +2298,57 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               Choose how to log <strong className="text-neutral-850 font-bold">{resolvingWeekendCell.dayNum} {MONTH_NAMES[selectedMonth - 1]}</strong>:
             </p>
 
-            {/* Time Selection Fields */}
-            <div className="grid grid-cols-2 gap-4 mb-4 text-left">
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">From Time</label>
-                <TimePicker
-                  value={fromTime}
-                  onChange={(val) => setFromTime(val)}
-                  className="w-full"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">To Time</label>
-                <TimePicker
-                  value={toTime}
-                  defaultPeriod="PM"
-                  onChange={(val) => setToTime(val)}
-                  className="w-full"
-                />
-              </div>
-            </div>
+            {/* Time Selection Fields (Read-Only when punches exist) */}
+            {(() => {
+              const hasPunches = !!(
+                (resolvingWeekendCell.checkIn && resolvingWeekendCell.checkIn !== "-" && resolvingWeekendCell.checkIn !== "—") ||
+                (resolvingWeekendCell.cardCheckIn && resolvingWeekendCell.cardCheckIn !== "-" && resolvingWeekendCell.cardCheckIn !== "—")
+              );
+              return (
+                <div className="mb-4 text-left">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500">From Time</label>
+                        {hasPunches && (
+                          <span className="text-[9px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200">
+                            Recorded
+                          </span>
+                        )}
+                      </div>
+                      <TimePicker
+                        value={fromTime}
+                        onChange={(val) => setFromTime(val)}
+                        disabled={hasPunches}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500">To Time</label>
+                        {hasPunches && (
+                          <span className="text-[9px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200">
+                            Recorded
+                          </span>
+                        )}
+                      </div>
+                      <TimePicker
+                        value={toTime}
+                        defaultPeriod="PM"
+                        onChange={(val) => setToTime(val)}
+                        disabled={hasPunches}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                  {hasPunches && (
+                    <p className="text-[10px] text-neutral-400 mt-1.5">
+                      Times are locked to your recorded check-in &amp; check-out.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Reason Text Area */}
             <div className="mb-4 text-left">

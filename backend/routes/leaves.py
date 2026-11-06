@@ -19,6 +19,51 @@ leave_bp = Blueprint(
     __name__
 )
 
+# ---------------------------------------------------------------------------
+# Redis cache for GET /api/leaves/ (all leaves). Serializing every leave runs
+# holiday lookups per row, so this is one of the heaviest dashboard calls.
+# Invalidation hooks the session itself, so ANY commit that touches a
+# LeaveRequest (routes, services, scheduler) clears the cache.
+# ---------------------------------------------------------------------------
+from sqlalchemy import event as _sa_event
+from utils.redis_client import cache_get_json, cache_set_json, cache_delete
+
+LEAVES_ALL_CACHE_PREFIX = "peoplehub:api:leaves:all:v1"
+LEAVES_ALL_CACHE_TTL = 20  # seconds
+
+
+def _leaves_all_cache_key():
+    # cancellable_dates depends on today's date, so key by date.
+    from datetime import date
+    return f"{LEAVES_ALL_CACHE_PREFIX}:{date.today().isoformat()}"
+
+
+def invalidate_leaves_cache():
+    cache_delete(_leaves_all_cache_key())
+
+
+def _mark_leave_changes(session, flush_context):
+    for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+        if isinstance(obj, LeaveRequest):
+            session.info["leaves_changed"] = True
+            return
+
+
+def _invalidate_after_commit(session):
+    if session.info.pop("leaves_changed", False):
+        invalidate_leaves_cache()
+
+
+def _clear_flag_after_rollback(session):
+    session.info.pop("leaves_changed", None)
+
+
+_session_factory = db.session.session_factory
+if not _sa_event.contains(_session_factory, "after_flush", _mark_leave_changes):
+    _sa_event.listen(_session_factory, "after_flush", _mark_leave_changes)
+    _sa_event.listen(_session_factory, "after_commit", _invalidate_after_commit)
+    _sa_event.listen(_session_factory, "after_rollback", _clear_flag_after_rollback)
+
 def is_date_week_off(d):
     if d.weekday() == 6:
         return True
@@ -343,6 +388,12 @@ def apply_leave():
 def get_leaves():
 
     try:
+        fresh = request.args.get("fresh") == "true"
+        cache_key = _leaves_all_cache_key()
+        if not fresh:
+            cached = cache_get_json(cache_key)
+            if cached is not None:
+                return jsonify(cached), 200
 
         leaves = LeaveRequest.query.order_by(
             LeaveRequest.id.desc()
@@ -350,6 +401,7 @@ def get_leaves():
 
 
         leaves_data = [serialize_leave(leave) for leave in leaves]
+        cache_set_json(cache_key, leaves_data, LEAVES_ALL_CACHE_TTL)
         return jsonify(leaves_data), 200
 
     except Exception as e:

@@ -21,7 +21,7 @@ if "localhost" in redis_env or "127.0.0.1" in redis_env or not redis_env:
 
 
 # Import models & database
-from models.database import init_db, engine, db_session
+from models.database import init_db, engine, db_session, POOL_SIZE, MAX_OVERFLOW
 # pyrefly: ignore [missing-import]
 from sqlalchemy import text
 from utils.uploads import get_uploads_dir, ensure_upload_dir
@@ -86,14 +86,15 @@ def create_app():
         return await call_next(request)
 
     # Sync route handlers run in AnyIO's worker threadpool (see
-    # utils/compat.py's make_compat_wrapper) so match its cap to the DB
-    # connection pool's total capacity (pool_size + max_overflow) - otherwise
-    # requests queue behind the thread limit before ever reaching the DB pool.
+    # utils/compat.py's make_compat_wrapper). Keep it slightly above the DB
+    # pool capacity so requests that never touch the DB (health, Redis cache
+    # hits) don't queue behind DB-bound ones.
     @fastapi_app.on_event("startup")
     async def _raise_threadpool_limit():
         import anyio
         import asyncio
-        anyio.to_thread.current_default_thread_limiter().total_tokens = 100
+        threadpool_size = int(os.environ.get("THREADPOOL_SIZE", "0")) or max(POOL_SIZE + MAX_OVERFLOW + 10, 40)
+        anyio.to_thread.current_default_thread_limiter().total_tokens = threadpool_size
         socketio.main_loop = asyncio.get_running_loop()
 
 
@@ -171,6 +172,8 @@ def create_app():
                 print(f"[Scheduler] Monthly leave credit: {result}")
             except Exception as e:
                 print(f"[Scheduler] Monthly leave credit error: {e}")
+            finally:
+                db_session.remove()
 
         scheduler.add_job(
             run_monthly_leave_credit,
@@ -188,6 +191,8 @@ def create_app():
                 print(f"[Scheduler] Monthly permission reset: {result}")
             except Exception as e:
                 print(f"[Scheduler] Monthly permission reset error: {e}")
+            finally:
+                db_session.remove()
 
         scheduler.add_job(
             run_monthly_permission_reset,
@@ -205,6 +210,8 @@ def create_app():
                 print(f"[Scheduler] Yearly PL credit: {result}")
             except Exception as e:
                 print(f"[Scheduler] Yearly PL credit error: {e}")
+            finally:
+                db_session.remove()
 
         scheduler.add_job(
             run_yearly_pl_credit,
@@ -223,6 +230,8 @@ def create_app():
                 print(f"[Scheduler] Nightly KPI Evaluation Rollup: {count} period(s) rolled up.")
             except Exception as e:
                 print(f"[Scheduler] Nightly KPI Evaluation Rollup error: {e}")
+            finally:
+                db_session.remove()
 
         scheduler.add_job(
             run_nightly_kpi_evaluation_rollup,

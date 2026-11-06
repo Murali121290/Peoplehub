@@ -31,7 +31,7 @@ def init_db_columns():
         from sqlalchemy import text
         with db.engine.begin() as conn:
             try:
-                conn.execute(text("ALTER TABLE shift_requests ADD COLUMN supportive_document TEXT"))
+                conn.execute(text("ALTER TABLE shift_requests ADD COLUMN IF NOT EXISTS supportive_document TEXT"))
             except Exception:
                 pass
     except Exception as e:
@@ -100,7 +100,7 @@ def apply_shift():
         # Check if auto_approve is requested for a Flexible or PM employee
         is_auto_approve_requested = (data.get("auto_approve") is True or str(data.get("auto_approve", "")).lower() == "true")
         emp_mode_str = (employee.work_mode or "").strip().lower() if employee else ""
-        is_flexible_employee = bool(employee and emp_mode_str in ("flexible", "pm"))
+        is_flexible_employee = bool(employee and emp_mode_str in ("flexible", "pm", "hybrid"))
         is_flexible_auto_approve = is_auto_approve_requested and is_flexible_employee
 
         if employee:
@@ -121,6 +121,29 @@ def apply_shift():
 
             # Check for existing approved Shift/WFH/Office requests in the date range
             if data.get("request_type") == "One Day Wages":
+                # For TODAY: An employee must have already checked in AND checked out before applying for One Day Wages
+                if req_from == ist_today or req_to == ist_today:
+                    resolved_user_id = employee.user_id if employee else emp_id
+                    today_att = Attendance.query.filter_by(
+                        user_id=resolved_user_id,
+                        attendance_date=ist_today
+                    ).first()
+
+                    has_check_in = bool(today_att and (today_att.check_in is not None or today_att.card_check_in is not None))
+                    has_check_out = bool(today_att and (today_att.check_out is not None or today_att.card_check_out is not None))
+
+                    if not has_check_in:
+                        return jsonify({
+                            "success": False,
+                            "message": "You cannot apply for One Day Wages today without checking in. Please complete your shift and check out first."
+                        }), 400
+
+                    if not has_check_out:
+                        return jsonify({
+                            "success": False,
+                            "message": "You are currently checked in. Please check out at the end of your shift before applying for One Day Wages."
+                        }), 400
+
                 existing_odw = ShiftRequest.query.filter(
                     ShiftRequest.employee_id.in_([employee.employee_id, employee.id]),
                     ShiftRequest.request_type == "One Day Wages",

@@ -7,11 +7,34 @@ import os
 # Contextvar to store active socket session ID
 _socket_sid_var = contextvars.ContextVar("socket_sid", default=None)
 
+def _make_client_manager():
+    """Use Redis pub/sub so emits reach clients connected to ANY uvicorn worker.
+
+    Without this, with --workers N an event emitted in one worker only reaches
+    sockets connected to that same worker. Falls back to the in-memory manager
+    (single-worker behaviour) if Redis can't be reached at startup.
+    """
+    from utils.redis_client import get_redis_url
+    url = get_redis_url()
+    if not url:
+        print("[SocketIO] Redis unavailable - using in-memory manager (events won't cross workers)")
+        return None
+    try:
+        return socketio_module.AsyncRedisManager(url)
+    except Exception as e:
+        print(f"[SocketIO] Failed to create Redis manager, using in-memory: {e}")
+        return None
+
+
 class SocketIOCompat:
     def __init__(self):
         # python-socketio Server in ASGI mode
         cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5555,http://localhost:3000").split(",")
-        self.server = socketio_module.AsyncServer(cors_allowed_origins=cors_origins, async_mode="asgi")
+        server_kwargs = {"cors_allowed_origins": cors_origins, "async_mode": "asgi"}
+        client_manager = _make_client_manager()
+        if client_manager is not None:
+            server_kwargs["client_manager"] = client_manager
+        self.server = socketio_module.AsyncServer(**server_kwargs)
         self.asgi_app = None
         self.main_loop = None
 
@@ -25,20 +48,36 @@ class SocketIOCompat:
                 _socket_sid_var.set(sid)
                 sig = inspect.signature(func)
                 params_count = len(sig.parameters)
-                if inspect.iscoroutinefunction(func):
-                    if params_count == 0:
-                        return await func()
-                    elif params_count == 1:
-                        return await func(data)
+                from models.database import db_session
+                from starlette.concurrency import run_in_threadpool
+                try:
+                    if inspect.iscoroutinefunction(func):
+                        if params_count == 0:
+                            return await func()
+                        elif params_count == 1:
+                            return await func(data)
+                        else:
+                            return await func(sid, data)
                     else:
-                        return await func(sid, data)
-                else:
-                    if params_count == 0:
-                        return func()
-                    elif params_count == 1:
-                        return func(data)
-                    else:
-                        return func(sid, data)
+                        def _invoke_sync():
+                            try:
+                                if params_count == 0:
+                                    return func()
+                                elif params_count == 1:
+                                    return func(data)
+                                else:
+                                    return func(sid, data)
+                            finally:
+                                try:
+                                    db_session.remove()
+                                except Exception:
+                                    pass
+                        return await run_in_threadpool(_invoke_sync)
+                finally:
+                    try:
+                        db_session.remove()
+                    except Exception:
+                        pass
             return func
         return decorator
 
