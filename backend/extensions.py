@@ -48,20 +48,36 @@ class SocketIOCompat:
                 _socket_sid_var.set(sid)
                 sig = inspect.signature(func)
                 params_count = len(sig.parameters)
-                if inspect.iscoroutinefunction(func):
-                    if params_count == 0:
-                        return await func()
-                    elif params_count == 1:
-                        return await func(data)
+                from models.database import db_session
+                from starlette.concurrency import run_in_threadpool
+                try:
+                    if inspect.iscoroutinefunction(func):
+                        if params_count == 0:
+                            return await func()
+                        elif params_count == 1:
+                            return await func(data)
+                        else:
+                            return await func(sid, data)
                     else:
-                        return await func(sid, data)
-                else:
-                    if params_count == 0:
-                        return func()
-                    elif params_count == 1:
-                        return func(data)
-                    else:
-                        return func(sid, data)
+                        def _invoke_sync():
+                            try:
+                                if params_count == 0:
+                                    return func()
+                                elif params_count == 1:
+                                    return func(data)
+                                else:
+                                    return func(sid, data)
+                            finally:
+                                try:
+                                    db_session.remove()
+                                except Exception:
+                                    pass
+                        return await run_in_threadpool(_invoke_sync)
+                finally:
+                    try:
+                        db_session.remove()
+                    except Exception:
+                        pass
             return func
         return decorator
 

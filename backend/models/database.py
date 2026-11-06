@@ -46,7 +46,7 @@ engine = create_engine(
     pool_recycle=300,
     pool_pre_ping=True
 )
-db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
+db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine))
 
 Base = declarative_base()
 Base.query = db_session.query_property()
