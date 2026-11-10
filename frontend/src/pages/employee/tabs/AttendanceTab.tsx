@@ -11,12 +11,15 @@ import {
   DocumentTextIcon,
   XMarkIcon,
   ArrowRightIcon,
-  HomeIcon
+  HomeIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
 import StatCard from '../components/StatCard';
 import { formatDateStr } from "../../../utils/date";
 import { isHalfDayPresent } from "../../../utils/attendance";
+import { OvertimeODWCompensationModal, Eligible12HourDay } from "../modals/OvertimeODWCompensationModal";
+import { API_URL } from "../../../config/api";
 import { Attendance } from '../../../types/employee.types';
 import { Card } from '../../../components/ui/Card';
 import apiService from '../../../services/api';
@@ -227,6 +230,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const [monthlyAttendance, setMonthlyAttendance] = useState<any[]>([]);
   const [monthlySchedule, setMonthlySchedule] = useState<any[]>([]);
   const [approvedLeaves, setApprovedLeaves] = useState<any[]>([]);
+  const [approvedOvertimeWages, setApprovedOvertimeWages] = useState<{
+    days: number;
+    dates: string[];
+    status: string;
+  } | null>(null);
+  const [showODWDatesModal, setShowODWDatesModal] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Absent day resolution states
@@ -240,6 +249,61 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
   // Weekend / Holiday resolution states (One Day Wages)
   const [resolvingWeekendCell, setResolvingWeekendCell] = useState<DayDetails | null>(null);
+  const [overtimeCompData, setOvertimeCompData] = useState<{
+    isOpen: boolean;
+    qualifyingDays: Eligible12HourDay[];
+    qualifyingCount: number;
+    compensationDays: number;
+    cycleStart: string;
+    cycleEnd: string;
+    alreadyRequested: boolean;
+    existingStatus?: string;
+  } | null>(null);
+  const [isSubmittingComp, setIsSubmittingComp] = useState(false);
+
+  const handleOvertimeCompSubmit = async (reason: string, compDays: number) => {
+    if (compDays <= 0) return;
+    setIsSubmittingComp(true);
+    try {
+      const userStr = localStorage.getItem("user");
+      const userObj = userStr ? JSON.parse(userStr) : {};
+      const empId = currentEmployee?.employee_id || currentEmployee?.id || localStorage.getItem("employee_id");
+      const empName = currentEmployee
+        ? `${currentEmployee.first_name} ${currentEmployee.last_name}`
+        : userObj.name || "Employee";
+
+      const cycleStart = overtimeCompData?.cycleStart || todayKey;
+      const cycleEnd = overtimeCompData?.cycleEnd || todayKey;
+
+      const payload = {
+        employee_id: empId,
+        employee_name: empName,
+        current_shift: `${compDays} Day(s) ODW`,
+        requested_shift: `${compDays} Day(s) ODW`,
+        current_work_mode: currentEmployee?.work_mode || "Office",
+        requested_work_mode: currentEmployee?.work_mode || "Office",
+        request_type: "One Day Wages",
+        from_date: cycleStart,
+        to_date: cycleEnd,
+        reporting_manager: currentEmployee?.reporting_manager || "Admin",
+        reason: reason,
+      };
+
+      const res = await apiService.post("/shifts/", payload);
+      if (res.data?.success || res.status === 200 || res.status === 201) {
+        toast.success(`Overtime ODW compensation request (+${compDays} Day(s)) submitted for manager approval!`);
+        setOvertimeCompData(null);
+      } else {
+        toast.error(res.data?.message || "Failed to submit Overtime ODW request.");
+      }
+    } catch (err: any) {
+      console.error("Error submitting overtime ODW compensation", err);
+      toast.error("Failed to submit Overtime ODW request.");
+    } finally {
+      setIsSubmittingComp(false);
+    }
+  };
+
   const [wagesReason, setWagesReason] = useState<string>("");
   const [isSubmittingWages, setIsSubmittingWages] = useState<boolean>(false);
   const [fromTime, setFromTime] = useState<string>("09:00");
@@ -338,13 +402,17 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       }
       const startDateStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-25`;
 
-      const [attendanceRes, currentHolidaysRes, nextHolidaysRes, leavesRes] = await Promise.all([
+      const empCompanyId = currentEmployee ? String(currentEmployee.employee_id) : String(user?.employee_id || "");
+      const [attendanceRes, currentHolidaysRes, nextHolidaysRes, leavesRes, shiftsRes] = await Promise.all([
         userId
           ? apiService.get(`/attendance/history/${userId}`, { params: { start_date: startDateStr } }).catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
         apiService.get(`/employee/holidays`, { params: { month: prevMonth, year: prevYear } }).catch(() => ({ data: {} })),
         apiService.get(`/employee/holidays`, { params: { month: selectedMonth, year: selectedYear } }).catch(() => ({ data: {} })),
-        apiService.get(`/leaves/`).catch(() => ({ data: [] }))
+        apiService.get(`/leaves/`).catch(() => ({ data: [] })),
+        empCompanyId
+          ? apiService.get(`/shifts/employee/${empCompanyId}`).catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] })
       ]);
 
       const attData = Array.isArray(attendanceRes.data) ? attendanceRes.data : [];
@@ -366,6 +434,47 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         return Boolean(empCompanyId && leaveEmpId === empCompanyId);
       });
       setApprovedLeaves(myApprovedLeaves);
+
+      // Aggregate ALL approved Overtime Compensation (ODW) claims for the current payroll cycle
+      const shiftsList = Array.isArray(shiftsRes?.data) ? shiftsRes.data : [];
+      const cycleStartStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-25`;
+      const cycleEndStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-24`;
+
+      const approvedOTClaims = shiftsList.filter((s: any) => {
+        if (s.request_type !== "One Day Wages" || s.status !== "Approved") return false;
+        const isOT = (s.reason || "").includes("Overtime Compensation") || (s.requested_shift || "").includes("Day(s) ODW");
+        return isOT && s.from_date >= cycleStartStr && s.to_date <= cycleEndStr;
+      });
+
+      if (approvedOTClaims.length > 0) {
+        let totalBonusDays = 0;
+        const allApprovedDatesSet = new Set<string>();
+
+        approvedOTClaims.forEach((claim: any) => {
+          let claimDays = 1.0;
+          const daysMatch = (claim.requested_shift || "").match(/([\d\.]+)\s*Day/i) || (claim.reason || "").match(/Approved\s*([\d\.]+)\s*Day/i);
+          if (daysMatch) {
+            claimDays = parseFloat(daysMatch[1]);
+          }
+          totalBonusDays += claimDays;
+
+          const reasonStr = claim.reason || "";
+          const datesFound = Array.from(reasonStr.matchAll(/\b(\d{4}-\d{2}-\d{2})\b/g)).map((m: any) => m[1]);
+          const cycleDates = new Set([claim.from_date, claim.to_date]);
+          const verifiedDates = datesFound.filter(d => !cycleDates.has(d));
+          (verifiedDates.length > 0 ? verifiedDates : datesFound).forEach(d => allApprovedDatesSet.add(d));
+        });
+
+        const sortedDates = Array.from(allApprovedDatesSet).sort();
+
+        setApprovedOvertimeWages({
+          days: totalBonusDays,
+          dates: sortedDates,
+          status: "Approved"
+        });
+      } else {
+        setApprovedOvertimeWages(null);
+      }
     } catch (err) {
       console.error("Error loading attendance month data:", err);
     } finally {
@@ -667,10 +776,52 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     setResolvingPermissionCell(cell);
   };
 
-  const handleCellClick = (cell: DayDetails) => {
+  const handleCellClick = async (cell: DayDetails) => {
     // Prevent clicking on today's cell if the user has checked in but not yet checked out
     const isOngoingToday = cell.isToday && cell.checkIn !== "-" && cell.checkIn !== "" && (cell.checkOut === "-" || cell.checkOut === "");
     if (isOngoingToday) return;
+
+    // --- OVERTIME COMPENSATION CLAIM ON PRESENT CLICK ---
+    // Present day attendance stays "Present". Employee claims additional ODW salary compensation!
+    if (!isManager && (cell.status === "Present" || cell.badgeLabel?.includes("Present"))) {
+      try {
+        const empId = currentEmployee?.employee_id || currentEmployee?.id || localStorage.getItem("employee_id");
+        const res = await apiService.get("/attendance/check-overtime-odw-eligibility", {
+          params: empId ? { employee_id: empId } : {}
+        });
+        const data = res.data;
+        if (data && data.success && data.eligible) {
+          setOvertimeCompData({
+            isOpen: true,
+            qualifyingDays: data.qualifying_days || [],
+            qualifyingCount: data.qualifying_count,
+            compensationDays: data.compensation_days,
+            cycleStart: data.cycle_start,
+            cycleEnd: data.cycle_end,
+            alreadyRequested: data.already_requested,
+            existingStatus: data.existing_status,
+          });
+          return;
+        } else if (data && data.success && !data.eligible) {
+          const qCount = data.qualifying_count || 0;
+          if (qCount > 0) {
+            toast(`You have ${qCount} day(s) of 12+ hours worked. Work 3 days of 12h to earn 1 day's extra ODW salary!`, {
+              icon: 'ℹ️',
+            });
+          } else {
+            toast("No qualifying 12+ hour work days recorded in this cycle yet.", { icon: 'ℹ️' });
+          }
+          return;
+        } else if (data && !data.success) {
+          toast.error(data.message || "Could not check overtime eligibility");
+          return;
+        }
+      } catch (err) {
+        console.error("Overtime ODW check failed on Present click", err);
+        toast.error("Unable to check Overtime eligibility");
+        return;
+      }
+    }
 
     const noLeaveOrHalf = (!cell.leaveType || cell.halfDayDuration);
     const isResolvable = isResolvablePayrollDate(cell.dateStr);
@@ -1213,10 +1364,46 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
 
       {/* Dynamic Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
         <StatCard icon={CheckCircleIcon} title="Present Days" value={totalPresentDays} subtitle="" trend="normal" color="green" />
         <StatCard icon={UserMinusIcon} title="Absent Days (LOP)" value={absentCount} subtitle="" trend="normal" color="red" />
         <StatCard icon={CalendarDaysIcon} title="Paid Leave" value={leaveCount} subtitle="" trend="normal" color="purple" />
+        <div className="rounded-xl bg-white border border-amber-200/90 shadow-card p-4 hover:border-amber-300 transition-all flex items-start gap-3.5 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-amber-100/50 via-amber-50/20 to-transparent rounded-bl-full pointer-events-none" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs">
+            <SparklesIcon className="h-5 w-5" />
+          </div>
+          <div className="flex-1 min-w-0 z-10">
+            <div className="flex items-center justify-between gap-1">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800/80 truncate">
+                Overtime ODW Wages
+              </p>
+              {approvedOvertimeWages && (
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                  Approved
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-2xl font-black text-neutral-850 tracking-tight">
+              {approvedOvertimeWages ? `+${approvedOvertimeWages.days} Day${approvedOvertimeWages.days > 1 ? 's' : ''}` : '0 Day'}
+            </p>
+            {approvedOvertimeWages && approvedOvertimeWages.dates.length > 0 ? (
+              <div className="mt-1 flex items-center justify-between gap-1 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowODWDatesModal(true)}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-800 hover:text-amber-950 bg-amber-50/90 hover:bg-amber-100/90 border border-amber-200/90 px-2 py-0.5 rounded-md transition-colors cursor-pointer shadow-2xs"
+                >
+                  <CalendarDaysIcon className="w-3.5 h-3.5 text-amber-600" />
+                  <span>{approvedOvertimeWages.dates.length} Approved Days</span>
+                  <span className="text-[9px] text-amber-600 underline">View</span>
+                </button>
+              </div>
+            ) : (
+              <p className="mt-0.5 text-[11px] text-neutral-400 font-medium">12h Overtime Compensation</p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Main Content Card */}
@@ -1405,7 +1592,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   !cell.wagesStatus &&
                   (!cell.leaveType || cell.halfDayDuration) &&
                   (!cell.badgeLabel || (!cell.badgeLabel.includes("Half Day Present") && !cell.badgeLabel.includes("Pending Reg")));
-                const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
+                const isClickablePresent = !isManager && (cell.status === "Present" || cell.badgeLabel?.includes("Present"));
+                const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize || isClickablePresent;
                 return (
                   <div
                     key={cell.dateStr}
@@ -1975,7 +2163,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             !dayObj.wagesStatus &&
                             (!dayObj.leaveType || dayObj.halfDayDuration) &&
                             (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
-                          if (isClickableAbsent || isClickableWeekend || isClickableRegularize) {
+                          const isClickablePresent = !isManager && (dayObj.status === "Present" || dayObj.badgeLabel?.includes("Present"));
+                          if (isClickableAbsent || isClickableWeekend || isClickableRegularize || isClickablePresent) {
                             handleCellClick(dayObj);
                           }
                         }}
@@ -1991,9 +2180,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
                               dayObj.dateStr <= todayKey;
                             const isClickableRegularize = isResolvable && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
+                            const isClickablePresent = !isManager && (dayObj.status === "Present" || dayObj.badgeLabel?.includes("Present"));
                             if (isClickableAbsent) return "Click to apply leave / regularize absent day";
                             if (isClickableWeekend) return "Click to request wages for non-working day";
                             if (isClickableRegularize) return "Click to regularize attendance";
+                            if (isClickablePresent) return "Click to check 12h Overtime Compensation (ODW)";
                             return undefined;
                           })()
                         }
@@ -2009,7 +2200,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
                               dayObj.dateStr <= todayKey;
                             const isClickableRegularize = isResolvable && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
-                            const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
+                            const isClickablePresent = !isManager && (dayObj.status === "Present" || dayObj.badgeLabel?.includes("Present"));
+                            const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize || isClickablePresent;
                             return `p-3 text-center border-r border-neutral-300 transition-colors ${isClickable ? "cursor-pointer hover:bg-neutral-50" : ""
                               }`;
                           })()
@@ -2027,7 +2219,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               (dayObj.status === "Weekly Off" || dayObj.status === "Holiday") &&
                               dayObj.dateStr <= todayKey;
                             const isClickableRegularize = isResolvable && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
-                            const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
+                            const isClickablePresent = !isManager && (dayObj.status === "Present" || dayObj.badgeLabel?.includes("Present"));
+                            const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize || isClickablePresent;
                             return (
                               <div className="flex flex-col gap-1 items-center w-full">
                                 {(dayObj.badgeLabel || dayObj.status).split(" & ").map((part, idx) => {
@@ -2290,6 +2483,94 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       )}
 
       {/* Weekend / Holiday Wages Resolver Modal */}
+      {/* Modal for viewing all Approved Overtime ODW Days */}
+      {showODWDatesModal && approvedOvertimeWages && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neutral-900/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full border border-neutral-200 shadow-2xl animate-scaleIn text-left">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200">
+                  <SparklesIcon className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-neutral-850">Approved Overtime Days</h3>
+                  <p className="text-[11px] text-neutral-500 font-medium">+{approvedOvertimeWages.days} Day(s) ODW wage benefit credited</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowODWDatesModal(false)}
+                className="w-7 h-7 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+              {approvedOvertimeWages.dates.map((dStr, idx) => {
+                const dayMatch = daysDataList.find(d => d.dateStr === dStr);
+                let label = dStr;
+                try {
+                  const [y, m, d] = dStr.split('-');
+                  const monthName = ["January","February","March","April","May","June","July","August","September","October","November","December"][parseInt(m, 10) - 1];
+                  const dayOfWeek = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10)).getDay()];
+                  label = `${dayOfWeek}, ${parseInt(d, 10)} ${monthName} ${y}`;
+                } catch {}
+
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-2.5 rounded-xl border border-neutral-200 bg-neutral-50/70 text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <span className="font-bold text-neutral-800">{label}</span>
+                    </div>
+                    {dayMatch && dayMatch.workingHoursFormatted ? (
+                      <span className="font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
+                        {dayMatch.workingHoursFormatted} • Present
+                      </span>
+                    ) : (
+                      <span className="font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
+                        12+ hrs • Present
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between text-xs">
+              <span className="text-neutral-500 font-medium">Total: <strong>{approvedOvertimeWages.dates.length} Days</strong></span>
+              <button
+                type="button"
+                onClick={() => setShowODWDatesModal(false)}
+                className="px-3 py-1.5 rounded-lg bg-neutral-900 text-white font-bold text-xs hover:bg-neutral-800 transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overtime ODW Compensation Modal */}
+      {overtimeCompData && (
+        <OvertimeODWCompensationModal
+          isOpen={overtimeCompData.isOpen}
+          qualifyingDays={overtimeCompData.qualifyingDays}
+          qualifyingCount={overtimeCompData.qualifyingCount}
+          compensationDays={overtimeCompData.compensationDays}
+          cycleStart={overtimeCompData.cycleStart}
+          cycleEnd={overtimeCompData.cycleEnd}
+          alreadyRequested={overtimeCompData.alreadyRequested}
+          existingStatus={overtimeCompData.existingStatus}
+          isLoading={isSubmittingComp}
+          onSubmit={handleOvertimeCompSubmit}
+          onClose={() => setOvertimeCompData(null)}
+        />
+      )}
+
       {resolvingWeekendCell && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neutral-900/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full border border-neutral-200 shadow-2xl animate-scaleIn">

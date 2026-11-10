@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 import { BookLoader } from "../../components/ui/Spinner";
 import { formatDateStr } from "../../utils/date";
 import { generateFinancialYears, generateCyclesForYear, getCurrentCycleValue } from "../../utils/cycle";
+import { OvertimeODWApprovalModal, OvertimeDetailData } from "./modals/OvertimeODWApprovalModal";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -82,6 +83,51 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
   }, [selectedYear, years]);
   const [selectedCycle, setSelectedCycle] = useState<string>(getCurrentCycleValue());
   const [processingId, setProcessingId] = useState<number | null>(null);
+  const [overtimeModalData, setOvertimeModalData] = useState<OvertimeDetailData | null>(null);
+  const [isLoadingOvertimeDays, setIsLoadingOvertimeDays] = useState(false);
+
+  const handleApproveClick = async (item: any) => {
+    // If this is an Overtime ODW benefit application, open detailed verification popup
+    const isOvertimeOdw = isOdwOnly && (
+      (item.reason || "").includes("Overtime Compensation") ||
+      (item.requested_shift || "").includes("Day(s) ODW") ||
+      (item.current_shift || "").includes("Day(s) ODW")
+    );
+
+    if (isOvertimeOdw) {
+      setOvertimeModalData({
+        requestId: item.id,
+        employeeId: item.employee_id,
+        employeeName: item.employee_name,
+        requestedShift: item.requested_shift || item.current_shift || "ODW Benefit",
+        reason: item.reason,
+        status: item.status,
+        fromDate: item.from_date,
+        toDate: item.to_date,
+        days: []
+      });
+      setIsLoadingOvertimeDays(true);
+      try {
+        const res = await fetch(`${BASE_URL}/shifts/${item.id}/overtime-days`, {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        const data = await res.json();
+        if (data.success && data.days) {
+          setOvertimeModalData(prev => prev ? { ...prev, days: data.days } : null);
+        }
+      } catch (err) {
+        console.error("Failed to load overtime days breakdown", err);
+      } finally {
+        setIsLoadingOvertimeDays(false);
+      }
+      return;
+    }
+
+    // Default regular approval
+    handleUpdateShiftStatus(item.id, "Approved");
+  };
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
@@ -287,16 +333,21 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
     return true;
   });
 
-  const handleUpdateShiftStatus = async (id: number, newStatus: string) => {
+  const handleUpdateShiftStatus = async (id: number, newStatus: string, approvedShift?: string, approvedReason?: string) => {
     try {
       setProcessingId(id);
       const endpoint = newStatus === "Approved" ? "approve" : "reject";
+      const bodyPayload = approvedShift || approvedReason ? {
+        approved_shift: approvedShift,
+        approved_reason: approvedReason
+      } : {};
       const response = await fetch(`${BASE_URL}/shifts/${endpoint}/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
-        }
+        },
+        body: Object.keys(bodyPayload).length > 0 ? JSON.stringify(bodyPayload) : undefined
       });
       if (!response.ok) {
         const errData = await response.json().catch(() => null);
@@ -305,6 +356,7 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
 
       const label = isOdwOnly ? "ODW request" : "Shift request";
       toast.success(`${label} ${newStatus.toLowerCase()}`);
+      setOvertimeModalData(null);
       fetchShiftRequests();
     } catch (error: any) {
       console.error(error);
@@ -630,7 +682,7 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                               <Button
                                 variant="primary"
                                 size="sm"
-                                onClick={() => handleUpdateShiftStatus(item.id, "Approved")}
+                                onClick={() => handleApproveClick(item)}
                                 disabled={processingId === item.id}
                                 className="!py-1 !px-2.5 !text-[10px] shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
                               >
@@ -700,6 +752,19 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
         </div>
       </Card>
       {/* Manager Direct Log Shift / WFH Modal */}
+      {/* Overtime ODW Verification & Approval Popup */}
+      {overtimeModalData && (
+        <OvertimeODWApprovalModal
+          isOpen={!!overtimeModalData}
+          data={overtimeModalData}
+          isLoadingDays={isLoadingOvertimeDays}
+          isProcessing={processingId === overtimeModalData?.requestId}
+          onApprove={(id, approvedShift, approvedReason) => handleUpdateShiftStatus(id, "Approved", approvedShift, approvedReason)}
+          onReject={(id) => handleUpdateShiftStatus(id, "Rejected")}
+          onClose={() => setOvertimeModalData(null)}
+        />
+      )}
+
       {showManagerLogModal && (
         <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-neutral-200 animate-in fade-in zoom-in-95 duration-200">

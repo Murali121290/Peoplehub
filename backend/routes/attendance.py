@@ -1441,6 +1441,22 @@ def check_holiday_or_weekoff():
         employee = Employee.query.filter_by(user_id=int(user_id)).first()
         if not employee:
             return jsonify({"success": False, "message": "Employee not found"}), 404
+
+        # Managers / Team Leads / Admins are not eligible for 12h Overtime Compensation
+        user = User.query.get(int(user_id))
+        user_access = (getattr(user, "access_level", "") or "").lower()
+        user_role = (getattr(user, "role", "") or "").lower()
+        emp_desig = (getattr(employee, "designation", "") or "").lower()
+
+        is_mgr = any(k in user_access for k in ["manager", "team_lead", "service_manager", "lead", "admin"]) or                  any(k in user_role for k in ["manager", "team_lead", "service_manager", "lead", "admin"]) or                  any(k in emp_desig for k in ["manager", "lead", "admin"])
+
+        if is_mgr:
+            return jsonify({
+                "success": False,
+                "eligible": False,
+                "is_manager": True,
+                "message": "Overtime compensation is applicable for employees only, not managers."
+            }), 200
             
         today = get_ist_today()
         
@@ -1483,6 +1499,174 @@ def check_holiday_or_weekoff():
             "already_requested": existing_wages is not None
         }), 200
     except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@attendance_bp.route("/check-overtime-odw-eligibility", methods=["GET"])
+@jwt_required()
+def check_overtime_odw_eligibility():
+    """
+    Checks if employee qualifies for Overtime ODW Benefit based on 12-hour days worked:
+    - 3 days of 12 hours = +1.0 Day Salary (ODW)
+    - 5 days of 12 hours = +1.5 Days Salary (ODW)
+    - 6+ days of 12 hours = +2.0 Days Salary (ODW)
+    Payroll cycle: 25th to 24th
+    Present days remain 'Present'; ODW is credited as a separate additional wage claim.
+    """
+    try:
+        from models.shift_request import ShiftRequest
+
+        user_id = get_jwt_identity()
+        req_emp_id = request.args.get("employee_id")
+        if req_emp_id:
+            employee = Employee.query.filter(
+                (Employee.employee_id == str(req_emp_id)) | (Employee.id == int(req_emp_id) if str(req_emp_id).isdigit() else False)
+            ).first()
+            if employee and employee.user_id:
+                user_id = employee.user_id
+        else:
+            employee = Employee.query.filter_by(user_id=int(user_id)).first()
+
+        if not employee:
+            return jsonify({"success": False, "message": "Employee not found"}), 404
+
+        # Payroll cycle: 25th to 24th
+        ist_today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        y, m, d = ist_today.year, ist_today.month, ist_today.day
+
+        if d >= 25:
+            cycle_start = ist_today.replace(day=25)
+            if m == 12:
+                cycle_end = ist_today.replace(year=y + 1, month=1, day=24)
+            else:
+                cycle_end = ist_today.replace(month=m + 1, day=24)
+        else:
+            if m == 1:
+                cycle_start = ist_today.replace(year=y - 1, month=12, day=25)
+            else:
+                cycle_start = ist_today.replace(month=m - 1, day=25)
+            cycle_end = ist_today.replace(day=24)
+
+        # Query all attendance records for this user in this payroll cycle where total_hours >= 12.0
+        records = Attendance.query.filter(
+            Attendance.user_id == int(user_id),
+            Attendance.attendance_date >= cycle_start,
+            Attendance.attendance_date <= cycle_end,
+            Attendance.total_hours >= 12.0
+        ).order_by(Attendance.attendance_date.asc()).all()
+
+        qualifying_days = []
+        for att in records:
+            ci = att.check_in.strftime("%I:%M %p") if att.check_in else ""
+            co = att.check_out.strftime("%I:%M %p") if att.check_out else ""
+            hrs = round(att.total_hours or 0, 2)
+            qualifying_days.append({
+                "date": str(att.attendance_date),
+                "total_hours": hrs,
+                "check_in": ci,
+                "check_out": co,
+            })
+
+        qualifying_count = len(qualifying_days)
+
+        # Calculate compensation based on tier policy:
+        # 3 days = 1.0 day salary
+        # 5 days = 1.5 days salary
+        # 6+ days = 2.0 days salary
+        compensation_days = 0.0
+        if qualifying_count >= 6:
+            compensation_days = 2.0
+        elif qualifying_count >= 5:
+            compensation_days = 1.5
+        elif qualifying_count >= 3:
+            compensation_days = 1.0
+
+        # Check all One Day Wages requests for this employee in this cycle
+        # Find which specific 12-hour dates have ALREADY been approved or are pending
+        import re
+        odw_requests = ShiftRequest.query.filter(
+            ShiftRequest.employee_id.in_([employee.employee_id, employee.id]),
+            ShiftRequest.request_type == "One Day Wages",
+            ShiftRequest.from_date >= cycle_start,
+            ShiftRequest.to_date <= cycle_end
+        ).order_by(ShiftRequest.id.desc()).all()
+
+        approved_dates = set()
+        pending_dates = set()
+        pending_request_exists = False
+        latest_status = None
+
+        for req in odw_requests:
+            if not latest_status:
+                latest_status = req.status
+            is_ot = "Overtime Compensation" in (req.reason or "") or "Day(s) ODW" in (req.requested_shift or "")
+            if is_ot:
+                found_dates = set(re.findall(r'\b\d{4}-\d{2}-\d{2}\b', req.reason or ''))
+                if req.status == "Approved":
+                    approved_dates.update(found_dates)
+                elif req.status == "Pending":
+                    pending_dates.update(found_dates)
+                    pending_request_exists = True
+            else:
+                # Standard single-day ODW
+                if req.from_date:
+                    d_str = str(req.from_date)
+                    if req.status == "Approved":
+                        approved_dates.add(d_str)
+                    elif req.status == "Pending":
+                        pending_dates.add(d_str)
+
+        # Annotate each qualifying day with its status
+        # Only dates that are ALREADY approved or pending are blocked from re-applying
+        annotated_qualifying_days = []
+        unclaimed_count = 0
+        for item in qualifying_days:
+            d_str = item["date"]
+            if d_str in approved_dates:
+                status_label = "Approved"
+                is_blocked = True
+            elif d_str in pending_dates:
+                status_label = "Pending"
+                is_blocked = True
+            else:
+                status_label = "Available"
+                is_blocked = False
+                unclaimed_count += 1
+
+            annotated_qualifying_days.append({
+                **item,
+                "status": status_label,
+                "is_blocked": is_blocked
+            })
+
+        # Dynamically recalculate compensation based on available (unclaimed) qualifying days
+        compensation_days = 0.0
+        if unclaimed_count >= 6:
+            compensation_days = 2.0
+        elif unclaimed_count >= 5:
+            compensation_days = 1.5
+        elif unclaimed_count >= 3:
+            compensation_days = 1.0
+
+        # If all qualifying days are already approved, or a pending request covers them
+        all_claimed = (unclaimed_count < 3 and len(approved_dates) > 0)
+        already_requested = pending_request_exists or (unclaimed_count == 0 and len(qualifying_days) > 0)
+
+        return jsonify({
+            "success": True,
+            "eligible": unclaimed_count >= 3 or qualifying_count >= 3,
+            "qualifying_count": qualifying_count,
+            "unclaimed_count": unclaimed_count,
+            "compensation_days": compensation_days,
+            "cycle_start": str(cycle_start),
+            "cycle_end": str(cycle_end),
+            "qualifying_days": annotated_qualifying_days,
+            "approved_dates": list(approved_dates),
+            "already_requested": already_requested,
+            "existing_status": latest_status if already_requested else None
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
 @attendance_bp.route("/history/<int:user_id>")
@@ -1606,13 +1790,33 @@ def attendance_history(user_id):
 
             # Check for One Day Wages request covering this date (pick latest)
             from models.shift_request import ShiftRequest
-            wages_req = ShiftRequest.query.filter(
+            import re
+            
+            wages_candidates = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_(emp_ids_filter),
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.from_date <= current_date,
                 ShiftRequest.to_date >= current_date
-            ).order_by(ShiftRequest.id.desc()).first()
+            ).order_by(ShiftRequest.id.desc()).all()
+
+            wages_req = None
+            is_ot_wage = False
+            for w in wages_candidates:
+                is_ot = "Overtime Compensation" in (w.reason or "") or "Day(s) ODW" in (w.requested_shift or "")
+                if is_ot:
+                    # Only treat as matching if current_date is in the explicitly claimed/approved 12-hour dates
+                    ot_dates = set(re.findall(r'\b\d{4}-\d{2}-\d{2}\b', w.reason or ''))
+                    if str(current_date) in ot_dates:
+                        wages_req = w
+                        is_ot_wage = True
+                        break
+                else:
+                    wages_req = w
+                    is_ot_wage = False
+                    break
+
             wages_status = wages_req.status if wages_req else None
+            wages_type = "overtime" if is_ot_wage else ("standard" if wages_req else None)
             is_weekend_or_holiday = is_date_week_off(current_date) or (current_date in holiday_dict)
             is_one_day_wages = (wages_req is not None and wages_req.status == "Approved")
 
@@ -1871,6 +2075,7 @@ def attendance_history(user_id):
                     "last_manager_comment": (record.clarification_history[-1]["comment"] if record.clarification_history and record.clarification_history[-1].get("sender_role") == "manager" else "") or "",
                     "is_one_day_wages": is_one_day_wages,
                     "wages_status": wages_status,
+                    "wages_type": wages_type,
                     "has_permission": has_permission,
                     "permission_label": permission_label,
                     "permission_hours": perm_hours,
@@ -1988,6 +2193,7 @@ def attendance_history(user_id):
                     "last_manager_comment": "",
                     "is_one_day_wages": is_one_day_wages,
                     "wages_status": wages_status,
+                    "wages_type": wages_type,
                     "regularization_check_in": "-",
                     "regularization_check_out": "-",
                     "regularization_total_hours": 0.0,
@@ -2964,6 +3170,51 @@ def export_monthly_attendance():
                 num_days_to_calculate = (emp_effective_end - start_date).days + 1
 
             odw_days_list = []
+            standard_odw_dates = []
+            standard_odw_days = 0.0
+            overtime_odw_dates = []
+            overtime_odw_days = 0.0
+            
+            # Separate standard single-day weekend/holiday ODW vs Overtime ODW Benefit
+            import re
+            standard_emp_wages = []
+            overtime_emp_wages = []
+            for w in emp_wages:
+                is_ot = "Overtime Compensation" in (w.reason or "") or "Day(s) ODW" in (w.requested_shift or "")
+                if is_ot:
+                    overtime_emp_wages.append(w)
+                else:
+                    standard_emp_wages.append(w)
+
+            # Process Overtime Compensation ODW requests:
+            # Add approved compensation days (e.g. 1.0, 1.5, 2.0) and record the specific verified qualifying dates
+            for ot_w in overtime_emp_wages:
+                # Extract approved compensation days from requested_shift (e.g. '1 Day(s) ODW' or '1.5 Day(s) ODW')
+                shift_text = ot_w.requested_shift or ot_w.current_shift or ""
+                m_days = re.search(r"([\d\.]+)\s*Day", shift_text)
+                ot_credited = 1.0
+                if m_days:
+                    try:
+                        ot_credited = float(m_days.group(1))
+                    except Exception:
+                        ot_credited = 1.0
+                total_odw_days += ot_credited
+                overtime_odw_days += ot_credited
+
+                # Extract the exact approved dates from reason (e.g. (2026-10-31, 2026-11-02, ...))
+                m_dates = re.search(r"\(([\d\-,\s]+)\)", ot_w.reason or "")
+                if m_dates:
+                    for s in m_dates.group(1).split(","):
+                        s = s.strip()
+                        if s:
+                            try:
+                                d_obj = datetime.strptime(s, "%Y-%m-%d").date()
+                                if d_obj not in overtime_odw_dates:
+                                    overtime_odw_dates.append(d_obj)
+                                if d_obj not in odw_days_list:
+                                    odw_days_list.append(d_obj)
+                            except Exception:
+                                pass
 
             for i in range(num_days_to_calculate):
                 d = start_date + timedelta(days=i)
@@ -3010,12 +3261,16 @@ def export_monthly_attendance():
                         "is_lop": is_lop
                     })
 
-                # Check if there is an approved one day wages request covering this date
-                day_wages = [w for w in emp_wages if w.from_date <= d and w.to_date >= d]
+                # Check if there is an approved standard weekend/holiday one day wages request covering this date
+                day_wages = [w for w in standard_emp_wages if w.from_date <= d and w.to_date >= d]
                 is_odw = len(day_wages) > 0
                 if is_odw:
                     total_odw_days += 1.0
-                    odw_days_list.append(d)
+                    standard_odw_days += 1.0
+                    if d not in standard_odw_dates:
+                        standard_odw_dates.append(d)
+                    if d not in odw_days_list:
+                        odw_days_list.append(d)
 
                 att = attendance_by_date.get(d)
                 
@@ -3226,16 +3481,35 @@ def export_monthly_attendance():
             else:
                 leave_remarks_val = "; ".join(text_str for _, text_str in remark_items)
 
-            # Format ODW dates list
-            odw_formatted_list = []
-            for dt in odw_days_list:
+            # Format ODW dates list with clear differentiation between standard ODW and Overtime ODW
+            std_formatted_list = []
+            for dt in sorted(standard_odw_dates):
                 day_suff = f"{dt.day}{get_ordinal_suffix(dt.day)}"
                 month_name = dt.strftime("%b")
-                odw_formatted_list.append(f"{day_suff} {month_name}")
+                std_formatted_list.append(f"{day_suff} {month_name}")
+
+            ot_formatted_list = []
+            for dt in sorted(overtime_odw_dates):
+                day_suff = f"{dt.day}{get_ordinal_suffix(dt.day)}"
+                month_name = dt.strftime("%b")
+                ot_formatted_list.append(f"{day_suff} {month_name}")
+
+            odw_cell_lines = []
+            if std_formatted_list and ot_formatted_list:
+                odw_cell_lines.append(f"ODW: {', '.join(std_formatted_list)}")
+                ot_days_label = f"{int(overtime_odw_days)} Days" if overtime_odw_days == int(overtime_odw_days) else f"{overtime_odw_days} Days"
+                odw_cell_lines.append(f"Overtime ODW (+{ot_days_label}): {', '.join(ot_formatted_list)}")
+            elif ot_formatted_list:
+                ot_days_label = f"{int(overtime_odw_days)} Days" if overtime_odw_days == int(overtime_odw_days) else f"{overtime_odw_days} Days"
+                odw_cell_lines.append(f"Overtime ODW (+{ot_days_label}): {', '.join(ot_formatted_list)}")
+            elif std_formatted_list:
+                odw_cell_lines.append(f"{', '.join(std_formatted_list)}")
             
+            odw_cell_value = "\n".join(odw_cell_lines) if odw_cell_lines else "-"
+
             if total_odw_days > 0:
                 odw_count_str = str(int(total_odw_days)) if total_odw_days == int(total_odw_days) else str(total_odw_days)
-                oneday_wages_val = f"{odw_count_str} ({', '.join(odw_formatted_list)})"
+                oneday_wages_val = f"{odw_count_str} ({odw_cell_value})"
             else:
                 oneday_wages_val = "0"
 
@@ -3260,7 +3534,7 @@ def export_monthly_attendance():
             ws.cell(row=row, column=15).value = total_lop_days
             ws.cell(row=row, column=16).value = leave_remarks_val
             ws.cell(row=row, column=17).value = int(total_odw_days) if total_odw_days == int(total_odw_days) else total_odw_days
-            ws.cell(row=row, column=18).value = ", ".join(odw_formatted_list) if odw_formatted_list else "-"
+            ws.cell(row=row, column=18).value = odw_cell_value
             ws.cell(row=row, column=19).value = late_ded_str
 
             # Highlight leave fields if leaves were deducted (subtracted)
@@ -3311,7 +3585,7 @@ def export_monthly_attendance():
         ws.column_dimensions["E"].width = 20   # Designation
         ws.column_dimensions["F"].width = 15   # Department
         ws.column_dimensions["P"].width = 25   # Remarks
-        ws.column_dimensions["R"].width = 23   # ODW Dates
+        ws.column_dimensions["R"].width = 32   # ODW Dates
 
         # Numeric columns set to width 7
         numeric_cols = ["G", "H", "I", "J", "K", "L", "M", "N", "O", "Q", "S"]
@@ -5843,13 +6117,31 @@ def get_pending_cycle_attendance(manager_user_id):
                 continue
 
             from models.shift_request import ShiftRequest
-            wages_req = ShiftRequest.query.filter(
+            import re
+            wages_candidates = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_([emp.id, emp.employee_id]),
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.from_date <= rec.attendance_date,
                 ShiftRequest.to_date >= rec.attendance_date
-            ).order_by(ShiftRequest.id.desc()).first()
+            ).order_by(ShiftRequest.id.desc()).all()
+
+            wages_req = None
+            is_ot_wage = False
+            for w in wages_candidates:
+                is_ot = "Overtime Compensation" in (w.reason or "") or "Day(s) ODW" in (w.requested_shift or "")
+                if is_ot:
+                    ot_dates = set(re.findall(r'\b\d{4}-\d{2}-\d{2}\b', w.reason or ''))
+                    if str(rec.attendance_date) in ot_dates:
+                        wages_req = w
+                        is_ot_wage = True
+                        break
+                else:
+                    wages_req = w
+                    is_ot_wage = False
+                    break
+
             wages_status = wages_req.status if wages_req else None
+            wages_type = "overtime" if is_ot_wage else ("standard" if wages_req else None)
             is_one_day_wages_final = (wages_req is not None)
 
             results.append({
@@ -5877,6 +6169,7 @@ def get_pending_cycle_attendance(manager_user_id):
                 "reporting_manager":    manager_full_name,
                 "is_one_day_wages":     is_one_day_wages_final,
                 "wages_status":         wages_status,
+                "wages_type":           wages_type,
             })
 
         return jsonify({
