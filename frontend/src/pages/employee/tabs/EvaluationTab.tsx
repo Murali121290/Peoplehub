@@ -1437,30 +1437,17 @@ export const EvaluationTab: React.FC = () => {
 
   // Canonical identifiers and team scoping resolved for current user
 
-  // Helper to match an employee response strictly for the logged in user
+  // Helper to match an employee response strictly for the logged in user using employee_id only
   const isResponseForUser = (r: EvaluationResponse) => {
     if (!r) return false;
     const clean = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
     const myCode = clean(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || '');
     const rEmpCode = clean(r.employeeCode);
     const rEmpId = clean(r.employeeId);
+    const rDbId = clean((r as any).employee_id);
 
-    // 1. Direct canonical employee code match (e.g. 2148 vs 2150)
-    if (myCode && (myCode === rEmpCode || myCode === rEmpId)) {
-      return true;
-    }
-
-    // 2. Strict exact full name match (only if both are valid and length >= 4)
-    const rName = (r.employeeName || '').trim().toLowerCase();
-    const myFullName = (
-      (currentDbUser ? `${currentDbUser.first_name || ''} ${currentDbUser.last_name || ''}`.trim() : '') ||
-      user?.full_name ||
-      `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() ||
-      userAny?.name ||
-      ''
-    ).trim().toLowerCase();
-
-    if (rName && myFullName && rName.length >= 4 && myFullName.length >= 4 && rName === myFullName) {
+    // Direct canonical employee_id match strictly (no user_id, no username, no name fallbacks)
+    if (myCode && (myCode === rEmpCode || myCode === rEmpId || myCode === rDbId)) {
       return true;
     }
 
@@ -3382,49 +3369,87 @@ export const EvaluationTab: React.FC = () => {
     const rEmpId = cleanEmpIdentifier(r.employee_id || r.employeeCode || r.employeeId);
     const rName = String(r.employeeName || r.employee_name || '').trim().toLowerCase();
 
-    // 1. Strict employee_id match
+    // 1. Strict employee_id match only (strictly no name or username fallback)
     if (targetEmpId && rEmpId) {
       return targetEmpId === rEmpId;
-    }
-
-    // 2. Exact Name match fallback (strictly exact normalized match, avoiding .includes false positives)
-    if (rName && targetEmpName) {
-      const cleanTarget = targetEmpName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
-      const cleanR = rName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
-      if (cleanTarget === cleanR) {
-        return true;
-      }
     }
 
     return false;
   };
 
-  // Helper to check if an employee currently has an active evaluation that is PENDING for this period
-  // (either awaiting employee self-evaluation OR awaiting manager calibration & approval)
+  // Helper to check if two date ranges [s1, e1] and [s2, e2] overlap
+  const doDatesOverlap = (s1?: string, e1?: string, s2?: string, e2?: string): boolean => {
+    if (!s1 || !e1 || !s2 || !e2) return false;
+    // Overlap condition: max(s1, s2) <= min(e1, e2)
+    return s1 <= e2 && s2 <= e1;
+  };
+
+  // Helper to resolve effective [from, to] date range for the current manager assignment modal
+  const getMgrAssignDateRange = (
+    pType = mgrPeriodType,
+    pQuarter = mgrPeriodQuarter,
+    pYear = mgrPeriodYear,
+    pMonth = mgrPeriodMonth,
+    pDue = mgrPeriodDueDate,
+    pFrom = mgrPeriodFromDate,
+    pTo = mgrPeriodToDate
+  ): { from: string; to: string } => {
+    if (pType === 'yearly' || (pType as string) === 'annual') {
+      const from = pFrom || `${pYear}-04-01`;
+      const to = pTo || `${pYear + 1}-03-31`;
+      return { from, to };
+    }
+    if (pType === 'monthly') {
+      const mPad = String(pMonth).padStart(2, '0');
+      const lastDay = new Date(pYear, pMonth, 0).getDate();
+      return { from: `${pYear}-${mPad}-01`, to: `${pYear}-${mPad}-${String(lastDay).padStart(2, '0')}` };
+    }
+    if (pType === 'quarterly') {
+      const qRanges: Record<number, [string, string]> = {
+        1: [`${pYear}-04-01`, `${pYear}-06-30`],
+        2: [`${pYear}-07-01`, `${pYear}-09-30`],
+        3: [`${pYear}-10-01`, `${pYear}-12-31`],
+        4: [`${pYear + 1}-01-01`, `${pYear + 1}-03-31`],
+      };
+      const r = qRanges[pQuarter] || [`${pYear}-01-01`, `${pYear}-12-31`];
+      return { from: r[0], to: r[1] };
+    }
+    if (pType === 'weekly') {
+      return { from: pFrom || '', to: pTo || '' };
+    }
+    if (pType === 'daily') {
+      const d = pFrom || pDue || '';
+      return { from: d, to: d };
+    }
+    return { from: pFrom || '', to: pTo || '' };
+  };
+
+  // Helper to check if an employee currently has an active evaluation that is PENDING and CONFLICTS with the target assignment dates
   const getEmpPendingEvaluation = (empId: string | any): EvaluationResponse | null => {
     if (!empId) return null;
 
-    // Use getEmpPeriodAssignmentInfo to see if this employee has an assigned or pending response for THIS specific period
-    const periodInfo = getEmpPeriodAssignmentInfo(empId);
-    if (periodInfo.matchingResp && !periodInfo.isCompleted) {
-      return periodInfo.matchingResp;
-    }
+    const assignRange = getMgrAssignDateRange();
 
-    // Fallback: Check if there's any active, uncompleted response matching this employee strictly for the current cadence/frequency
-    const pendingResp = responses.find(r => {
+    // Check responses that match this employee
+    const conflictingResp = responses.find(r => {
       if (!isEmpMatch(empId, r)) return false;
-
-      // Ignore archived or soft-deleted records
       if ((r as any).is_archived || (r as any).status === 'Archived') return false;
 
-      // Check cadence match if cadence is selected
-      const rType = String(r.frequency || (r as any).periodType || '').toLowerCase();
-      if (mgrPeriodType && rType && mgrPeriodType !== rType) return false;
+      // Extract response start and end dates
+      const rStart = (r as any).startDate || (r as any).start_date || (r as any).fromDate;
+      const rEnd = (r as any).endDate || (r as any).end_date || (r as any).toDate;
 
+      // If both have valid date ranges: ONLY conflict if the date ranges actually OVERLAP!
+      if (assignRange.from && assignRange.to && rStart && rEnd) {
+        if (!doDatesOverlap(assignRange.from, assignRange.to, rStart, rEnd)) {
+          // Dates do not overlap (e.g. Oct-Dec vs Jan-Mar) -> Never conflict!
+          return false;
+        }
+      }
+
+      // If dates overlap, check if the response is still in progress (not completed)
       const s = String(r.status || '').toLowerCase().trim();
       const smStatus = String((r as any).service_manager_approve_status || '').toLowerCase().trim();
-
-      // Check if evaluation is fully completed and calibrated
       const isCompleted =
         s === 'completed' ||
         s === 'sm_final_approval' ||
@@ -3439,27 +3464,31 @@ export const EvaluationTab: React.FC = () => {
       return !isCompleted;
     });
 
-    return pendingResp || null;
+    return conflictingResp || null;
   };
 
   const getPendingStatusLabel = (pendingResp: EvaluationResponse) => {
     const s = String(pendingResp.status || '').toLowerCase().trim();
     const isSubmittedByEmp = Boolean(pendingResp.employeeSubmittedAt) || Boolean((pendingResp as any).submitted_at);
     const isWithMgr = isSubmittedByEmp || s === 'manager_review' || s === 'submitted to manager' || s === 'submitted' || s === 'with_manager';
+    const periodLabel = pendingResp.periodName || (pendingResp as any).form || 'Assessment';
+    const rStart = (pendingResp as any).startDate || (pendingResp as any).start_date || (pendingResp as any).fromDate || '';
+    const rEnd = (pendingResp as any).endDate || (pendingResp as any).end_date || (pendingResp as any).toDate || '';
+    const dateRangeLabel = (rStart && rEnd) ? ` (${formatDisplayDate(rStart)} - ${formatDisplayDate(rEnd)})` : '';
 
     if (isWithMgr) {
       return {
         badgeText: 'Pending Review',
         badgeColor: 'text-amber-800 bg-amber-100 border-amber-300',
         icon: '⏳',
-        tooltip: `Employee has submitted their evaluation (${pendingResp.periodName || (pendingResp as any).form || 'Assessment'}), awaiting manager review & approval. Please review and score it before applying new metrics.`
+        tooltip: `Employee has an ongoing evaluation for ${periodLabel}${dateRangeLabel} that overlaps this period and is awaiting manager review. To modify targets during that period, please use the Edit Matrix button.`
       };
     }
     return {
       badgeText: 'Pending Self-Eval',
       badgeColor: 'text-orange-800 bg-orange-100 border-orange-300',
       icon: '⏳',
-      tooltip: `Employee currently has an ongoing evaluation (${pendingResp.periodName || (pendingResp as any).form || 'Assessment'}) in progress. It must be completed before applying new metrics.`
+      tooltip: `Employee currently has an evaluation in progress for ${periodLabel}${dateRangeLabel} that overlaps this period. To modify targets during that period, please use the Edit Matrix button.`
     };
   };
 
@@ -3477,26 +3506,27 @@ export const EvaluationTab: React.FC = () => {
   ) => {
     if (!empId) return { isAssigned: false, isCompleted: false, matchingResp: null as EvaluationResponse | null };
 
+    const assignRange = getMgrAssignDateRange(pType, pQuarter, pYear, pMonth, pDue, pFrom, pTo);
+
     // Check in responses (definitive source of active assigned evaluations)
     const matchingResp = responses.find(r => {
       if (!isEmpMatch(empId, r)) return false;
-
-      // Ignore archived or deleted records
       if ((r as any).is_archived || (r as any).status === 'Archived') return false;
-
-      const rType = String(r.frequency || (r as any).periodType || '').toLowerCase();
-
-      // If employee already has an active ongoing yearly evaluation with milestones
-      if (rType === 'yearly' && (pType === 'monthly' || pType === 'quarterly' || pType === 'yearly')) {
-        const s = String(r.status || '').toLowerCase().trim();
-        const isComp = s === 'completed' || s === 'sm_final_approval' || (s === 'approved' && r.managerScore != null);
-        if (!isComp) return true;
-      }
-
-      if (pType && rType && pType !== rType) return false;
 
       const rStart = (r as any).startDate || (r as any).start_date || (r as any).fromDate;
       const rEnd = (r as any).endDate || (r as any).end_date || (r as any).toDate;
+
+      // Strict date comparison:
+      // If date ranges exist for both, they must overlap to be considered the same period!
+      if (assignRange.from && assignRange.to && rStart && rEnd) {
+        if (!doDatesOverlap(assignRange.from, assignRange.to, rStart, rEnd)) {
+          return false;
+        }
+        return true;
+      }
+
+      const rType = String(r.frequency || (r as any).periodType || '').toLowerCase();
+      if (pType && rType && pType !== rType) return false;
 
       if (pType === 'weekly' && pFrom && pTo) {
         if (rStart === pFrom && rEnd === pTo) return true;
@@ -3566,6 +3596,12 @@ export const EvaluationTab: React.FC = () => {
         (r as any).status !== 'Archived'
       );
       if (!hasActiveRespForCycle) return false;
+
+      const cStart = (c as any).startDate || (c as any).start_date;
+      const cEnd = (c as any).endDate || (c as any).end_date;
+      if (assignRange.from && assignRange.to && cStart && cEnd) {
+        return doDatesOverlap(assignRange.from, assignRange.to, cStart, cEnd);
+      }
 
       const cType = String((c as any).frequency || '').toLowerCase();
       if (pType && cType && pType !== cType) return false;
@@ -7163,10 +7199,8 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
-    if (!hasAnyDeliverableFilled) {
-      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
-      return;
-    }
+    // Allow employee to submit without restricting unfilled deliverables
+    // if (!hasAnyDeliverableFilled) { ... }
 
     const missingRemarksKpi: string[] = [];
     const missingDeliverablesKpi: string[] = [];
@@ -7219,14 +7253,8 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    if (missingDeliverablesKpi.length > 0) {
-      showAlert(
-        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
-        'Deliverables Required',
-        'warning'
-      );
-      return;
-    }
+    // Unfilled deliverables allowed without restriction
+    // (missing deliverables check removed)
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -7510,10 +7538,8 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
-    if (!hasAnyDeliverableFilled) {
-      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
-      return;
-    }
+    // Allow employee to submit without restricting unfilled deliverables
+    // if (!hasAnyDeliverableFilled) { ... }
 
     const missingRemarksKpi: string[] = [];
     const missingDeliverablesKpi: string[] = [];
@@ -7566,14 +7592,8 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    if (missingDeliverablesKpi.length > 0) {
-      showAlert(
-        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
-        'Deliverables Required',
-        'warning'
-      );
-      return;
-    }
+    // Unfilled deliverables allowed without restriction
+    // (missing deliverables check removed)
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -7776,10 +7796,8 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
-    if (!hasAnyDeliverableFilled) {
-      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
-      return;
-    }
+    // Allow employee to submit without restricting unfilled deliverables
+    // if (!hasAnyDeliverableFilled) { ... }
 
     const missingRemarksKpi: string[] = [];
     const missingDeliverablesKpi: string[] = [];
@@ -7832,14 +7850,8 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    if (missingDeliverablesKpi.length > 0) {
-      showAlert(
-        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
-        'Deliverables Required',
-        'warning'
-      );
-      return;
-    }
+    // Unfilled deliverables allowed without restriction
+    // (missing deliverables check removed)
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -8150,10 +8162,8 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
-    if (!hasAnyDeliverableFilled) {
-      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
-      return;
-    }
+    // Allow employee to submit without restricting unfilled deliverables
+    // if (!hasAnyDeliverableFilled) { ... }
 
     const missingRemarksKpi: string[] = [];
     const missingDeliverablesKpi: string[] = [];
@@ -8206,14 +8216,8 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    if (missingDeliverablesKpi.length > 0) {
-      showAlert(
-        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
-        'Deliverables Required',
-        'warning'
-      );
-      return;
-    }
+    // Unfilled deliverables allowed without restriction
+    // (missing deliverables check removed)
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -12079,10 +12083,8 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
-    if (!hasAnyDeliverableFilled) {
-      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
-      return;
-    }
+    // Allow employee to submit without restricting unfilled deliverables
+    // if (!hasAnyDeliverableFilled) { ... }
 
     // Validate that Self Remarks and Deliverables are filled
     const missingRemarksKpi: string[] = [];
@@ -12146,14 +12148,8 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
-    if (missingDeliverablesKpi.length > 0) {
-      showAlert(
-        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
-        'Deliverables Required',
-        'warning'
-      );
-      return;
-    }
+    // Unfilled deliverables allowed without restriction
+    // (missing deliverables check removed)
 
     if (missingRemarksKpi.length > 0) {
       showAlert(

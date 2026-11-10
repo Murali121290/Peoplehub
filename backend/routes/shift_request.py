@@ -121,6 +121,29 @@ def apply_shift():
 
             # Check for existing approved Shift/WFH/Office requests in the date range
             if data.get("request_type") == "One Day Wages":
+                # For TODAY: An employee must have already checked in AND checked out before applying for One Day Wages
+                if req_from == ist_today or req_to == ist_today:
+                    resolved_user_id = employee.user_id if employee else emp_id
+                    today_att = Attendance.query.filter_by(
+                        user_id=resolved_user_id,
+                        attendance_date=ist_today
+                    ).first()
+
+                    has_check_in = bool(today_att and (today_att.check_in is not None or today_att.card_check_in is not None))
+                    has_check_out = bool(today_att and (today_att.check_out is not None or today_att.card_check_out is not None))
+
+                    if not has_check_in:
+                        return jsonify({
+                            "success": False,
+                            "message": "You cannot apply for One Day Wages today without checking in. Please complete your shift and check out first."
+                        }), 400
+
+                    if not has_check_out:
+                        return jsonify({
+                            "success": False,
+                            "message": "You are currently checked in. Please check out at the end of your shift before applying for One Day Wages."
+                        }), 400
+
                 existing_odw = ShiftRequest.query.filter(
                     ShiftRequest.employee_id.in_([employee.employee_id, employee.id]),
                     ShiftRequest.request_type == "One Day Wages",
