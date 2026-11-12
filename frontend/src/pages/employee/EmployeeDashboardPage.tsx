@@ -998,26 +998,35 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
       const clean = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
 
-      // Resolve the logged-in user in DB strictly by employee_id
+      // Resolve the logged-in user in DB strictly by user_id first, then email, then employee_id
+      const currentUserId = clean(user?.id || localStorage.getItem("user_id"));
+      const uEmail = String(user?.email || '').trim().toLowerCase();
       const currentDbUser = dbEmps.find((e: any) => {
+        if (currentUserId && clean(e.user_id) === currentUserId) return true;
+        if (uEmail) {
+          const eEmail = String(e.email || e.work_email || '').trim().toLowerCase();
+          if (eEmail && eEmail === uEmail) return true;
+        }
         const eEmpId = clean(e.employee_id);
-        const uEmpId = clean(user?.employee_id || localStorage.getItem("employee_id") || (user as any)?.emp_id);
-        const uEmail = String(user?.email || '').trim().toLowerCase();
-
-        return (
-          (uEmpId && eEmpId === uEmpId) ||
-          (uEmail && e.work_email && String(e.work_email).trim().toLowerCase() === uEmail)
-        );
+        const uEmpId = clean(user?.employee_id || (user as any)?.emp_id);
+        return Boolean(uEmpId && eEmpId === uEmpId);
       }) || currentEmployee;
 
-      // Canonical employee_id strictly for Evaluation (E2R) matching
-      const myEvalEmpIds = [
-        clean(currentDbUser?.employee_id),
-        clean(user?.employee_id),
-        clean((user as any)?.emp_id),
-        clean((user as any)?.employeeId),
-        clean(localStorage.getItem("employee_id")),
-      ].filter(Boolean);
+      // Auto-correct stale numeric employee.id in localStorage if needed
+      if (currentDbUser?.employee_id && localStorage.getItem("employee_id") !== String(currentDbUser.employee_id)) {
+        localStorage.setItem("employee_id", String(currentDbUser.employee_id));
+      }
+
+      // Canonical employee_id strictly for Evaluation (E2R) matching — prefer verified DB employee_id
+      const canonicalEmpId = clean(currentDbUser?.employee_id || currentEmployee?.employee_id);
+      const myEvalEmpIds = canonicalEmpId
+        ? [canonicalEmpId]
+        : [
+            clean(user?.employee_id),
+            clean((user as any)?.emp_id),
+            clean((user as any)?.employeeId),
+            clean(localStorage.getItem("employee_id")),
+          ].filter(Boolean);
 
       const myIds = [
         ...myEvalEmpIds,
