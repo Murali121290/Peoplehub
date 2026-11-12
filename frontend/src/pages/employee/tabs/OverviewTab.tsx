@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Coffee, UtensilsCrossed, Home, Clock, Pause, MinusCircle, PowerOff, LogOut } from "lucide-react";
 import { API_URL, getProfileImageUrl } from "../../../config/api";
 import { socket } from "../../../services/socket";
+import { debounce } from "../../../utils/debounce";
 
 interface OverviewTabProps {
   currentEmployee: any;
@@ -114,21 +115,23 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
       if (!document.hidden) fetchTeamAttendance(false);
     }, 60000);
 
-    // Listen for custom event to instantly refresh
+    // Listen for custom event to instantly refresh, and coalesce socket bursts
     const handleRefresh = () => fetchTeamAttendance(false);
+    const handleSocketRefresh = debounce(handleRefresh, 1500);
     window.addEventListener('refreshTeamStatus', handleRefresh);
 
     // Listen to socket events for real-time updates
-    socket.on("attendance_update", handleRefresh);
-    socket.on("leave_update", handleRefresh);
-    socket.on("shift_update", handleRefresh);
+    socket.on("attendance_update", handleSocketRefresh);
+    socket.on("leave_update", handleSocketRefresh);
+    socket.on("shift_update", handleSocketRefresh);
 
     return () => {
       clearInterval(interval);
+      handleSocketRefresh.cancel();
       window.removeEventListener('refreshTeamStatus', handleRefresh);
-      socket.off("attendance_update", handleRefresh);
-      socket.off("leave_update", handleRefresh);
-      socket.off("shift_update", handleRefresh);
+      socket.off("attendance_update", handleSocketRefresh);
+      socket.off("leave_update", handleSocketRefresh);
+      socket.off("shift_update", handleSocketRefresh);
     };
   }, [selectedTeam]);
 

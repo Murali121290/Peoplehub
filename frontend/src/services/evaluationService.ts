@@ -1,5 +1,6 @@
 import { API_URL } from '../config/api';
 import { getEmployees } from './employeesCache';
+import { fetchWithTimeout } from './fetchWithTimeout';
 import {
   EvaluationCycle,
   EvaluationResponse,
@@ -567,6 +568,39 @@ export const evaluationService = {
       console.warn('Evaluation backend API offline or unreachable, using active cache', e);
     }
     return { cycles: this.getCycles(), responses: this.getResponses() };
+  },
+
+  /**
+   * Lightweight, employee-scoped evaluation fetch for pre-checkout verification.
+   * Does not overwrite the full E2R session cache.
+   */
+  async fetchCheckoutEvaluationData(
+    employeeIds: string[] = []
+  ): Promise<{ cycles: EvaluationCycle[]; responses: EvaluationResponse[] }> {
+    try {
+      const token = localStorage.getItem('token');
+      const cleanedIds = Array.from(
+        new Set(employeeIds.map((id) => String(id || '').trim()).filter(Boolean))
+      );
+      const qs = cleanedIds.length > 0
+        ? `?employee_ids=${encodeURIComponent(cleanedIds.join(','))}`
+        : '';
+      const res = await fetchWithTimeout(
+        `${API_URL}/api/performance/evaluation/checkout-data${qs}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+        10_000,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          cycles: Array.isArray(data.cycles) ? data.cycles : [],
+          responses: Array.isArray(data.responses) ? data.responses : [],
+        };
+      }
+    } catch (e) {
+      console.warn('Scoped checkout evaluation API unavailable, falling back to full fetch', e);
+    }
+    return this.fetchRemoteEvaluationData();
   },
 
   async fetchRatingScale(): Promise<RatingLevel[]> {

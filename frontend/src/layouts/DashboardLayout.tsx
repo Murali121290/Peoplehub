@@ -11,6 +11,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { socket } from "../services/socket";
 import { getEmployees } from "../services/employeesCache";
+import { debounce } from "../utils/debounce";
 
 import Sidebar from "./components/Sidebar";
 import NotificationPanel from "./components/NotificationPanel";
@@ -462,15 +463,17 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     loadReportingEmployees();
 
-    socket.on("attendance_update", () => {
+    const handleSocketRefresh = debounce(() => {
       loadReportingEmployees();
-    });
+    }, 1500);
+    socket.on("attendance_update", handleSocketRefresh);
 
     const handleRefresh = () => loadReportingEmployees();
     window.addEventListener('refreshTeamStatus', handleRefresh);
 
     return () => {
-      socket.off("attendance_update");
+      handleSocketRefresh.cancel();
+      socket.off("attendance_update", handleSocketRefresh);
       window.removeEventListener('refreshTeamStatus', handleRefresh);
     };
   }, []);

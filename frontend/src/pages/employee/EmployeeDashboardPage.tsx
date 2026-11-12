@@ -1,5 +1,5 @@
 import { API_URL, getProfileImageUrl } from "../../config/api";
-import React, { useState, useEffect, useMemo, Suspense, lazy } from "react";
+import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { getEmployees, getCachedEmployeesSync } from "../../services/employeesCache";
@@ -364,12 +364,14 @@ const EmployeeDashboardPage: React.FC = () => {
   useEffect(() => {
     loadPendingClarifications();
 
-    socket.on("attendance_update", () => {
+    const handleClarificationAttendanceUpdate = (payload: any) => {
+      if (payload?.user_id && Number(payload.user_id) !== Number(user?.id)) return;
       loadPendingClarifications();
-    });
+    };
+    socket.on("attendance_update", handleClarificationAttendanceUpdate);
 
     return () => {
-      socket.off("attendance_update");
+      socket.off("attendance_update", handleClarificationAttendanceUpdate);
     };
   }, [user?.id]);
 
@@ -657,17 +659,37 @@ if (isHalfDayLeave(leave.total_days)) return false;
   };
 
 
+  const publicIpCacheRef = useRef<{ ip: string | null; ts: number }>({ ip: null, ts: 0 });
+  const publicIpInFlightRef = useRef<Promise<string | null> | null>(null);
+
   const getClientPublicIp = async (): Promise<string | null> => {
-    try {
-      const res = await fetch("https://api.ipify.org?format=json");
-      if (res.ok) {
-        const data = await res.json();
-        return data.ip || null;
-      }
-    } catch (e) {
-      console.warn("Failed to fetch public IP", e);
+    const now = Date.now();
+    if (publicIpCacheRef.current.ip && now - publicIpCacheRef.current.ts < 30_000) {
+      return publicIpCacheRef.current.ip;
     }
-    return null;
+    if (publicIpInFlightRef.current) {
+      return publicIpInFlightRef.current;
+    }
+    const req = (async () => {
+      try {
+        const res = await fetchWithTimeout("https://api.ipify.org?format=json", {}, 1500);
+        if (res.ok) {
+          const data = await res.json();
+          const ip = data.ip || null;
+          if (ip) {
+            publicIpCacheRef.current = { ip, ts: Date.now() };
+          }
+          return ip;
+        }
+      } catch (e) {
+        console.warn("Failed to fetch public IP (timeout/error)", e);
+      } finally {
+        publicIpInFlightRef.current = null;
+      }
+      return null;
+    })();
+    publicIpInFlightRef.current = req;
+    return req;
   };
 
   // --- Attendance Handlers ---
@@ -948,25 +970,31 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   const checkPendingEvaluationBeforeCheckout = async () => {
     try {
-      let dbEmps: any[] = [];
-      try {
-        dbEmps = await evaluationService.fetchDBEmployees();
-      } catch (e) {
-        dbEmps = [];
-      }
-      if (!Array.isArray(dbEmps) || dbEmps.length === 0) {
+      // Pre-warm public IP lookup in parallel so confirmation checkout does not wait on external DNS/TLS
+      void getClientPublicIp();
+      const todayForHolidays = new Date();
+      const tokenForHolidays = localStorage.getItem('token');
+
+      const [dbEmpsRes, holidaysRes] = await Promise.all([
+        evaluationService.fetchDBEmployees().catch(() => [] as any[]),
+        fetchWithTimeout(
+          `${BASE_URL}/employee/holidays?month=${todayForHolidays.getMonth() + 1}&year=${todayForHolidays.getFullYear()}`,
+          { headers: tokenForHolidays ? { Authorization: `Bearer ${tokenForHolidays}` } : {} },
+          5000,
+        )
+          .then(async (hRes) => {
+            if (!hRes.ok) return [] as any[];
+            const hData = await hRes.json();
+            return Array.isArray(hData?.current_month_schedule) ? hData.current_month_schedule : [];
+          })
+          .catch(() => [] as any[]),
+      ]);
+
+      let dbEmps: any[] = Array.isArray(dbEmpsRes) ? dbEmpsRes : [];
+      if (dbEmps.length === 0) {
         dbEmps = Array.isArray(employees) && employees.length > 0 ? employees : [];
       }
-
-      let remoteData: { cycles: any[]; responses: any[] } = { cycles: [], responses: [] };
-      try {
-        remoteData = await evaluationService.fetchRemoteEvaluationData();
-      } catch (e) {
-        remoteData = { cycles: evaluationService.getCycles(), responses: evaluationService.getResponses() };
-      }
-
-      const cycles = remoteData.cycles || [];
-      const responses = remoteData.responses || [];
+      const holidaysList: any[] = holidaysRes;
 
       const clean = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
 
@@ -1170,6 +1198,23 @@ if (isHalfDayLeave(leave.total_days)) return false;
       // 1. Manager Phase: Check unassigned subordinates during the setup window
       const assignableDirects = dbEmps.filter(e => isAssignableSubordinate(e));
 
+      const scopedEmpIds = [
+        ...myEvalEmpIds,
+        clean(currentDbUser?.employee_id),
+        clean(currentEmployee?.employee_id),
+        ...assignableDirects.map((d: any) => clean(d.employee_id)),
+      ].filter(Boolean);
+
+      let remoteData: { cycles: any[]; responses: any[] } = { cycles: [], responses: [] };
+      try {
+        remoteData = await evaluationService.fetchCheckoutEvaluationData(scopedEmpIds);
+      } catch (e) {
+        remoteData = { cycles: evaluationService.getCycles(), responses: evaluationService.getResponses() };
+      }
+
+      const cycles = remoteData.cycles || [];
+      const responses = remoteData.responses || [];
+
       // Strictly verify if Admin has released / assigned an evaluation cycle for this manager / manager's team
       let hasAssignedCycleFromAdmin = false;
       if (assignableDirects.length > 0) {
@@ -1354,18 +1399,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
           p.includes('daily')
         );
       };
-
-      let holidaysList: any[] = [];
-      try {
-        const token = localStorage.getItem('token');
-        const hRes = await fetch(`${BASE_URL}/employee/holidays?month=${today.getMonth() + 1}&year=${today.getFullYear()}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
-        if (hRes.ok) {
-          const hData = await hRes.json();
-          holidaysList = Array.isArray(hData?.current_month_schedule) ? hData.current_month_schedule : [];
-        }
-      } catch (e) {}
 
       const isCompanyHoliday = (dateStr: string): boolean => {
         return holidaysList.some((h: any) => {
@@ -1912,21 +1945,23 @@ if (isHalfDayLeave(leave.total_days)) return false;
         return;
       }
       const clientIp = await getClientPublicIp();
-      const response = await fetch(`${BASE_URL}/attendance/checkout`, {
+      const response = await fetchWithTimeout(`${BASE_URL}/attendance/checkout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
         body: JSON.stringify({ user_id: Number(userId), client_ip: clientIp }),
-      });
+      }, 15_000);
       const data = await response.json();
       if (!response.ok) {
         toast.error(data.error || "Checkout Failed");
         return;
       }
-      const attendanceResponse = await fetch(
+      const attendanceResponse = await fetchWithTimeout(
         `${BASE_URL}/attendance/history/${userId}`,
+        {},
+        15_000,
       );
       const attendanceHistory = await attendanceResponse.json();
       setAttendanceData(attendanceHistory);

@@ -7,6 +7,7 @@ import WFHApprovalPage from "./WFHApprovalPage";
 import PermissionApprovalPage from "./PermissionApprovalPage";
 import RegularizationApprovalPage from "./RegularizationApprovalPage";
 import { socket } from "../../services/socket";
+import { debounce } from "../../utils/debounce";
 import {
   CalendarDaysIcon,
   ShieldCheckIcon,
@@ -239,9 +240,9 @@ const TeamManagementPage: React.FC = () => {
   useEffect(() => {
     fetchNotificationCounts();
 
-    const handleSocketUpdate = () => {
+    const handleSocketUpdate = debounce(() => {
       fetchNotificationCounts();
-    };
+    }, 1500);
 
     socket.on("leave_update", handleSocketUpdate);
     socket.on("shift_update", handleSocketUpdate);
@@ -252,6 +253,7 @@ const TeamManagementPage: React.FC = () => {
     }, 60000);
     return () => {
       clearInterval(interval);
+      handleSocketUpdate.cancel();
       socket.off("leave_update", handleSocketUpdate);
       socket.off("shift_update", handleSocketUpdate);
       socket.off("attendance_update", handleSocketUpdate);

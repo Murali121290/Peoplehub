@@ -21,18 +21,24 @@ import base64
 import gzip
 import hashlib
 import jwt
+import re
+import threading
+import time
 
 performance_bp = Blueprint("performance", __name__)
 
 # ---------------------------------------------------------------------------
 # Redis versioned cache for heavy Performance / E2R endpoints:
 #   - GET /api/performance/evaluation/data
+#   - GET /api/performance/evaluation/checkout-data
 #   - GET /api/performance/kpi-evaluations
 # Any commit modifying KpiEvaluation or ManagerKpiTemplate increments the
 # version key so all cached payloads invalidate atomically in O(1).
 # ---------------------------------------------------------------------------
 PERF_VER_KEY = "peoplehub:api:performance:ver"
-PERF_CACHE_TTL = 60  # seconds
+PERF_CACHE_TTL = 300  # seconds (DB commits invalidate immediately via _invalidate_perf_after_commit)
+_eval_build_lock = threading.Lock()
+_checkout_base_mem = {"ver": None, "ts": 0.0, "data": None}
 
 
 def _get_perf_cache_ver():
@@ -2455,6 +2461,48 @@ def _cache_sidebar_summary_in_redis(summary_cache_key: str, summary_payload: dic
         pass
 
 
+_SUBREC_SLIM_DROP_KEYS = {"kpiEntries", "categories", "kpis", "metrics_data", "comments"}
+_TOP_SLIM_DROP_KEYS = {"categories", "kpis", "metrics_data", "comments"}
+
+
+def _slim_record_list(recs):
+    if not isinstance(recs, list):
+        return []
+    return [{k: v for k, v in item.items() if k not in _SUBREC_SLIM_DROP_KEYS} for item in recs if isinstance(item, dict)]
+
+
+def _build_checkout_base_payload(full_payload: dict) -> dict:
+    """Strips heavy KPI scorecard arrays from cycles/responses while keeping all checkout due-date metadata intact."""
+    slim_cycles = []
+    for c in (full_payload.get("cycles") or []):
+        if not isinstance(c, dict):
+            continue
+        sc = {k: v for k, v in c.items() if k not in _TOP_SLIM_DROP_KEYS}
+        if isinstance(sc.get("daily_records"), list):
+            sc["daily_records"] = _slim_record_list(sc["daily_records"])
+        slim_cycles.append(sc)
+
+    slim_responses = []
+    for r in (full_payload.get("responses") or []):
+        if not isinstance(r, dict):
+            continue
+        sr = {k: v for k, v in r.items() if k not in _TOP_SLIM_DROP_KEYS}
+        for key in ("daily_records", "weekly_records", "monthly_records", "quarterly_records"):
+            if isinstance(sr.get(key), list):
+                sr[key] = _slim_record_list(sr[key])
+        slim_responses.append(sr)
+
+    return {"success": True, "cycles": slim_cycles, "responses": slim_responses}
+
+
+def _cache_checkout_base_in_redis(base_cache_key: str, full_payload: dict, ttl_seconds: int):
+    _cache_sidebar_summary_in_redis(base_cache_key, _build_checkout_base_payload(full_payload), ttl_seconds)
+
+
+def _clean_emp_token(val) -> str:
+    return re.sub(r"^emp-?", "", str(val or "").strip().lower())
+
+
 @performance_bp.route("/evaluation/data", methods=["GET"])
 def get_evaluation_data():
     try:
@@ -2462,6 +2510,21 @@ def get_evaluation_data():
         cached_resp = _cache_get_precompressed(cache_key)
         if cached_resp is not None:
             return cached_resp
+
+        with _eval_build_lock:
+            # Double-check inside per-worker single-flight lock so concurrent misses don't rebuild simultaneously
+            cache_key = f"peoplehub:api:performance:eval_data:gz:v{_get_perf_cache_ver()}"
+            cached_resp = _cache_get_precompressed(cache_key)
+            if cached_resp is not None:
+                return cached_resp
+
+            return _build_and_cache_evaluation_data(cache_key)
+    except Exception as e:
+        return jsonify({"error": str(e), "cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}), 500
+
+
+def _build_and_cache_evaluation_data(cache_key: str):
+    try:
 
         eval_records, store = sync_postgres_kpi_to_store_and_back()
         db_unavailable = eval_records is None  # DB had an exception; use JSON-only fallback
@@ -2804,11 +2867,45 @@ def get_evaluation_data():
         merged_cycles = valid_merged_cycles
         rating_scale = store.get("ratingScale", DEFAULT_RATING_SCALE)
         payload = {"success": True, "cycles": merged_cycles, "responses": merged_responses, "ratingScale": rating_scale}
-        summary_cache_key = f"peoplehub:api:performance:sidebar_summary:gz:v{_get_perf_cache_ver()}"
-        _cache_sidebar_summary_in_redis(summary_cache_key, _build_sidebar_summary_payload(payload), PERF_CACHE_TTL)
+        ver = _get_perf_cache_ver()
+        _cache_sidebar_summary_in_redis(
+            f"peoplehub:api:performance:sidebar_summary:gz:v{ver}",
+            _build_sidebar_summary_payload(payload),
+            PERF_CACHE_TTL,
+        )
+        _cache_checkout_base_in_redis(
+            f"peoplehub:api:performance:checkout_base:gz:v{ver}",
+            payload,
+            PERF_CACHE_TTL,
+        )
         return _cache_set_precompressed(cache_key, payload, PERF_CACHE_TTL)
     except Exception as e:
         return jsonify({"error": str(e), "cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}), 500
+
+
+def _decode_redis_gz_json(redis_key: str):
+    r = _get_redis()
+    if r is None:
+        return None
+    try:
+        b64 = r.get(redis_key)
+        if not b64:
+            return None
+        return json.loads(gzip.decompress(base64.b64decode(b64)).decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _decode_payload_from_response(resp):
+    if not (hasattr(resp, "body") or hasattr(resp, "get_data")):
+        return None
+    try:
+        raw_body = resp.get_data() if hasattr(resp, "get_data") else resp.body
+        if getattr(resp, "headers", {}).get("Content-Encoding") == "gzip":
+            raw_body = gzip.decompress(raw_body)
+        return json.loads(raw_body.decode("utf-8"))
+    except Exception:
+        return None
 
 
 @performance_bp.route("/evaluation/sidebar-summary", methods=["GET"])
@@ -2822,33 +2919,79 @@ def get_evaluation_sidebar_summary():
             return cached_resp
 
         # If full evaluation payload is already in Redis, distill it without touching Postgres
-        r = _get_redis()
-        if r is not None:
-            try:
-                b64 = r.get(f"peoplehub:api:performance:eval_data:gz:v{ver}")
-                if b64:
-                    full_payload = json.loads(gzip.decompress(base64.b64decode(b64)).decode("utf-8"))
-                    summary_payload = _build_sidebar_summary_payload(full_payload)
-                    return _cache_set_precompressed(summary_cache_key, summary_payload, PERF_CACHE_TTL)
-            except Exception:
-                pass
+        full_payload = _decode_redis_gz_json(f"peoplehub:api:performance:eval_data:gz:v{ver}")
+        if full_payload is not None:
+            summary_payload = _build_sidebar_summary_payload(full_payload)
+            return _cache_set_precompressed(summary_cache_key, summary_payload, PERF_CACHE_TTL)
 
         # Cache miss on both keys — warm full payload once via get_evaluation_data, then serve summary
         full_resp = get_evaluation_data()
         cached_resp = _cache_get_precompressed(summary_cache_key)
         if cached_resp is not None:
             return cached_resp
-        # Redis disabled/unavailable fallback: distill directly from Response body
-        if hasattr(full_resp, "body") or hasattr(full_resp, "get_data"):
-            try:
-                raw_body = full_resp.get_data() if hasattr(full_resp, "get_data") else full_resp.body
-                if getattr(full_resp, "headers", {}).get("Content-Encoding") == "gzip":
-                    raw_body = gzip.decompress(raw_body)
-                full_payload = json.loads(raw_body.decode("utf-8"))
-                return jsonify(_build_sidebar_summary_payload(full_payload)), 200
-            except Exception:
-                pass
+        full_payload = _decode_payload_from_response(full_resp)
+        if full_payload is not None:
+            return jsonify(_build_sidebar_summary_payload(full_payload)), 200
         return jsonify({"success": True, "cycles": [], "responses": []}), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "cycles": [], "responses": []}), 500
+
+
+@performance_bp.route("/evaluation/checkout-data", methods=["GET"])
+def get_checkout_evaluation_data():
+    """Scoped, KPI-stripped evaluation payload for fast pre-checkout verification (~98% smaller than /evaluation/data)."""
+    try:
+        raw_ids = (request.args.get("employee_ids") or "").strip()
+        target_ids = {_clean_emp_token(x) for x in raw_ids.split(",") if _clean_emp_token(x)}
+
+        ver = _get_perf_cache_ver()
+        now_mono = time.monotonic()
+        if (
+            _checkout_base_mem["data"] is not None
+            and _checkout_base_mem["ver"] == ver
+            and (now_mono - _checkout_base_mem["ts"]) < PERF_CACHE_TTL
+        ):
+            base_payload = _checkout_base_mem["data"]
+        else:
+            base_key = f"peoplehub:api:performance:checkout_base:gz:v{ver}"
+            base_payload = _decode_redis_gz_json(base_key)
+
+            if base_payload is None:
+                full_payload = _decode_redis_gz_json(f"peoplehub:api:performance:eval_data:gz:v{ver}")
+                if full_payload is None:
+                    full_resp = get_evaluation_data()
+                    ver = _get_perf_cache_ver()
+                    base_payload = _decode_redis_gz_json(f"peoplehub:api:performance:checkout_base:gz:v{ver}")
+                    if base_payload is None:
+                        full_payload = _decode_payload_from_response(full_resp)
+                if base_payload is None and full_payload is not None:
+                    base_payload = _build_checkout_base_payload(full_payload)
+                    _cache_sidebar_summary_in_redis(f"peoplehub:api:performance:checkout_base:gz:v{ver}", base_payload, PERF_CACHE_TTL)
+
+            if base_payload is not None:
+                _checkout_base_mem["ver"] = ver
+                _checkout_base_mem["ts"] = now_mono
+                _checkout_base_mem["data"] = base_payload
+
+        if base_payload is None:
+            return jsonify({"success": True, "cycles": [], "responses": []}), 200
+
+        responses = base_payload.get("responses") or []
+        if target_ids:
+            responses = [
+                r for r in responses
+                if (
+                    _clean_emp_token(r.get("employeeCode")) in target_ids
+                    or _clean_emp_token(r.get("employeeId")) in target_ids
+                    or _clean_emp_token(r.get("employee_id")) in target_ids
+                )
+            ]
+
+        return jsonify({
+            "success": True,
+            "cycles": base_payload.get("cycles") or [],
+            "responses": responses,
+        }), 200
     except Exception as e:
         return jsonify({"error": str(e), "cycles": [], "responses": []}), 500
 

@@ -1,6 +1,7 @@
 import { API_URL } from "../../config/api";
 import React, { useState, useEffect, useMemo, Suspense, lazy } from "react";
 import { formatDateStr } from "../../utils/date";
+import { debounce } from "../../utils/debounce";
 import { apiService } from "../../services/api";
 import { getEmployees, getCachedEmployeesSync } from "../../services/employeesCache";
 import {
@@ -348,15 +349,18 @@ export default function HRAdminDashboard() {
     };
     init();
 
-    const handleLeaveUpdate = () => fetchLeaveRequests();
-    const handleShiftUpdate = () => fetchShiftRequests();
-    const handleAttendanceUpdate = () => fetchAttendance();
+    const handleLeaveUpdate = debounce(() => fetchLeaveRequests(), 1500);
+    const handleShiftUpdate = debounce(() => fetchShiftRequests(), 1500);
+    const handleAttendanceUpdate = debounce(() => fetchAttendance(), 1500);
 
     socket.on("leave_update", handleLeaveUpdate);
     socket.on("shift_update", handleShiftUpdate);
     socket.on("attendance_update", handleAttendanceUpdate);
 
     return () => {
+      handleLeaveUpdate.cancel();
+      handleShiftUpdate.cancel();
+      handleAttendanceUpdate.cancel();
       socket.off("leave_update", handleLeaveUpdate);
       socket.off("shift_update", handleShiftUpdate);
       socket.off("attendance_update", handleAttendanceUpdate);
