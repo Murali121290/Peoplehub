@@ -12,61 +12,41 @@ from utils.employee_cache import get_all_employees_cached
 
 
 def check_missed_checkins():
-    # print("\n========== CHECK-IN MONITOR RUNNING ==========")
-
     try:
         now = datetime.now(ZoneInfo("Asia/Kolkata"))
-        start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        one_minute_ago = now - timedelta(minutes=1)
+        today = now.date()
 
-        users = User.query.filter(
-            User.last_login.isnot(None),
-            User.last_login >= start_of_today,
-            User.last_login <= one_minute_ago
+        # Check if there are any pending missed check-in notifications to resolve
+        pending_notifs = Notification.query.filter(
+            Notification.title.in_(["Missed Check In", "⏰ Missed Check In"])
         ).all()
 
-        print(f"Users Found: {len(users)}")
+        if pending_notifs:
+            active_employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
+            manager_by_name = {}
+            for e in active_employees:
+                full_name = f"{e.first_name} {e.last_name}".strip().lower()
+                manager_by_name.setdefault(full_name, e)
 
-        # Loaded once per run (instead of once per already-checked-in user
-        # below) since this job fires every minute, all day.
-        active_employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
-        manager_by_name = {}
-        for e in active_employees:
-            full_name = f"{e.first_name} {e.last_name}".strip().lower()
-            manager_by_name.setdefault(full_name, e)
+            emp_ids = list({n.related_id for n in pending_notifs if n.related_id})
+            employees = Employee.query.filter(Employee.id.in_(emp_ids)).all() if emp_ids else []
+            emp_by_id = {e.id: e for e in employees}
+            user_ids = [e.user_id for e in employees if e.user_id]
 
-        for user in users:
-            print(f"Checking User: {user.full_name}")
-
-            employee = Employee.query.filter_by(user_id=user.id).first()
-
-            if not employee:
-                print(f"No Employee Record for User ID {user.id}")
-                continue
-
-            print(f"Employee Found: {employee.employee_id}")
-
-            today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-            today_attendance = Attendance.query.filter(
-                Attendance.user_id == user.id,
+            attendances = Attendance.query.filter(
+                Attendance.user_id.in_(user_ids),
                 Attendance.attendance_date == today
-            ).first()
+            ).all() if user_ids else []
+            checked_in_users = {a.user_id for a in attendances}
 
-            print(f"User={user.id}, Attendance={today_attendance}")
-
-            if today_attendance:
-                print(f"{employee.employee_id} already has attendance today")
-
-                manager_name = employee.reporting_manager.strip().lower()
-                manager_emp = manager_by_name.get(manager_name)
-
-                pending_notifs = Notification.query.filter(
-                    Notification.title.in_(["Missed Check In", "⏰ Missed Check In"]),
-                    Notification.related_id == employee.id
-                ).all()
-
-                for n in pending_notifs:
+            resolved_any = False
+            for n in pending_notifs:
+                emp = emp_by_id.get(n.related_id)
+                if emp and emp.user_id in checked_in_users:
                     db.session.delete(n)
+                    resolved_any = True
+                    manager_name = (emp.reporting_manager or "").strip().lower()
+                    manager_emp = manager_by_name.get(manager_name)
                     if manager_emp:
                         socketio.emit(
                             "manager_notification_resolved",
@@ -74,60 +54,9 @@ def check_missed_checkins():
                             to=str(manager_emp.id)
                         )
 
+            if resolved_any:
                 db.session.commit()
-                continue
-
-        db.session.commit()
-        print("Notifications Saved Successfully")
-
-        # ========================================================
-        # AUTO BREAK-END & AUTO CHECK-OUT LOGIC
-        # ========================================================
-        active_attendances = Attendance.query.filter(
-            Attendance.check_out.is_(None),
-            Attendance.check_in.isnot(None)
-        ).all()
-
-        for attendance in active_attendances:
-            now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
-            break_ended = False
-
-            gap_minutes = attendance.total_gap_minutes or 0
-            break_minutes = attendance.total_break_minutes or 0
-            
-            elapsed_seconds = (now_ist - attendance.check_in).total_seconds()
-            total_seconds = elapsed_seconds - (gap_minutes * 60) - (break_minutes * 60)
-            
-            working_hours = total_seconds / 3600
-            elapsed_hours = elapsed_seconds / 3600
-            
-            # Manual check-out enforced (auto check-out disabled)
-            if break_ended:
-                # If not checked out but a break ended, emit update to sync UI
-                employee = Employee.query.filter_by(user_id=attendance.user_id).first()
-                if employee:
-                    try:
-                        payload = {
-                            "id": employee.id,
-                            "user_id": employee.user_id,
-                            "attendance_status": "Checked In",
-                            "check_in": attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None,
-                            "check_out": None,
-                            "working_hours": round(working_hours, 2),
-                            "lunch_minutes": attendance.lunch_minutes or 0,
-                            "tea_minutes": attendance.tea_minutes or 0,
-                            "shift": employee.shift_timing or "General Shift",
-                            "manager_status": attendance.manager_status or "Pending",
-                            "checked_in": True,
-                            "lunch_break": attendance.lunch_break or False,
-                            "tea_break": attendance.tea_break or False
-                        }
-                        socketio.emit("attendance_update", payload)
-                    except Exception as e:
-                        print(f"Failed to emit break-end socket: {str(e)}")
-
-        db.session.commit()
-        # print("========== CHECK-IN MONITOR COMPLETED ==========\n")
+                print("[CheckinMonitor] Resolved checked-in employee missed checkin notifications")
 
     except Exception as e:
         print(f"❌ CHECK-IN MONITOR ERROR: {str(e)}")
@@ -135,7 +64,6 @@ def check_missed_checkins():
             db.session.rollback()
         except:
             pass
-        print("========== CHECK-IN MONITOR FAILED ==========\n")
     finally:
         try:
             db.session.remove()

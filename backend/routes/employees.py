@@ -649,24 +649,22 @@ def get_employee(employee_id):
     methods=["GET"]
 )
 def get_employee_image(employee_id):
-    result = db.session.query(Employee.profile_image).filter_by(id=employee_id).first()
-
+    emp_code = str(employee_id).strip()
     employee = None
-    try:
-        emp_id_int = int(employee_id)
-        employee = Employee.query.get(emp_id_int)
-    except (ValueError, TypeError):
-        pass
-
+    if emp_code.isdigit():
+        try:
+            employee = Employee.query.get(int(emp_code))
+        except Exception:
+            employee = None
     if not employee:
-        employee = Employee.query.filter_by(employee_id=str(employee_id)).first()
+        employee = Employee.query.filter_by(employee_id=emp_code).first()
 
     if not employee:
         return jsonify({
             "error": "Employee not found"
         }), 404
 
-    if not result or not result[0]:
+    if not employee.profile_image:
         return jsonify({
             "error": "Image not found"
         }), 404
@@ -686,7 +684,7 @@ def get_employee_image(employee_id):
         }), 404
 
     resp = Response(
-        result[0],
+        employee.profile_image,
         mimetype="image/jpeg"
     )
     resp.headers["Cache-Control"] = "public, max-age=86400, immutable"
@@ -1962,7 +1960,6 @@ def get_reporting_employees(user_id):
         target_date = get_last_working_day()
         print(f"[get_reporting_employees] user_id={user_id}, target_date={target_date}")
 
-        invalidate_employee_cache()
         all_employees = [e for e in Employee.query.filter(Employee.is_active != False).all()]
 
         def _get_last_msg(history_list, role_name):

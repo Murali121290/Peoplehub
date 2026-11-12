@@ -55,8 +55,12 @@ def get_notifications(manager_name):
     all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
     employee_map = {emp.id: emp for emp in all_employees}
 
-    bday_wishes = {w.id: w for w in BirthdayWish.query.all()}
-    anniv_wishes = {w.id: w for w in WorkAnniversaryWish.query.all()}
+    # Batch fetch wish records only for the IDs referenced in notifications (avoid full-table scans)
+    bday_ids = [n.related_id for n in notifications if n.related_type in ('birthday_wish', 'birthday_thanks') and n.related_id]
+    anniv_ids = [n.related_id for n in notifications if n.related_type in ('anniversary_wish', 'anniversary_thanks') and n.related_id]
+
+    bday_wishes = {w.id: w for w in BirthdayWish.query.filter(BirthdayWish.id.in_(bday_ids)).all()} if bday_ids else {}
+    anniv_wishes = {w.id: w for w in WorkAnniversaryWish.query.filter(WorkAnniversaryWish.id.in_(anniv_ids)).all()} if anniv_ids else {}
 
     result = []
     for n in notifications:

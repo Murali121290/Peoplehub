@@ -55,6 +55,11 @@ from extensions import socketio
 from socket_events import register_socket_events
 from services.checkin_monitor import check_missed_checkins, generate_daily_notifications
 
+# Module-level handle to keep the file lock open for the lifetime of this worker process.
+# If this was local to create_app(), it would get garbage-collected upon function return,
+# immediately releasing the lock and letting every Uvicorn worker process start APScheduler!
+_SCHEDULER_LOCK_FD = None
+
 def create_app():
     fastapi_app = FastAPI(title="Peoplehub API", version="1.0.0")
 
@@ -136,13 +141,13 @@ def create_app():
     # Scheduler configuration
     # Guard: only run background scheduler in ONE worker process when using --workers N.
     # We use a lock file approach: the first worker to acquire the lock starts the scheduler.
+    global _SCHEDULER_LOCK_FD
     import fcntl
     _scheduler_lock_file = "/tmp/peoplehub_scheduler.lock"
-    _lock_fd = None
     _is_scheduler_worker = False
     try:
-        _lock_fd = open(_scheduler_lock_file, "w")
-        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _SCHEDULER_LOCK_FD = open(_scheduler_lock_file, "w")
+        fcntl.flock(_SCHEDULER_LOCK_FD, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _is_scheduler_worker = True
     except (IOError, OSError):
         _is_scheduler_worker = False
