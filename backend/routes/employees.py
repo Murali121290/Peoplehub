@@ -14,16 +14,66 @@ from models.attendance import Attendance
 from models.user import Role, Team
 from services.leave_balance_service import update_leave_balance
 from models.leave import LeaveRequest
+from models.shift_request import ShiftRequest
 from models.user import User, Role, Team
-from sqlalchemy import extract, or_
+from sqlalchemy import extract, or_, event
+from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from datetime import time
 from utils.employee_cache import get_all_employees_cached, invalidate_employee_cache
 from utils.uploads import get_upload_path, ensure_upload_dir
 
-from utils.redis_client import get_redis as _get_redis
+from utils.redis_client import get_redis as _get_redis, cache_get_json, cache_set_json
 
 employees_bp = Blueprint("employees", __name__)
+
+TEAM_OVERVIEW_VER_KEY = "peoplehub:api:team_overview:ver"
+TEAM_OVERVIEW_CACHE_TTL = 30
+
+
+def _get_team_overview_cache_ver() -> str:
+    r = _get_redis()
+    if r is None:
+        return "0"
+    try:
+        v = r.get(TEAM_OVERVIEW_VER_KEY)
+        return v.decode() if isinstance(v, bytes) else (str(v) if v is not None else "0")
+    except Exception:
+        return "0"
+
+
+def invalidate_team_overview_cache():
+    r = _get_redis()
+    if r is None:
+        return
+    try:
+        r.incr(TEAM_OVERVIEW_VER_KEY)
+    except Exception:
+        pass
+
+
+@event.listens_for(Session, "before_flush")
+def _mark_team_overview_changes(session, flush_context, instances):
+    for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+        if isinstance(obj, Employee):
+            session.info["employee_cache_changed"] = True
+            session.info["team_overview_changed"] = True
+        elif isinstance(obj, (Team, User, Role, ShiftRequest)):
+            session.info["team_overview_changed"] = True
+
+
+@event.listens_for(Session, "after_commit")
+def _invalidate_team_overview_after_commit(session):
+    if session.info.pop("employee_cache_changed", False):
+        invalidate_employee_cache()
+    if session.info.pop("team_overview_changed", False):
+        invalidate_team_overview_cache()
+
+
+@event.listens_for(Session, "after_rollback")
+def _clear_team_overview_flag(session):
+    session.info.pop("employee_cache_changed", None)
+    session.info.pop("team_overview_changed", None)
 
 import os
 
@@ -1265,46 +1315,57 @@ def today_anniversaries():
 @employees_bp.route("/team-overview", methods=["GET"])
 @auth_required
 def get_team_overview():
+    cache_key = f"peoplehub:api:team_overview:v{_get_team_overview_cache_ver()}"
+    cached = cache_get_json(cache_key)
+    if cached is not None:
+        return jsonify(cached), 200
 
     teams = Team.query.order_by(Team.name.asc()).all()
+    all_active_employees = [e for e in get_all_employees_cached() if e.is_active != False]
+
+    # Batch-fetch Users, Roles, and today's approved WFH/ShiftRequests to eliminate ~600 N+1 queries
+    user_ids = list({e.user_id for e in all_active_employees if e.user_id})
+    user_by_id = {
+        u.id: u
+        for u in (User.query.filter(User.id.in_(user_ids)).all() if user_ids else [])
+    }
+    role_name_by_id = {r.id: r.name for r in Role.query.all()}
+
+    today = date.today()
+    numeric_emp_ids = []
+    for emp in all_active_employees:
+        code = str(emp.employee_id or "").strip()
+        if code.isdigit():
+            numeric_emp_ids.append(int(code))
+    numeric_emp_ids = list(set(numeric_emp_ids))
+
+    wfh_by_emp_code = {}
+    if numeric_emp_ids:
+        reqs = ShiftRequest.query.filter(
+            ShiftRequest.employee_id.in_(numeric_emp_ids),
+            ShiftRequest.status == "Approved",
+            ShiftRequest.from_date <= today,
+            ShiftRequest.to_date >= today
+        ).order_by(ShiftRequest.id.desc()).all()
+        for req in reqs:
+            key = str(req.employee_id)
+            if key not in wfh_by_emp_code:
+                wfh_by_emp_code[key] = req
+
+    emps_by_team_id = {}
+    for emp in all_active_employees:
+        emps_by_team_id.setdefault(emp.team_id, []).append(emp)
 
     result = []
-
     for team in teams:
-
-        employees = [e for e in Employee.query.filter_by(
-            team_id=team.id
-        ).all() if e.is_active != False]
-
+        employees = emps_by_team_id.get(team.id, [])
         employee_list = []
 
         for emp in employees:
+            user = user_by_id.get(emp.user_id)
+            role_name = role_name_by_id.get(user.role_id, "") if (user and user.role_id) else ""
 
-            # Get User
-            user = User.query.get(emp.user_id)
-
-            # Default Role
-            role_name = ""
-
-            if user:
-                role = Role.query.get(user.role_id)
-
-                if role:
-                    role_name = role.name
-
-            # Resolve today's work mode
-            from models.shift_request import ShiftRequest
-            from datetime import date
-            today = date.today()
-            emp_ids = [emp.employee_id] if emp.employee_id else []
-
-            wfh_request = ShiftRequest.query.filter(
-                ShiftRequest.employee_id.in_(emp_ids),
-                ShiftRequest.status == "Approved",
-                ShiftRequest.from_date <= today,
-                ShiftRequest.to_date >= today
-            ).order_by(ShiftRequest.id.desc()).first()
-
+            wfh_request = wfh_by_emp_code.get(str(emp.employee_id or "").strip())
             is_wfh = False
             if wfh_request:
                 if wfh_request.requested_work_mode:
@@ -1333,13 +1394,11 @@ def get_team_overview():
             "team_id": team.id,
             "team_name": team.name,
             "member_count": len(employees),
-            "total_salary": sum(
-                float(emp.salary or 0)
-                for emp in employees
-            ),
+            "total_salary": sum(float(emp.salary or 0) for emp in employees),
             "employees": employee_list
         })
 
+    cache_set_json(cache_key, result, TEAM_OVERVIEW_CACHE_TTL)
     return jsonify(result), 200
 
 @employees_bp.route("/my-team/<int:user_id>", methods=["GET"])

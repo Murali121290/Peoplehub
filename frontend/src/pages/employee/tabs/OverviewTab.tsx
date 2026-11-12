@@ -110,7 +110,9 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
     };
 
     fetchTeamAttendance(true);
-    const interval = setInterval(() => fetchTeamAttendance(false), 60000);
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchTeamAttendance(false);
+    }, 60000);
 
     // Listen for custom event to instantly refresh
     const handleRefresh = () => fetchTeamAttendance(false);

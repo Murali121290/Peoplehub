@@ -247,7 +247,9 @@ const TeamManagementPage: React.FC = () => {
     socket.on("shift_update", handleSocketUpdate);
     socket.on("attendance_update", handleSocketUpdate);
 
-    const interval = setInterval(fetchNotificationCounts, 60000);
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchNotificationCounts();
+    }, 60000);
     return () => {
       clearInterval(interval);
       socket.off("leave_update", handleSocketUpdate);

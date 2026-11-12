@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 # pyrefly: ignore [missing-import]
@@ -62,6 +63,9 @@ _SCHEDULER_LOCK_FD = None
 
 def create_app():
     fastapi_app = FastAPI(title="Peoplehub API", version="1.0.0")
+
+    # GZip compression — compresses all JSON/text responses >= 1 KB automatically.
+    fastapi_app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     # Configure CORS
     allowed_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5555,http://localhost:3000").split(",")

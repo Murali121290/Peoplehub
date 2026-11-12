@@ -3,7 +3,7 @@ import json
 import shutil
 from datetime import datetime
 from sqlalchemy import or_, func
-from utils.compat import Blueprint, request, jsonify
+from utils.compat import Blueprint, request, jsonify, Response
 from utils.uploads import get_uploads_dir
 from models.database import db
 from models.employee import Employee
@@ -14,9 +14,120 @@ from models.manager_kpi_template import ManagerKpiTemplate
 from middleware.auth import auth_required, access_level_required
 from services.kpi_evaluation_rollup_service import calculate_evaluation_working_days
 from utils.jwt_helper import get_jwt_identity, decode_and_set_jwt_context, JWT_SECRET_KEY
+from utils.employee_cache import get_all_employees_cached
+from utils.redis_client import get_redis as _get_redis
+from sqlalchemy import event as _sa_event
+import base64
+import gzip
+import hashlib
 import jwt
 
 performance_bp = Blueprint("performance", __name__)
+
+# ---------------------------------------------------------------------------
+# Redis versioned cache for heavy Performance / E2R endpoints:
+#   - GET /api/performance/evaluation/data
+#   - GET /api/performance/kpi-evaluations
+# Any commit modifying KpiEvaluation or ManagerKpiTemplate increments the
+# version key so all cached payloads invalidate atomically in O(1).
+# ---------------------------------------------------------------------------
+PERF_VER_KEY = "peoplehub:api:performance:ver"
+PERF_CACHE_TTL = 60  # seconds
+
+
+def _get_perf_cache_ver():
+    r = _get_redis()
+    if r is None:
+        return "1"
+    try:
+        return r.get(PERF_VER_KEY) or "1"
+    except Exception:
+        return "1"
+
+
+def invalidate_performance_cache():
+    r = _get_redis()
+    if r is None:
+        return
+    try:
+        r.incr(PERF_VER_KEY)
+    except Exception:
+        pass
+
+
+def _client_accepts_gzip() -> bool:
+    try:
+        return "gzip" in (request.headers.get("accept-encoding") or "").lower()
+    except Exception:
+        return False
+
+
+def _cache_get_precompressed(cache_key: str):
+    """Serve pre-serialized + pre-gzipped JSON directly from Redis (~2 ms, zero JSON/gzip CPU)."""
+    r = _get_redis()
+    if r is None:
+        return None
+    try:
+        b64 = r.get(cache_key)
+        if not b64:
+            return None
+        gz_bytes = base64.b64decode(b64)
+        if _client_accepts_gzip():
+            return Response(
+                content=gz_bytes,
+                status_code=200,
+                mimetype="application/json",
+                headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+            )
+        return Response(
+            content=gzip.decompress(gz_bytes),
+            status_code=200,
+            mimetype="application/json",
+        )
+    except Exception:
+        return None
+
+
+def _cache_set_precompressed(cache_key: str, payload: dict, ttl_seconds: int):
+    raw_bytes = json.dumps(payload, default=str).encode("utf-8")
+    gz_bytes = gzip.compress(raw_bytes, compresslevel=5)
+    r = _get_redis()
+    if r is not None:
+        try:
+            r.setex(cache_key, ttl_seconds, base64.b64encode(gz_bytes).decode("ascii"))
+        except Exception:
+            pass
+    if _client_accepts_gzip():
+        return Response(
+            content=gz_bytes,
+            status_code=200,
+            mimetype="application/json",
+            headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+        )
+    return Response(content=raw_bytes, status_code=200, mimetype="application/json")
+
+
+def _mark_perf_changes(session, flush_context):
+    for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+        if isinstance(obj, (KpiEvaluation, ManagerKpiTemplate)):
+            session.info["perf_changed"] = True
+            return
+
+
+def _invalidate_perf_after_commit(session):
+    if session.info.pop("perf_changed", False):
+        invalidate_performance_cache()
+
+
+def _clear_perf_flag_after_rollback(session):
+    session.info.pop("perf_changed", None)
+
+
+_perf_session_factory = db.session.session_factory
+if not _sa_event.contains(_perf_session_factory, "after_flush", _mark_perf_changes):
+    _sa_event.listen(_perf_session_factory, "after_flush", _mark_perf_changes)
+    _sa_event.listen(_perf_session_factory, "after_commit", _invalidate_perf_after_commit)
+    _sa_event.listen(_perf_session_factory, "after_rollback", _clear_perf_flag_after_rollback)
 
 @performance_bp.route("/", methods=["GET"])
 @auth_required
@@ -2252,13 +2363,117 @@ def export_rankings_matrix():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+_EMP_PENDING_STATUSES = {"pending_employee", "Assigned to Employee", "employee_in_progress"}
+
+
+def _build_sidebar_summary_payload(payload: dict) -> dict:
+    """Distill the full evaluation payload down to minimal pending-count metadata for Sidebar badges."""
+    cycles = payload.get("cycles") or []
+    responses = payload.get("responses") or []
+
+    pending_sm_cycles = [
+        {
+            "status": c.get("status"),
+            "serviceManagerName": c.get("serviceManagerName"),
+        }
+        for c in cycles
+        if c and c.get("status") == "pending_sm_launch_approval"
+    ]
+
+    lite_responses = []
+    for r in responses:
+        if not r:
+            continue
+        q_recs = r.get("quarterly_records") or []
+        w_recs = r.get("weekly_records") or []
+        m_recs = r.get("monthly_records") or []
+        d_recs = r.get("daily_records") or []
+
+        is_yearly = bool(
+            r.get("milestone_frequency")
+            or r.get("frequency") == "daily"
+            or len(d_recs) > 0
+            or len(w_recs) > 0
+            or len(m_recs) > 0
+            or len(q_recs) > 0
+        )
+
+        # Collapse heavy KPI arrays into minimal status stubs while preserving Sidebar filter parity
+        has_pending_emp = any(
+            rec and rec.get("status") in _EMP_PENDING_STATUSES
+            for rec in (d_recs + w_recs + m_recs + q_recs)
+        )
+        has_submitted_mgr = any(
+            rec and rec.get("status") == "submitted_to_manager"
+            for rec in (q_recs + w_recs + m_recs + d_recs)
+        )
+
+        stub = {
+            "employeeCode": r.get("employeeCode"),
+            "employeeId": r.get("employeeId"),
+            "employee_id": r.get("employee_id"),
+            "employeeName": r.get("employeeName"),
+            "name": r.get("name"),
+            "email": r.get("email"),
+            "reportingManager": r.get("reportingManager"),
+            "reporting_manager": r.get("reporting_manager"),
+            "reporting_manager_id": r.get("reporting_manager_id"),
+            "manager_id": r.get("manager_id"),
+            "reportingManagerId": r.get("reportingManagerId"),
+            "managerId": r.get("managerId"),
+            "managerName": r.get("managerName"),
+            "manager_name": r.get("manager_name"),
+            "status": r.get("status"),
+            "managerScore": r.get("managerScore"),
+            "employeeSubmittedAt": r.get("employeeSubmittedAt"),
+            "submitted_at": r.get("submitted_at"),
+            "submittedAt": r.get("submittedAt"),
+            "employee_submitted_at": r.get("employee_submitted_at"),
+            "milestone_frequency": "yearly" if is_yearly else r.get("milestone_frequency"),
+            "frequency": r.get("frequency"),
+        }
+        if is_yearly:
+            stub["daily_records"] = (
+                [{"status": "pending_employee"}] if has_pending_emp else []
+            ) + (
+                [{"status": "submitted_to_manager"}] if has_submitted_mgr else []
+            )
+        lite_responses.append(stub)
+
+    return {"success": True, "cycles": pending_sm_cycles, "responses": lite_responses}
+
+
+def _cache_sidebar_summary_in_redis(summary_cache_key: str, summary_payload: dict, ttl_seconds: int):
+    r = _get_redis()
+    if r is None:
+        return
+    try:
+        raw_bytes = json.dumps(summary_payload, default=str).encode("utf-8")
+        gz_bytes = gzip.compress(raw_bytes, compresslevel=5)
+        r.setex(summary_cache_key, ttl_seconds, base64.b64encode(gz_bytes).decode("ascii"))
+    except Exception:
+        pass
+
+
 @performance_bp.route("/evaluation/data", methods=["GET"])
 def get_evaluation_data():
     try:
+        cache_key = f"peoplehub:api:performance:eval_data:gz:v{_get_perf_cache_ver()}"
+        cached_resp = _cache_get_precompressed(cache_key)
+        if cached_resp is not None:
+            return cached_resp
+
         eval_records, store = sync_postgres_kpi_to_store_and_back()
         db_unavailable = eval_records is None  # DB had an exception; use JSON-only fallback
         if db_unavailable:
             eval_records = []
+
+        # Batch lookup map from cached employee list (eliminates ~110 N+1 SQL queries)
+        emp_by_code = {
+            str(e.employee_id): e
+            for e in get_all_employees_cached()
+            if getattr(e, "employee_id", None)
+        }
 
         json_all_cycles = list(store.get("cycles", []))
         json_all_responses = [
@@ -2323,9 +2538,9 @@ def get_evaluation_data():
                     seen_cycle_keys.add(c_key)
                     tpl_mgr_name = tpl.manager_name
                     if (not tpl_mgr_name or tpl_mgr_name == "Manager" or tpl_mgr_name == "Reporting Manager") and tpl.manager_id:
-                        m_emp = Employee.query.filter(Employee.employee_id == str(tpl.manager_id)).first()
+                        m_emp = emp_by_code.get(str(tpl.manager_id))
                         if m_emp:
-                            tpl_mgr_name = m_emp.name or f"{m_emp.first_name} {m_emp.last_name}".strip()
+                            tpl_mgr_name = getattr(m_emp, "name", None) or f"{m_emp.first_name or ''} {m_emp.last_name or ''}".strip()
 
                     cycles.append({
                         "id": cid,
@@ -2393,9 +2608,9 @@ def get_evaluation_data():
             responses = []
             for rec in eval_records:
                 emp_id = str(rec.employee_id or "")
-                emp_obj = Employee.query.filter(Employee.employee_id == emp_id).first()
+                emp_obj = emp_by_code.get(emp_id)
                 actual_code = emp_obj.employee_id if emp_obj and emp_obj.employee_id else emp_id
-                resolved_team = rec.team_name or rec.team_id or (emp_obj.department if emp_obj else None) or (emp_obj.team if emp_obj else None) or "Media"
+                resolved_team = rec.team_name or rec.team_id or (emp_obj.department if emp_obj else None) or (getattr(emp_obj, "team", None) if emp_obj else None) or "Media"
                 resolved_name = rec.employee_name or (f"{emp_obj.first_name} {emp_obj.last_name}" if emp_obj else f"Employee #{actual_code}")
 
                 db_kpis = extract_kpi_responses_from_metrics_data(rec.metrics_data)
@@ -2588,9 +2803,54 @@ def get_evaluation_data():
 
         merged_cycles = valid_merged_cycles
         rating_scale = store.get("ratingScale", DEFAULT_RATING_SCALE)
-        return jsonify({"success": True, "cycles": merged_cycles, "responses": merged_responses, "ratingScale": rating_scale}), 200
+        payload = {"success": True, "cycles": merged_cycles, "responses": merged_responses, "ratingScale": rating_scale}
+        summary_cache_key = f"peoplehub:api:performance:sidebar_summary:gz:v{_get_perf_cache_ver()}"
+        _cache_sidebar_summary_in_redis(summary_cache_key, _build_sidebar_summary_payload(payload), PERF_CACHE_TTL)
+        return _cache_set_precompressed(cache_key, payload, PERF_CACHE_TTL)
     except Exception as e:
         return jsonify({"error": str(e), "cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}), 500
+
+
+@performance_bp.route("/evaluation/sidebar-summary", methods=["GET"])
+def get_evaluation_sidebar_summary():
+    """Lightweight evaluation summary endpoint for sidebar pending badges (~98% smaller than /evaluation/data)."""
+    try:
+        ver = _get_perf_cache_ver()
+        summary_cache_key = f"peoplehub:api:performance:sidebar_summary:gz:v{ver}"
+        cached_resp = _cache_get_precompressed(summary_cache_key)
+        if cached_resp is not None:
+            return cached_resp
+
+        # If full evaluation payload is already in Redis, distill it without touching Postgres
+        r = _get_redis()
+        if r is not None:
+            try:
+                b64 = r.get(f"peoplehub:api:performance:eval_data:gz:v{ver}")
+                if b64:
+                    full_payload = json.loads(gzip.decompress(base64.b64decode(b64)).decode("utf-8"))
+                    summary_payload = _build_sidebar_summary_payload(full_payload)
+                    return _cache_set_precompressed(summary_cache_key, summary_payload, PERF_CACHE_TTL)
+            except Exception:
+                pass
+
+        # Cache miss on both keys — warm full payload once via get_evaluation_data, then serve summary
+        full_resp = get_evaluation_data()
+        cached_resp = _cache_get_precompressed(summary_cache_key)
+        if cached_resp is not None:
+            return cached_resp
+        # Redis disabled/unavailable fallback: distill directly from Response body
+        if hasattr(full_resp, "body") or hasattr(full_resp, "get_data"):
+            try:
+                raw_body = full_resp.get_data() if hasattr(full_resp, "get_data") else full_resp.body
+                if getattr(full_resp, "headers", {}).get("Content-Encoding") == "gzip":
+                    raw_body = gzip.decompress(raw_body)
+                full_payload = json.loads(raw_body.decode("utf-8"))
+                return jsonify(_build_sidebar_summary_payload(full_payload)), 200
+            except Exception:
+                pass
+        return jsonify({"success": True, "cycles": [], "responses": []}), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "cycles": [], "responses": []}), 500
 
 @performance_bp.route("/rating-scale", methods=["GET"])
 def get_rating_scale():
@@ -3203,6 +3463,13 @@ def get_kpi_evaluations():
         status_filter = request.args.get("status")
         team_id_filter = request.args.get("team_id")
         include_archived = request.args.get("include_archived", "false").lower() == "true"
+
+        raw_params = f"{form_filter}|{employee_id_filter}|{reporting_manager_id_filter}|{service_manager_id_filter}|{status_filter}|{team_id_filter}|{include_archived}"
+        params_hash = hashlib.md5(raw_params.encode("utf-8")).hexdigest()
+        cache_key = f"peoplehub:api:performance:kpi_evals:gz:v{_get_perf_cache_ver()}:{params_hash}"
+        cached_resp = _cache_get_precompressed(cache_key)
+        if cached_resp is not None:
+            return cached_resp
         
         query = KpiEvaluation.query
         if not include_archived:
@@ -3245,7 +3512,8 @@ def get_kpi_evaluations():
                 continue
             eval_list.append(r)
 
-        return jsonify({"success": True, "evaluations": eval_list}), 200
+        payload = {"success": True, "evaluations": eval_list}
+        return _cache_set_precompressed(cache_key, payload, PERF_CACHE_TTL)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -3911,6 +4179,7 @@ def delete_manager_kpi_template():
             ).delete(synchronize_session=False)
 
         db.session.commit()
+        invalidate_performance_cache()
         return jsonify({"success": True, "message": f"Template {template_key} deleted successfully"}), 200
     except Exception as e:
         db.session.rollback()

@@ -1,8 +1,8 @@
 import { API_URL, getProfileImageUrl } from "../../config/api";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, Suspense, lazy } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { getEmployees } from "../../services/employeesCache";
+import { getEmployees, getCachedEmployeesSync } from "../../services/employeesCache";
 import { fetchWithTimeout } from "../../services/fetchWithTimeout";
 import {
   HomeIcon,
@@ -25,14 +25,11 @@ import PopupModal from "./components/PopupModal";
 import BirthdayModal from "../../layouts/components/BirthdayModal";
 import EmployeeClarificationModal from "../../layouts/components/EmployeeClarificationModal";
 import OverviewTab from "./tabs/OverviewTab";
-import RequestsTab from "./tabs/RequestsTab";
-import LeaveTab from "./tabs/LeaveTab";
-import ShiftTab from "./tabs/ShiftTab";
-import AttendanceTab from "./tabs/AttendanceTab";
-import ProfileTab from "./tabs/ProfileTab";
-import EmployeePayrollTab from "./tabs/EmployeePayrollTab";
-import JobOpeningsTab from "./tabs/JobOpeningsTab";
-import EvaluationTab from "./tabs/EvaluationTab";
+const RequestsTab = lazy(() => import("./tabs/RequestsTab"));
+const AttendanceTab = lazy(() => import("./tabs/AttendanceTab"));
+const ProfileTab = lazy(() => import("./tabs/ProfileTab"));
+const EmployeePayrollTab = lazy(() => import("./tabs/EmployeePayrollTab"));
+const JobOpeningsTab = lazy(() => import("./tabs/JobOpeningsTab"));
 import DashboardHeaderActions from "./components/DashboardHeaderActions";
 import NotificationsPanel from "./components/NotificationsPanel";
 import { BookLoader } from "../../components/ui/Spinner";
@@ -217,8 +214,9 @@ const EmployeeDashboardPage: React.FC = () => {
     }
   }, [location.search]);
 
-  // Employee & data state
-  const [employees, setEmployees] = useState<any[]>([]);
+  // Employee & data state (hydrate immediately from SWR cache when available)
+  const initialCachedEmps = useMemo(() => getCachedEmployeesSync(), []);
+  const [employees, setEmployees] = useState<any[]>(initialCachedEmps);
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [attendanceData, setAttendanceData] = useState<Attendance[]>([]);
   const [shiftRequests, setShiftRequests] = useState<any[]>([]);
@@ -292,7 +290,8 @@ const EmployeeDashboardPage: React.FC = () => {
   } | null>(null);
   const [hasCheckedOutToday, setHasCheckedOutToday] = useState(false);
   const [shiftDate, setShiftDate] = useState("");
-  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [isPageLoading, setIsPageLoading] = useState(() => initialCachedEmps.length === 0);
+  const [isRefreshing, setIsRefreshing] = useState(() => initialCachedEmps.length > 0);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [wantsToChangeMode, setWantsToChangeMode] = useState(false);
   const [wagesConfirmData, setWagesConfirmData] = useState<{ isOpen: boolean; reason: string } | null>(null);
@@ -2545,7 +2544,12 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
 
   const loadAllDashboardData = async () => {
-    setIsPageLoading(true);
+    const hasCache = employees.length > 0;
+    if (hasCache) {
+      setIsRefreshing(true);
+    } else {
+      setIsPageLoading(true);
+    }
     const userId = localStorage.getItem("user_id");
 
     // Critical requests: the page renders as soon as these finish.
@@ -2680,6 +2684,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
     setIsPageLoading(false);
 
     const background = await Promise.allSettled(backgroundPromises);
+    setIsRefreshing(false);
     [...critical, ...background].forEach((r) => {
       if (r.status === "rejected") {
         console.error("Failed to load dashboard data:", r.reason);
@@ -3087,6 +3092,12 @@ if (isHalfDayLeave(leave.total_days)) return false;
                       <h1 className="text-xl font-sans font-bold text-neutral-800">
                         Dashboard
                       </h1>
+                      {isRefreshing && (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary-50 text-primary-700 border border-primary-200/80">
+                          <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-ping" />
+                          Syncing...
+                        </span>
+                      )}
                       <span className="w-px h-5 bg-neutral-200" />
                       <span className="text-xl font-sans select-none font-semibold" style={{ letterSpacing: "-0.01em" }}>
                         <span className="peoplehub-typed">{welcomeTyped || '\u00A0'}</span>
@@ -3174,35 +3185,37 @@ if (isHalfDayLeave(leave.total_days)) return false;
                 itemVariants={itemVariants}
               />
             )}
-            {activeTab === "requests" && (
-              <RequestsTab
-                leaveRequests={leaveRequests}
-                currentEmployee={currentEmployee}
-                employees={employees}
-                approvalLeaves={approvalLeaves}
-                totalBalance={totalBalance}
-                itemVariants={itemVariants}
-                onApproveLeave={approveLeave}
-                onRejectLeave={rejectLeave}
-                onCancelLeave={cancelLeave}
-                onSubmitLeave={handleLeaveSubmit}
-                shiftRequests={shiftRequests}
-                managerShiftRequests={managerShiftRequests}
-                onSubmitShift={submitShiftRequest}
-                onApproveShift={approveShift}
-                onRejectShift={rejectShift}
-                onCancelShift={cancelShiftRequest}
-              />
-            )}
-            {activeTab === "attendance" && (
-              <AttendanceTab attendanceData={attendanceData} currentEmployee={currentEmployee} />
-            )}
-            {activeTab === "new-hire" && (
-              <NewHireTab employees={employees} />
-            )}
-            {activeTab === "profile" && <ProfileTab />}
-            {activeTab === "payroll" && <EmployeePayrollTab />}
-            {activeTab === "job-openings" && <JobOpeningsTab user={user} />}
+            <Suspense fallback={<BookLoader />}>
+              {activeTab === "requests" && (
+                <RequestsTab
+                  leaveRequests={leaveRequests}
+                  currentEmployee={currentEmployee}
+                  employees={employees}
+                  approvalLeaves={approvalLeaves}
+                  totalBalance={totalBalance}
+                  itemVariants={itemVariants}
+                  onApproveLeave={approveLeave}
+                  onRejectLeave={rejectLeave}
+                  onCancelLeave={cancelLeave}
+                  onSubmitLeave={handleLeaveSubmit}
+                  shiftRequests={shiftRequests}
+                  managerShiftRequests={managerShiftRequests}
+                  onSubmitShift={submitShiftRequest}
+                  onApproveShift={approveShift}
+                  onRejectShift={rejectShift}
+                  onCancelShift={cancelShiftRequest}
+                />
+              )}
+              {activeTab === "attendance" && (
+                <AttendanceTab attendanceData={attendanceData} currentEmployee={currentEmployee} />
+              )}
+              {activeTab === "new-hire" && (
+                <NewHireTab employees={employees} />
+              )}
+              {activeTab === "profile" && <ProfileTab />}
+              {activeTab === "payroll" && <EmployeePayrollTab />}
+              {activeTab === "job-openings" && <JobOpeningsTab user={user} />}
+            </Suspense>
           </motion.div>
         </main>
       </div>
