@@ -1429,10 +1429,37 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
         const isDaily = isDailyResponse(r, cycle, periodName);
 
-        const isYearly = ((r as any).monthly_records && (r as any).monthly_records.length > 0) ||
-          ((r as any).weekly_records && (r as any).weekly_records.length > 0) ||
-          ((r as any).daily_records && (r as any).daily_records.length > 0) ||
+        const rStatus = String(r.status || '').toLowerCase().trim();
+        const isOverallSubmittedOrApproved =
+          rStatus === 'submitted_to_manager' ||
+          rStatus === 'manager_review' ||
+          rStatus === 'manager_approved' ||
+          rStatus === 'approved' ||
+          rStatus === 'completed' ||
+          rStatus === 'sm_final_approval' ||
+          Boolean(r.employeeSubmittedAt);
+
+        const isWeekly = cycle?.frequency === 'weekly' || r?.frequency === 'weekly';
+        const isExplicitYearly = !isWeekly && (
+          cycle?.frequency === 'yearly' ||
+          r?.frequency === 'yearly' ||
+          periodName.toLowerCase().includes('annual') ||
+          periodName.toLowerCase().includes('yearly') ||
+          periodName.toLowerCase().includes('fy 20')
+        );
+
+        // A response is yearly milestones if explicitly yearly OR if it has multiple sub-records
+        const isYearly = isExplicitYearly ||
+          (((r as any).monthly_records && (r as any).monthly_records.length > 1) ||
+           ((r as any).weekly_records && (r as any).weekly_records.length > 0) ||
+           ((r as any).daily_records && (r as any).daily_records.length > 0)) ||
           isDaily;
+
+        // If the entire evaluation response is already submitted or approved, it cannot be pending
+        // UNLESS it's a daily/yearly cycle with individual incomplete milestone dates.
+        if (isOverallSubmittedOrApproved && !isDaily && !isExplicitYearly) {
+          return false;
+        }
 
         const hasPendingMonth = isYearly && !isDaily && (r as any).monthly_records && (r as any).monthly_records.some((m: any) => {
           if (m.status !== 'pending_employee') return false;
@@ -1594,9 +1621,38 @@ if (isHalfDayLeave(leave.total_days)) return false;
           continue;
         }
 
+        const respStatus = String(resp.status || '').toLowerCase().trim();
+        const isOverallSubmittedOrApproved =
+          respStatus === 'submitted_to_manager' ||
+          respStatus === 'manager_review' ||
+          respStatus === 'manager_approved' ||
+          respStatus === 'approved' ||
+          respStatus === 'completed' ||
+          respStatus === 'sm_final_approval' ||
+          Boolean(resp.employeeSubmittedAt);
+
         const isWeekly = cycle?.frequency === 'weekly' || resp?.frequency === 'weekly';
-        const isYearly = !isWeekly && (cycle?.frequency === 'yearly' || resp?.frequency === 'yearly' || (resp?.monthly_records && resp.monthly_records.length > 0) || (resp?.weekly_records && resp.weekly_records.length > 0) || periodName.toLowerCase().includes('annual') || periodName.toLowerCase().includes('yearly') || periodName.toLowerCase().includes('fy 20'));
-        const isMonthly = cycle?.frequency === 'monthly' || resp?.frequency === 'monthly' || (!isWeekly && !isYearly && !cycle?.frequency);
+        const isExplicitYearly = !isWeekly && (
+          cycle?.frequency === 'yearly' ||
+          resp?.frequency === 'yearly' ||
+          periodName.toLowerCase().includes('annual') ||
+          periodName.toLowerCase().includes('yearly') ||
+          periodName.toLowerCase().includes('fy 20')
+        );
+
+        // If the evaluation as a whole is already submitted or approved, it is NOT pending
+        // unless it's an explicit yearly multi-milestone cycle with an upcoming milestone
+        if (isOverallSubmittedOrApproved && !isExplicitYearly) {
+          continue;
+        }
+
+        const isYearly = isExplicitYearly || (
+          !isWeekly && (
+            ((resp as any)?.monthly_records && (resp as any).monthly_records.length > 1) ||
+            ((resp as any)?.weekly_records && (resp as any).weekly_records.length > 0)
+          )
+        );
+        const isMonthly = !isWeekly && !isYearly;
 
         const formatDDMMYYYY = (isoStr: string) => {
           try {
