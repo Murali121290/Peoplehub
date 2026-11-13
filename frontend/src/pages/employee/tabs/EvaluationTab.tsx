@@ -22164,7 +22164,7 @@ export const EvaluationTab: React.FC = () => {
                                                     ? 'bg-teal-50 text-teal-900 border border-teal-300'
                                                     : 'bg-slate-50 text-slate-900 border-slate-200'
                                                 }`}>
-                                                <span>{empActual} {kpi.unit}</span>
+                                                <span>{empActual}</span>
                                                 {isOver && !isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
                                                 {isOver && isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED TARGET</span>}
                                               </span>
