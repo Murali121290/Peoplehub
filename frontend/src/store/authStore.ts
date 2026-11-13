@@ -11,7 +11,7 @@ interface User {
 
   profile_completed?: boolean
   is_first_login?: boolean
-  employee_id?: number
+  employee_id?: string | number
   image_version?: number
 }
 
@@ -57,6 +57,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   role: response.data.role,          // top-level role name e.g. 'Manager', 'Employee'
   profile_completed: response.data.profile_completed,
   is_first_login: response.data.is_first_login,
+  // Always use the top-level employee_id (corrected badge code e.g. "2150"),
+  // NOT response.data.user.employee_id which may be absent or stale.
+  employee_id: response.data.employee_id ?? response.data.user?.employee_id,
 }
 localStorage.setItem(
   "user",
