@@ -25,7 +25,7 @@ def check_missed_checkins():
             active_employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
             manager_by_name = {}
             for e in active_employees:
-                full_name = f"{e.first_name} {e.last_name}".strip().lower()
+                full_name = " ".join(f"{e.first_name or ''} {e.last_name or ''}".lower().split())
                 manager_by_name.setdefault(full_name, e)
 
             emp_ids = list({n.related_id for n in pending_notifs if n.related_id})
@@ -45,7 +45,7 @@ def check_missed_checkins():
                 if emp and emp.user_id in checked_in_users:
                     db.session.delete(n)
                     resolved_any = True
-                    manager_name = (emp.reporting_manager or "").strip().lower()
+                    manager_name = " ".join((emp.reporting_manager or "").lower().split())
                     manager_emp = manager_by_name.get(manager_name)
                     if manager_emp:
                         socketio.emit(

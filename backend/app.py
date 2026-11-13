@@ -178,7 +178,6 @@ def create_app():
             from services.leave_balance_service import update_all_employee_leave_balances
             try:
                 result = update_all_employee_leave_balances()
-                print(f"[Scheduler] Monthly leave credit: {result}")
             except Exception as e:
                 print(f"[Scheduler] Monthly leave credit error: {e}")
             finally:
@@ -197,7 +196,6 @@ def create_app():
             from services.leave_balance_service import update_all_employee_permission_balances
             try:
                 result = update_all_employee_permission_balances()
-                print(f"[Scheduler] Monthly permission reset: {result}")
             except Exception as e:
                 print(f"[Scheduler] Monthly permission reset error: {e}")
             finally:
@@ -216,7 +214,6 @@ def create_app():
             from services.leave_balance_service import update_all_employee_pl_balances
             try:
                 result = update_all_employee_pl_balances()
-                print(f"[Scheduler] Yearly PL credit: {result}")
             except Exception as e:
                 print(f"[Scheduler] Yearly PL credit error: {e}")
             finally:
@@ -236,7 +233,6 @@ def create_app():
             try:
                 from services.kpi_evaluation_rollup_service import auto_rollup_kpi_evaluations_job
                 count = auto_rollup_kpi_evaluations_job()
-                print(f"[Scheduler] Nightly KPI Evaluation Rollup: {count} period(s) rolled up.")
             except Exception as e:
                 print(f"[Scheduler] Nightly KPI Evaluation Rollup error: {e}")
             finally:
@@ -250,7 +246,6 @@ def create_app():
         )
 
         scheduler.start()
-        print(f"[Scheduler] Started in worker PID {os.getpid()}")
     else:
         print(f"[Scheduler] Skipped in worker PID {os.getpid()} (already running in another worker)")
 

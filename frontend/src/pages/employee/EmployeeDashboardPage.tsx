@@ -229,12 +229,13 @@ const EmployeeDashboardPage: React.FC = () => {
     : null;
   const managerName =
     `${currentEmployee?.first_name || ""} ${currentEmployee?.last_name || ""}`
+      .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
 
   const checkManagerMatch = (reportingManager: string | null | undefined) => {
     if (!reportingManager) return false;
-    const repManagerClean = reportingManager.trim().toLowerCase();
+    const repManagerClean = reportingManager.replace(/\s+/g, " ").trim().toLowerCase();
 
     // Exact match
     if (repManagerClean === managerName) return true;

@@ -5,7 +5,6 @@ from models.employee import Employee
 # Create uploads/employees folder structure if not exist
 os.makedirs(os.path.join("/opt/uploads", "employees"), exist_ok=True)
 
-print("Starting employee documents migration...")
 employees = Employee.query.all()
 migrated_count = 0
 moved_count = 0
@@ -27,7 +26,6 @@ for emp in employees:
                 if os.path.exists(old_path):
                     os.rename(old_path, new_path)
                     moved_count += 1
-                    print(f"Moved existing file to flat structure: {old_path} -> {new_path}")
             except Exception as e:
                 print(f"Failed to move {f_name} to flat structure: {e}")
         try:
@@ -55,7 +53,6 @@ for emp in employees:
                     new_ref = decoded.replace("/documents/", "/")
                     setattr(emp, doc_type, new_ref.encode('utf-8'))
                     migrated_count += 1
-                    print(f"Updated DB path reference to flat structure for Emp ID {emp_id} ({doc_type}) -> {new_ref}")
                 is_path = True
         except Exception:
             pass
@@ -69,7 +66,6 @@ for emp in employees:
                     os.makedirs(os.path.dirname(new_path), exist_ok=True)
                     import shutil
                     shutil.copy(old_path, new_path)
-                    print(f"Recovered document from old path for Emp ID {emp_id} ({doc_type})")
             skipped_count += 1
             continue
             
@@ -94,12 +90,9 @@ for emp in employees:
             db_path = f"employees/{emp_id}/{filename}"
             setattr(emp, doc_type, db_path.encode('utf-8'))
             migrated_count += 1
-            print(f"Migrated: Employee ID {emp_id} ({doc_type}) -> {file_path}")
         except Exception as e:
             print(f"Failed to migrate {doc_type} for Employee ID {emp_id}: {e}")
 
 if migrated_count > 0 or moved_count > 0:
     db_session.commit()
-    print(f"Successfully committed changes to database.")
     
-print(f"Migration finished. Total Migrated/Updated: {migrated_count}, Moved on disk: {moved_count}, Skipped: {skipped_count}")

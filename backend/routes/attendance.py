@@ -424,12 +424,12 @@ def check_in():
             from extensions import socketio
 
             # 1. Look up manager's employee details to locate their socket room
-            manager_name = employee.reporting_manager.strip().lower() if employee.reporting_manager else ""
+            from routes.employees import is_manager_match
+            manager_name = employee.reporting_manager or ""
             manager_emp = None
             for e in [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]:
-                full_name = f"{e.first_name} {e.last_name}".strip().lower()
-                is_match = (full_name == manager_name) or (len(manager_name.split()) == 1 and full_name.split()[0] == manager_name) or (len(full_name.split()) == 1 and manager_name.split()[0] == full_name)
-                if is_match:
+                full_name = f"{e.first_name or ''} {e.last_name or ''}".strip()
+                if is_manager_match(manager_name, full_name):
                     manager_emp = e
                     break
 
@@ -5118,16 +5118,15 @@ def approve_all_attendance():
 
         if manager_id:
             from models.employee import Employee
+            from routes.employees import is_manager_match
             manager = Employee.query.filter_by(user_id=int(manager_id)).first()
             if manager:
-                manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
+                manager_name = f"{manager.first_name} {manager.last_name}".strip()
                 reporting_employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
                 for employee in reporting_employees:
                     if not employee.reporting_manager:
                         continue
-                    e_mgr = employee.reporting_manager.strip().lower()
-                    is_match = (e_mgr == manager_name) or (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) or (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name)
-                    if is_match:
+                    if is_manager_match(employee.reporting_manager, manager_name):
                         attendances = Attendance.query.filter_by(
                             user_id=employee.user_id,
                             attendance_date=yesterday
@@ -5198,16 +5197,15 @@ def reject_all_attendance():
 
         if manager_id:
             from models.employee import Employee
+            from routes.employees import is_manager_match
             manager = Employee.query.filter_by(user_id=int(manager_id)).first()
             if manager:
-                manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
+                manager_name = f"{manager.first_name} {manager.last_name}".strip()
                 reporting_employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
                 for employee in reporting_employees:
                     if not employee.reporting_manager:
                         continue
-                    e_mgr = employee.reporting_manager.strip().lower()
-                    is_match = (e_mgr == manager_name) or (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) or (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name)
-                    if is_match:
+                    if is_manager_match(employee.reporting_manager, manager_name):
                         attendance = Attendance.query.filter_by(
                             user_id=employee.user_id,
                             attendance_date=yesterday

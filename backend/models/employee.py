@@ -361,4 +361,4 @@ class Employee(db.Model):
 
     @property
     def name(self):
-        return f"{self.first_name or ''} {self.last_name or ''}".strip()
+        return " ".join(f"{self.first_name or ''} {self.last_name or ''}".split())

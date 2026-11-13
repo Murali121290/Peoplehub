@@ -55,7 +55,6 @@ def apply_shift():
             data = request.get_json()
             file = None
 
-        print("SHIFT DATA:", data)
 
         # Check if user has an approved leave request that overlaps with the shift request dates
         from models.leave import LeaveRequest
@@ -405,12 +404,12 @@ def get_employee_requests(
 def get_shift_approvals(manager_name):
 
     manager_full_name = manager_name.strip()
-    from routes.employees import get_all_employees_cached, get_all_reporting_employees_recursive
+    from routes.employees import get_all_employees_cached, get_all_reporting_employees_recursive, is_manager_match
     all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
     reporting_employees = get_all_reporting_employees_recursive(manager_full_name, all_employees)
 
-    reporting_names = {f"{e.first_name} {e.last_name}".strip().lower() for e in reporting_employees}
-    reporting_names.add(manager_full_name.lower())
+    reporting_names = {" ".join(f"{e.first_name} {e.last_name}".lower().split()) for e in reporting_employees}
+    reporting_names.add(" ".join(manager_full_name.lower().split()))
 
     reporting_emp_ids = set()
     for e in reporting_employees:
@@ -423,7 +422,7 @@ def get_shift_approvals(manager_name):
 
     shifts = [
         s for s in shifts
-        if (s.reporting_manager and s.reporting_manager.strip().lower() in reporting_names) or
+        if (s.reporting_manager and " ".join(s.reporting_manager.lower().split()) in reporting_names) or
            (str(s.employee_id or "").strip() in reporting_emp_ids)
     ]
 

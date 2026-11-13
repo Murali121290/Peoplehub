@@ -29,8 +29,8 @@ const reportLinks = [
 
 const checkManagerMatch = (reportingManager: string | null | undefined, managerFullName: string | null | undefined): boolean => {
   if (!reportingManager || !managerFullName) return false;
-  const repManagerClean = reportingManager.trim().toLowerCase();
-  const managerName = managerFullName.trim().toLowerCase();
+  const repManagerClean = reportingManager.replace(/\s+/g, " ").trim().toLowerCase();
+  const managerName = managerFullName.replace(/\s+/g, " ").trim().toLowerCase();
 
   if (repManagerClean === managerName) return true;
   const repParts = repManagerClean.split(/\s+/);

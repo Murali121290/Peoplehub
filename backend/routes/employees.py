@@ -284,8 +284,6 @@ def create_employee():
         db.session.commit()
         invalidate_employee_cache()
 
-        print("User Created :", user.id)
-        print("Employee Created :", employee.id)
 
         return jsonify({
             "success": True,
@@ -1237,7 +1235,6 @@ def get_employees_list():
 def test():
     return jsonify({"message":"working"})
 
-print("Employees Blueprint Loaded")
 
 
 @employees_bp.route("/birthdays/today", methods=["GET"])
@@ -1468,8 +1465,8 @@ def get_my_team(user_id):
 def is_manager_match(e_mgr, manager_name):
     if not e_mgr or not manager_name:
         return False
-    e_mgr = e_mgr.strip().lower()
-    mgr = manager_name.strip().lower()
+    e_mgr = " ".join(str(e_mgr).strip().lower().split())
+    mgr = " ".join(str(manager_name).strip().lower().split())
     if e_mgr == mgr:
         return True
     e_words = e_mgr.split()
@@ -2014,10 +2011,8 @@ def get_reporting_employees(user_id):
             f"{manager.first_name} {manager.last_name}"
         ).strip().lower()
 
-        print("Manager Name:", manager_name)
 
         target_date = get_last_working_day()
-        print(f"[get_reporting_employees] user_id={user_id}, target_date={target_date}")
 
         all_employees = [e for e in Employee.query.filter(Employee.is_active != False).all()]
 
@@ -2491,10 +2486,6 @@ def get_reporting_employees(user_id):
         result = sorted(result, key=lambda x: (x.get("employee_name") or "").lower())
 
 
-        print(
-            "Reporting Employees Found:",
-            len(result)
-        )
 
         return jsonify(result)
 

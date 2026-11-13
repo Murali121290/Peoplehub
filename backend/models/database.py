@@ -23,7 +23,6 @@ def create_database_if_not_exists(url):
             exists = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": dbname}).scalar()
             if not exists:
                 conn.execute(text(f"CREATE DATABASE {dbname}"))
-                print(f"Database '{dbname}' created successfully.")
         temp_engine.dispose()
     except Exception as e:
         print(f"Error checking or creating database: {e}")
