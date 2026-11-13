@@ -532,6 +532,8 @@ def download_employee_document(employee_id, doc_type):
 def get_employee(employee_id):
 
     employee = Employee.query.get(employee_id)
+    if not employee:
+        employee = Employee.query.filter_by(employee_id=str(employee_id)).first()
 
     if not employee:
         return jsonify({
@@ -726,6 +728,13 @@ def get_employee_image(employee_id):
             mimetype = "image/png" if ext == ".png" else "image/jpeg"
             resp = send_file(full_path, mimetype=mimetype)
             resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+            return resp
+        # If the specific file is not yet on disk, return default avatar gracefully instead of 404
+        from utils.compat import current_app, send_file
+        default_avatar_path = os.path.join(current_app.root_path, "static", "default-avatar.png")
+        if os.path.exists(default_avatar_path):
+            resp = send_file(default_avatar_path, mimetype="image/png")
+            resp.headers["Cache-Control"] = "public, max-age=3600"
             return resp
         return jsonify({
             "error": "Image file not found on disk"
