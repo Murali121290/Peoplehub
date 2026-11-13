@@ -249,6 +249,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [monthlyHolidaysData, setMonthlyHolidaysData] = useState<any[]>([]);
   const [monthlyScheduleData, setMonthlyScheduleData] = useState<any[]>([]);
   const [allYearHolidays, setAllYearHolidays] = useState<any[]>([]);
+  const [workingDayOverrides, setWorkingDayOverrides] = useState<string[]>([]);
 
   const MONTH_NAMES = [
     "January", "February", "March", "April", "May", "June",
@@ -269,6 +270,14 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         setMonthlyScheduleData(data.current_month_schedule || []);
         if (data.published_holidays) {
           setAllYearHolidays(data.published_holidays);
+        }
+        if (data.working_day_overrides) {
+          setWorkingDayOverrides(data.working_day_overrides);
+        } else if (data.overrides) {
+          const wOver = data.overrides
+            .filter((o: any) => o.override_type === "Working Day")
+            .map((o: any) => o.date);
+          setWorkingDayOverrides(wOver);
         }
       } catch (err) {
         console.error("Failed to fetch holidays for timeline:", err);
@@ -560,6 +569,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         const dateStr = `${yyyy}-${String(mm + 1).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
 
         const isWeekoff = (() => {
+          if (workingDayOverrides.includes(dateStr)) return false; // Compensatory working day override!
           if (dayOfWeek === 0) return true; // Sunday
           if (dayOfWeek === 6) { // Saturday
             let satCount = 0;
@@ -1605,6 +1615,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                       disableWeekends={true}
                       disabled={!leaveForm.leaveType}
                       disabledDates={allYearHolidays.map((h: any) => h.date)}
+                      workingDayOverrides={workingDayOverrides}
                       bookedDates={myAppliedLeaveDates}
                     />
                   </div>
@@ -1619,6 +1630,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                       minDate={leaveForm.fromDate}
                       disabled={!leaveForm.leaveType}
                       disabledDates={allYearHolidays.map((h: any) => h.date)}
+                      workingDayOverrides={workingDayOverrides}
                       bookedDates={myAppliedLeaveDates}
                     />
                   </div>
@@ -1643,6 +1655,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                       disableWeekends={true}
                       disabled={!leaveForm.leaveType}
                       disabledDates={allYearHolidays.map((h: any) => h.date)}
+                      workingDayOverrides={workingDayOverrides}
                       bookedDates={myAppliedLeaveDates}
                     />
                   </div>
@@ -1670,6 +1683,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     disablePast={true}
                     disableWeekends={true}
                     disabledDates={allYearHolidays.map((h: any) => h.date)}
+                    workingDayOverrides={workingDayOverrides}
                     bookedDates={myAppliedLeaveDates}
                   />
                 </div>

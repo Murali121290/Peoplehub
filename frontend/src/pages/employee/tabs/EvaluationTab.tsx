@@ -18106,9 +18106,9 @@ export const EvaluationTab: React.FC = () => {
                               className="w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20 transition cursor-pointer"
                             >
                               <option value="yearly">⚡ Automatically Assign Milestones (Yearly Rollout)</option>
-                              <option value="quarterly">Quarterly</option>
+                              {/* <option value="quarterly">Quarterly</option>
                               <option value="monthly">Monthly</option>
-                              <option value="weekly">Weekly</option>
+                              <option value="weekly">Weekly</option> */}
                             </select>
                           </div>
 
