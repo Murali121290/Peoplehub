@@ -7,6 +7,7 @@ import WFHApprovalPage from "./WFHApprovalPage";
 import PermissionApprovalPage from "./PermissionApprovalPage";
 import RegularizationApprovalPage from "./RegularizationApprovalPage";
 import { socket } from "../../services/socket";
+import { debounce } from "../../utils/debounce";
 import {
   CalendarDaysIcon,
   ShieldCheckIcon,
@@ -84,8 +85,8 @@ const TeamManagementPage: React.FC = () => {
 
   const checkManagerMatch = (reportingManager: string | null | undefined, managerFullName: string | null | undefined): boolean => {
     if (!reportingManager || !managerFullName) return false;
-    const repManagerClean = reportingManager.trim().toLowerCase();
-    const managerName = managerFullName.trim().toLowerCase();
+    const repManagerClean = reportingManager.replace(/\s+/g, " ").trim().toLowerCase();
+    const managerName = managerFullName.replace(/\s+/g, " ").trim().toLowerCase();
 
     if (repManagerClean === managerName) return true;
     const repParts = repManagerClean.split(/\s+/);
@@ -239,17 +240,20 @@ const TeamManagementPage: React.FC = () => {
   useEffect(() => {
     fetchNotificationCounts();
 
-    const handleSocketUpdate = () => {
+    const handleSocketUpdate = debounce(() => {
       fetchNotificationCounts();
-    };
+    }, 1500);
 
     socket.on("leave_update", handleSocketUpdate);
     socket.on("shift_update", handleSocketUpdate);
     socket.on("attendance_update", handleSocketUpdate);
 
-    const interval = setInterval(fetchNotificationCounts, 60000);
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchNotificationCounts();
+    }, 60000);
     return () => {
       clearInterval(interval);
+      handleSocketUpdate.cancel();
       socket.off("leave_update", handleSocketUpdate);
       socket.off("shift_update", handleSocketUpdate);
       socket.off("attendance_update", handleSocketUpdate);

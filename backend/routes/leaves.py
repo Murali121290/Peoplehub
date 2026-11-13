@@ -438,13 +438,11 @@ def approve_leave(leave_id):
                 "error": f"Leave already {leave.status.lower()}"
             }), 400
 
-        print("Leave Employee ID:", leave.employee_id)
 
         employee = Employee.query.filter(
             Employee.employee_id == str(leave.employee_id)
         ).first()
 
-        print("Employee Found:", employee)
 
         if not employee:
             return jsonify({
@@ -1071,10 +1069,10 @@ def cancel_leave_date(leave_id):
         approver_name = approver.full_name or "Manager"
         
         def is_manager_match(manager_field, approver_name_str):
-            if not manager_field:
+            if not manager_field or not approver_name_str:
                 return False
-            m_field = manager_field.strip().lower()
-            a_name = approver_name_str.strip().lower()
+            m_field = " ".join(str(manager_field).strip().lower().split())
+            a_name = " ".join(str(approver_name_str).strip().lower().split())
             if m_field == a_name:
                 return True
             m_parts = m_field.split()

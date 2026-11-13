@@ -1,5 +1,6 @@
 import os
 import smtplib
+import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
@@ -85,7 +86,7 @@ def send_email_via_smtp(to_email, subject, html_content):
 
         # Connect
         print(f"[SMTP] Step 1: Connecting to {mail_server}:{mail_port}...")
-        server = smtplib.SMTP(mail_server, int(mail_port), timeout=15)
+        server = smtplib.SMTP(mail_server, int(mail_port), timeout=10)
         print(f"[SMTP] Connected successfully to {mail_server}")
 
         # Ehlo check
@@ -110,24 +111,17 @@ def send_email_via_smtp(to_email, subject, html_content):
         print(f"[SMTP] Email successfully sent to {to_email}")
 
         # Quit
-        server.quit()
+        try:
+            server.quit()
+        except Exception:
+            pass
 
         return True
-    except smtplib.SMTPAuthenticationError as auth_err:
-        print(f"[SMTP AUTH ERROR] Authentication failed for user '{mail_username}'. Code: {auth_err.smtp_code}, Message: {auth_err.smtp_error.decode('utf-8', errors='ignore') if isinstance(auth_err.smtp_error, bytes) else auth_err.smtp_error}")
-
-        return False
-    except smtplib.SMTPConnectError as conn_err:
-        print(f"[SMTP CONNECT ERROR] Connection failed to {mail_server}:{mail_port}. Code: {conn_err.smtp_code}, Message: {conn_err.smtp_error}")
-
+    except (smtplib.SMTPAuthenticationError, smtplib.SMTPServerDisconnected, TimeoutError, smtplib.SMTPConnectError, socket.timeout) as auth_or_conn_err:
+        print(f"[SMTP] (Outlook not connected) Unable to send email to {to_email}: {auth_or_conn_err}")
         return False
     except Exception as smtp_err:
-        import traceback
-        print(f"[SMTP EXCEPTION] Failed to send email to {to_email}.")
-        print(f"Exception Type: {type(smtp_err)}")
-        print(f"Exception Message: {str(smtp_err)}")
-        traceback.print_exc()
-
+        print(f"[SMTP] (Outlook not connected) Email dispatch failed: {smtp_err}")
         return False
 
 def send_manager_request_email(request_obj, request_type):
@@ -209,12 +203,12 @@ def send_manager_request_email(request_obj, request_type):
     # Determine manager's email
     manager_email = None
     if employee.reporting_manager:
-        search_name = employee.reporting_manager.strip().lower()
+        search_name = " ".join(employee.reporting_manager.lower().split())
         from utils.employee_cache import get_all_employees_cached
         all_emps = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
         matching_manager = None
         for emp in all_emps:
-            emp_full_name = f"{emp.first_name or ''} {emp.last_name or ''}".strip().lower()
+            emp_full_name = " ".join(f"{emp.first_name or ''} {emp.last_name or ''}".lower().split())
             emp_first_name = (emp.first_name or "").strip().lower()
             if emp_full_name == search_name or emp_first_name == search_name:
                 matching_manager = emp

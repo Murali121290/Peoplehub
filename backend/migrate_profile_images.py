@@ -5,7 +5,6 @@ from models.employee import Employee
 # Create uploads/employees folder structure if not exist
 os.makedirs(os.path.join("/opt/uploads", "employees"), exist_ok=True)
 
-print("Starting profile images migration...")
 employees = Employee.query.filter(Employee.profile_image.isnot(None)).all()
 migrated_count = 0
 skipped_count = 0
@@ -34,7 +33,6 @@ for emp in employees:
                 os.makedirs(os.path.dirname(new_path), exist_ok=True)
                 import shutil
                 shutil.copy(old_path, new_path)
-                print(f"Recovered profile image from old path for Emp ID {emp.employee_id or emp.id}")
         skipped_count += 1
         continue
         
@@ -59,12 +57,9 @@ for emp in employees:
         emp.profile_image = db_path.encode('utf-8')
         
         migrated_count += 1
-        print(f"Migrated: Employee ID {emp_id} -> {file_path}")
     except Exception as e:
         print(f"Failed to migrate Employee ID {emp_id}: {e}")
     
 if migrated_count > 0:
     db_session.commit()
-    print(f"Successfully committed changes to database.")
     
-print(f"Migration finished. Total Migrated: {migrated_count}, Skipped: {skipped_count}")

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
 import { API_URL, getProfileImageUrl } from '../../../config/api';
 import apiService from '../../../services/api';
+import { getCachedEmployeesSync } from '../../../services/employeesCache';
 import {
   EvaluationCycle,
   EvaluationResponse,
@@ -934,10 +935,16 @@ export const EvaluationTab: React.FC = () => {
     isHrOrAdmin ? 'hr' : (isManager || isServiceManager || isTeamLead) ? 'manager' : 'employee'
   );
 
-  const [dbEmployees, setDbEmployees] = useState<any[]>([]);
-  const [dbTeams, setDbTeams] = useState<any[]>([]);
-  const [cycles, setCycles] = useState<EvaluationCycle[]>([]);
-  const [responses, setResponses] = useState<EvaluationResponse[]>([]);
+  const initialCachedEmployees = useMemo(() => getCachedEmployeesSync(), []);
+  const initialCachedTeams = useMemo(() => evaluationService.getTeams(), []);
+  const initialCachedCycles = useMemo(() => evaluationService.getCycles(), []);
+  const initialCachedResponses = useMemo(() => evaluationService.getResponses(), []);
+  const hasInitialCache = initialCachedCycles.length > 0 || initialCachedResponses.length > 0;
+
+  const [dbEmployees, setDbEmployees] = useState<any[]>(initialCachedEmployees);
+  const [dbTeams, setDbTeams] = useState<any[]>(initialCachedTeams);
+  const [cycles, setCycles] = useState<EvaluationCycle[]>(initialCachedCycles);
+  const [responses, setResponses] = useState<EvaluationResponse[]>(initialCachedResponses);
   const [dbApprovedLeaves, setDbApprovedLeaves] = useState<any[]>([]);
   const [dbHolidays, setDbHolidays] = useState<any[]>([]);
 
@@ -1403,8 +1410,8 @@ export const EvaluationTab: React.FC = () => {
   const [editingSmCycleId, setEditingSmCycleId] = useState<string | null>(null);
   const [smCategories, setSmCategories] = useState<KPICategory[]>([]);
 
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [isPageLoading, setIsPageLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(hasInitialCache);
+  const [isPageLoading, setIsPageLoading] = useState<boolean>(() => !hasInitialCache);
   const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
 
   // User & Team Scoping Resolver
@@ -1454,101 +1461,115 @@ export const EvaluationTab: React.FC = () => {
     return false;
   };
 
-  // Load Data
+  const applyEvaluationSnapshot = (
+    loadedCycles: EvaluationCycle[],
+    loadedResponses: EvaluationResponse[],
+    emps: any[],
+    tms: any[]
+  ) => {
+    const firstTeam = tms[0];
+    const initialTeamId = selectedTeamId || (firstTeam ? (firstTeam.id || firstTeam.name) : '');
+    if (initialTeamId && !selectedTeamId) {
+      setSelectedTeamId(initialTeamId);
+    }
+
+    resolveManagersForTeam(initialTeamId, tms, emps);
+
+    setCycles(loadedCycles);
+    setResponses(loadedResponses);
+
+    const initialCats = resolveTeamCategories(initialTeamId, tms, loadedCycles);
+    setHrCategories(initialCats);
+
+    const userResponses = loadedResponses.filter(isResponseForUser);
+    const activePendingResp = userResponses.find(r => {
+      const st = String(r.status || '');
+      const isSubmitted = st === 'manager_review' || st === 'approved' || st === 'sm_final_approval' || Boolean(r.employeeSubmittedAt);
+      return !isSubmitted;
+    });
+    const myResp = activePendingResp || userResponses[0];
+
+    if (myResp) {
+      setSelectedResponseId(myResp.id);
+      const isSubmitted = myResp.status === 'manager_review' || myResp.status === 'approved' || myResp.status === 'sm_final_approval' || Boolean(myResp.employeeSubmittedAt);
+      if (isSubmitted) {
+        setKpiInputs(myResp.kpiResponses || {});
+        setEmpRemarks(myResp.employeeRemarks || '');
+      } else {
+        setKpiInputs(prev => {
+          if (Object.keys(prev).length > 0) return prev;
+          if (myResp.kpiResponses && Object.keys(myResp.kpiResponses).length > 0) return myResp.kpiResponses;
+          try {
+            const draft = localStorage.getItem(userDraftKey);
+            if (draft) {
+              const parsed = JSON.parse(draft);
+              if (parsed?.kpiInputs && Object.keys(parsed.kpiInputs).length > 0) return parsed.kpiInputs;
+            }
+          } catch (e) { }
+          return {};
+        });
+        setEmpRemarks(prev => {
+          if (prev) return prev;
+          if (myResp.employeeRemarks) return myResp.employeeRemarks;
+          try {
+            const draft = localStorage.getItem(userDraftKey);
+            if (draft) {
+              const parsed = JSON.parse(draft);
+              if (parsed?.empRemarks) return parsed.empRemarks;
+            }
+          } catch (e) { }
+          return '';
+        });
+      }
+    } else {
+      setSelectedResponseId('');
+      setKpiInputs({});
+      setEmpRemarks('');
+    }
+  };
+
+  // Load Data (Stale-While-Revalidate: cached data displays immediately while fresh data syncs in the background)
   const loadAllData = async (showLoading = false) => {
     if (showLoading) setIsRefreshing(true);
     try {
-      const [remoteData, emps, tms, leavesRes, holidaysRes] = await Promise.all([
-        evaluationService.fetchRemoteEvaluationData(),
-        evaluationService.fetchDBEmployees(),
-        evaluationService.fetchDBTeams(),
+      // Secondary leave & holiday data loads concurrently in the background without blocking E2R UI
+      Promise.all([
         apiService.get('/leaves/').catch(() => ({ data: [] })),
         apiService.get('/employee/holidays', { params: { month: currentMonth, year: currentYear } }).catch(() => ({ data: {} }))
+      ]).then(([leavesRes, holidaysRes]) => {
+        const allLeaves = Array.isArray(leavesRes?.data) ? leavesRes.data : [];
+        const loadedHolidays = Array.isArray(holidaysRes?.data?.current_month_schedule) ? holidaysRes.data.current_month_schedule : [];
+        setDbApprovedLeaves(allLeaves);
+        setDbHolidays(loadedHolidays);
+      }).catch(() => { });
+
+      const [remoteData, emps, tms] = await Promise.all([
+        evaluationService.fetchRemoteEvaluationData(),
+        evaluationService.fetchDBEmployees(),
+        evaluationService.fetchDBTeams()
       ]);
 
       setDbEmployees(emps);
       setDbTeams(tms);
 
-      const allLeaves = Array.isArray(leavesRes?.data) ? leavesRes.data : [];
-      const loadedHolidays = Array.isArray(holidaysRes?.data?.current_month_schedule) ? holidaysRes.data.current_month_schedule : [];
-      setDbApprovedLeaves(allLeaves);
-      setDbHolidays(loadedHolidays);
-
-      const firstTeam = tms[0];
-      const initialTeamId = selectedTeamId || (firstTeam ? (firstTeam.id || firstTeam.name) : '');
-      if (initialTeamId && !selectedTeamId) {
-        setSelectedTeamId(initialTeamId);
-      }
-
-      // Auto-resolve SM and Manager for the initial team
-      resolveManagersForTeam(initialTeamId, tms, emps);
-
       const loadedCycles = remoteData.cycles || evaluationService.getCycles();
       const loadedResponses = remoteData.responses || evaluationService.getResponses();
-      setCycles(loadedCycles);
-      setResponses(loadedResponses);
-
-      // Auto-resolve HR deliverables matrix for the selected team
-      const initialCats = resolveTeamCategories(initialTeamId, tms, loadedCycles);
-      setHrCategories(initialCats);
 
       // Clean up legacy generic draft key if present to prevent cross-account pollution
       try {
         localStorage.removeItem('eval_draft_user');
       } catch (e) { }
 
-      // Auto-select active response for employee (strictly for the logged in user, prioritizing pending active evaluations)
-      const userResponses = loadedResponses.filter(isResponseForUser);
-      const activePendingResp = userResponses.find(r => {
-        const st = String(r.status || '');
-        const isSubmitted = st === 'manager_review' || st === 'approved' || st === 'sm_final_approval' || Boolean(r.employeeSubmittedAt);
-        return !isSubmitted;
-      });
-      const myResp = activePendingResp || userResponses[0];
-
-      if (myResp) {
-        setSelectedResponseId(myResp.id);
-        const isSubmitted = myResp.status === 'manager_review' || myResp.status === 'approved' || myResp.status === 'sm_final_approval' || Boolean(myResp.employeeSubmittedAt);
-        if (isSubmitted) {
-          setKpiInputs(myResp.kpiResponses || {});
-          setEmpRemarks(myResp.employeeRemarks || '');
-        } else {
-          setKpiInputs(prev => {
-            if (Object.keys(prev).length > 0) return prev;
-            if (myResp.kpiResponses && Object.keys(myResp.kpiResponses).length > 0) return myResp.kpiResponses;
-            try {
-              const draft = localStorage.getItem(userDraftKey);
-              if (draft) {
-                const parsed = JSON.parse(draft);
-                if (parsed?.kpiInputs && Object.keys(parsed.kpiInputs).length > 0) return parsed.kpiInputs;
-              }
-            } catch (e) { }
-            return {};
-          });
-          setEmpRemarks(prev => {
-            if (prev) return prev;
-            if (myResp.employeeRemarks) return myResp.employeeRemarks;
-            try {
-              const draft = localStorage.getItem(userDraftKey);
-              if (draft) {
-                const parsed = JSON.parse(draft);
-                if (parsed?.empRemarks) return parsed.empRemarks;
-              }
-            } catch (e) { }
-            return '';
-          });
-        }
-      } else {
-        // No saved evaluation response for this employee yet — start clean & empty!
-        setSelectedResponseId('');
-        setKpiInputs({});
-        setEmpRemarks('');
-      }
+      applyEvaluationSnapshot(loadedCycles, loadedResponses, emps, tms);
 
       // Also fetch manager templates from PostgreSQL for the active manager
+      const firstTeam = tms[0];
+      const initialTeamId = selectedTeamId || (firstTeam ? (firstTeam.id || firstTeam.name) : '');
+      const selectedTeamObj = tms.find((t: any) => String(t.id) === String(initialTeamId) || t.name === initialTeamId);
+      const effectiveTeam = selectedTeamObj?.name || effectiveTeamName;
       const currentMgrCode = String(currentDbUser?.employee_id || rawUserCode || user?.employee_id || myCanonicalCode || '').trim();
       if (currentMgrCode) {
-        loadManagerDeskTemplates(currentMgrCode, effectiveTeamName);
+        loadManagerDeskTemplates(currentMgrCode, effectiveTeam);
       }
     } catch (err) {
       console.error('Error loading evaluation data', err);
@@ -1712,9 +1733,18 @@ export const EvaluationTab: React.FC = () => {
   };
 
   useEffect(() => {
-    loadAllData();
-    // Auto-sync every 30 seconds while preserving in-progress employee inputs
+    if (hasInitialCache) {
+      applyEvaluationSnapshot(
+        initialCachedCycles,
+        initialCachedResponses,
+        initialCachedEmployees,
+        initialCachedTeams
+      );
+    }
+    loadAllData(hasInitialCache);
+    // Auto-sync every 45 seconds when tab is visible while preserving in-progress employee inputs
     const interval = setInterval(() => {
+      if (document.hidden) return;
       evaluationService.fetchRemoteEvaluationData().then(data => {
         if (data?.cycles) setCycles(data.cycles);
         if (data?.responses) {
@@ -1741,7 +1771,7 @@ export const EvaluationTab: React.FC = () => {
           });
         }
       }).catch(() => { });
-    }, 30000);
+    }, 45000);
     return () => clearInterval(interval);
   }, []);
 
@@ -12865,6 +12895,12 @@ export const EvaluationTab: React.FC = () => {
             <h2 className="text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">
               Employee Recognition & Rewards
             </h2>
+            {isRefreshing && (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200/80 animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-ping" />
+                Syncing latest...
+              </span>
+            )}
           </div>
 
           {/* Center: Segmented Navigation Tabs for HR / Manager */}
@@ -22128,7 +22164,7 @@ export const EvaluationTab: React.FC = () => {
                                                     ? 'bg-teal-50 text-teal-900 border border-teal-300'
                                                     : 'bg-slate-50 text-slate-900 border-slate-200'
                                                 }`}>
-                                                <span>{empActual} {kpi.unit}</span>
+                                                <span>{empActual}</span>
                                                 {isOver && !isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
                                                 {isOver && isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED TARGET</span>}
                                               </span>

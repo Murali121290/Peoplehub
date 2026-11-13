@@ -244,9 +244,8 @@ def login():
             "user_id": user.id,
 
             "employee_id": (
-                employee.id
-                if employee
-                else None
+                employee.employee_id if (employee and employee.employee_id)
+                else (employee.id if employee else None)
             ),
 
             "role": (

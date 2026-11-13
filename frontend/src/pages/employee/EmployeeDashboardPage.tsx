@@ -1,8 +1,8 @@
 import { API_URL, getProfileImageUrl } from "../../config/api";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { getEmployees } from "../../services/employeesCache";
+import { getEmployees, getCachedEmployeesSync } from "../../services/employeesCache";
 import { fetchWithTimeout } from "../../services/fetchWithTimeout";
 import {
   HomeIcon,
@@ -25,14 +25,11 @@ import PopupModal from "./components/PopupModal";
 import BirthdayModal from "../../layouts/components/BirthdayModal";
 import EmployeeClarificationModal from "../../layouts/components/EmployeeClarificationModal";
 import OverviewTab from "./tabs/OverviewTab";
-import RequestsTab from "./tabs/RequestsTab";
-import LeaveTab from "./tabs/LeaveTab";
-import ShiftTab from "./tabs/ShiftTab";
-import AttendanceTab from "./tabs/AttendanceTab";
-import ProfileTab from "./tabs/ProfileTab";
-import EmployeePayrollTab from "./tabs/EmployeePayrollTab";
-import JobOpeningsTab from "./tabs/JobOpeningsTab";
-import EvaluationTab from "./tabs/EvaluationTab";
+const RequestsTab = lazy(() => import("./tabs/RequestsTab"));
+const AttendanceTab = lazy(() => import("./tabs/AttendanceTab"));
+const ProfileTab = lazy(() => import("./tabs/ProfileTab"));
+const EmployeePayrollTab = lazy(() => import("./tabs/EmployeePayrollTab"));
+const JobOpeningsTab = lazy(() => import("./tabs/JobOpeningsTab"));
 import DashboardHeaderActions from "./components/DashboardHeaderActions";
 import NotificationsPanel from "./components/NotificationsPanel";
 import { BookLoader } from "../../components/ui/Spinner";
@@ -217,8 +214,9 @@ const EmployeeDashboardPage: React.FC = () => {
     }
   }, [location.search]);
 
-  // Employee & data state
-  const [employees, setEmployees] = useState<any[]>([]);
+  // Employee & data state (hydrate immediately from SWR cache when available)
+  const initialCachedEmps = useMemo(() => getCachedEmployeesSync(), []);
+  const [employees, setEmployees] = useState<any[]>(initialCachedEmps);
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [attendanceData, setAttendanceData] = useState<Attendance[]>([]);
   const [shiftRequests, setShiftRequests] = useState<any[]>([]);
@@ -231,12 +229,13 @@ const EmployeeDashboardPage: React.FC = () => {
     : null;
   const managerName =
     `${currentEmployee?.first_name || ""} ${currentEmployee?.last_name || ""}`
+      .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
 
   const checkManagerMatch = (reportingManager: string | null | undefined) => {
     if (!reportingManager) return false;
-    const repManagerClean = reportingManager.trim().toLowerCase();
+    const repManagerClean = reportingManager.replace(/\s+/g, " ").trim().toLowerCase();
 
     // Exact match
     if (repManagerClean === managerName) return true;
@@ -292,7 +291,8 @@ const EmployeeDashboardPage: React.FC = () => {
   } | null>(null);
   const [hasCheckedOutToday, setHasCheckedOutToday] = useState(false);
   const [shiftDate, setShiftDate] = useState("");
-  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [isPageLoading, setIsPageLoading] = useState(() => initialCachedEmps.length === 0);
+  const [isRefreshing, setIsRefreshing] = useState(() => initialCachedEmps.length > 0);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [wantsToChangeMode, setWantsToChangeMode] = useState(false);
   const [wagesConfirmData, setWagesConfirmData] = useState<{ isOpen: boolean; reason: string } | null>(null);
@@ -365,12 +365,14 @@ const EmployeeDashboardPage: React.FC = () => {
   useEffect(() => {
     loadPendingClarifications();
 
-    socket.on("attendance_update", () => {
+    const handleClarificationAttendanceUpdate = (payload: any) => {
+      if (payload?.user_id && Number(payload.user_id) !== Number(user?.id)) return;
       loadPendingClarifications();
-    });
+    };
+    socket.on("attendance_update", handleClarificationAttendanceUpdate);
 
     return () => {
-      socket.off("attendance_update");
+      socket.off("attendance_update", handleClarificationAttendanceUpdate);
     };
   }, [user?.id]);
 
@@ -658,17 +660,37 @@ if (isHalfDayLeave(leave.total_days)) return false;
   };
 
 
+  const publicIpCacheRef = useRef<{ ip: string | null; ts: number }>({ ip: null, ts: 0 });
+  const publicIpInFlightRef = useRef<Promise<string | null> | null>(null);
+
   const getClientPublicIp = async (): Promise<string | null> => {
-    try {
-      const res = await fetch("https://api.ipify.org?format=json");
-      if (res.ok) {
-        const data = await res.json();
-        return data.ip || null;
-      }
-    } catch (e) {
-      console.warn("Failed to fetch public IP", e);
+    const now = Date.now();
+    if (publicIpCacheRef.current.ip && now - publicIpCacheRef.current.ts < 30_000) {
+      return publicIpCacheRef.current.ip;
     }
-    return null;
+    if (publicIpInFlightRef.current) {
+      return publicIpInFlightRef.current;
+    }
+    const req = (async () => {
+      try {
+        const res = await fetchWithTimeout("https://api.ipify.org?format=json", {}, 1500);
+        if (res.ok) {
+          const data = await res.json();
+          const ip = data.ip || null;
+          if (ip) {
+            publicIpCacheRef.current = { ip, ts: Date.now() };
+          }
+          return ip;
+        }
+      } catch (e) {
+        console.warn("Failed to fetch public IP (timeout/error)", e);
+      } finally {
+        publicIpInFlightRef.current = null;
+      }
+      return null;
+    })();
+    publicIpInFlightRef.current = req;
+    return req;
   };
 
   // --- Attendance Handlers ---
@@ -949,48 +971,63 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   const checkPendingEvaluationBeforeCheckout = async () => {
     try {
-      let dbEmps: any[] = [];
-      try {
-        dbEmps = await evaluationService.fetchDBEmployees();
-      } catch (e) {
-        dbEmps = [];
-      }
-      if (!Array.isArray(dbEmps) || dbEmps.length === 0) {
+      // Pre-warm public IP lookup in parallel so confirmation checkout does not wait on external DNS/TLS
+      void getClientPublicIp();
+      const todayForHolidays = new Date();
+      const tokenForHolidays = localStorage.getItem('token');
+
+      const [dbEmpsRes, holidaysRes] = await Promise.all([
+        evaluationService.fetchDBEmployees().catch(() => [] as any[]),
+        fetchWithTimeout(
+          `${BASE_URL}/employee/holidays?month=${todayForHolidays.getMonth() + 1}&year=${todayForHolidays.getFullYear()}`,
+          { headers: tokenForHolidays ? { Authorization: `Bearer ${tokenForHolidays}` } : {} },
+          5000,
+        )
+          .then(async (hRes) => {
+            if (!hRes.ok) return [] as any[];
+            const hData = await hRes.json();
+            return Array.isArray(hData?.current_month_schedule) ? hData.current_month_schedule : [];
+          })
+          .catch(() => [] as any[]),
+      ]);
+
+      let dbEmps: any[] = Array.isArray(dbEmpsRes) ? dbEmpsRes : [];
+      if (dbEmps.length === 0) {
         dbEmps = Array.isArray(employees) && employees.length > 0 ? employees : [];
       }
-
-      let remoteData: { cycles: any[]; responses: any[] } = { cycles: [], responses: [] };
-      try {
-        remoteData = await evaluationService.fetchRemoteEvaluationData();
-      } catch (e) {
-        remoteData = { cycles: evaluationService.getCycles(), responses: evaluationService.getResponses() };
-      }
-
-      const cycles = remoteData.cycles || [];
-      const responses = remoteData.responses || [];
+      const holidaysList: any[] = holidaysRes;
 
       const clean = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
 
-      // Resolve the logged-in user in DB strictly by employee_id
+      // Resolve the logged-in user in DB strictly by user_id first, then email, then employee_id
+      const currentUserId = clean(user?.id || localStorage.getItem("user_id"));
+      const uEmail = String(user?.email || '').trim().toLowerCase();
       const currentDbUser = dbEmps.find((e: any) => {
+        if (currentUserId && clean(e.user_id) === currentUserId) return true;
+        if (uEmail) {
+          const eEmail = String(e.email || e.work_email || '').trim().toLowerCase();
+          if (eEmail && eEmail === uEmail) return true;
+        }
         const eEmpId = clean(e.employee_id);
-        const uEmpId = clean(user?.employee_id || localStorage.getItem("employee_id") || (user as any)?.emp_id);
-        const uEmail = String(user?.email || '').trim().toLowerCase();
-
-        return (
-          (uEmpId && eEmpId === uEmpId) ||
-          (uEmail && e.work_email && String(e.work_email).trim().toLowerCase() === uEmail)
-        );
+        const uEmpId = clean(user?.employee_id || (user as any)?.emp_id);
+        return Boolean(uEmpId && eEmpId === uEmpId);
       }) || currentEmployee;
 
-      // Canonical employee_id strictly for Evaluation (E2R) matching
-      const myEvalEmpIds = [
-        clean(currentDbUser?.employee_id),
-        clean(user?.employee_id),
-        clean((user as any)?.emp_id),
-        clean((user as any)?.employeeId),
-        clean(localStorage.getItem("employee_id")),
-      ].filter(Boolean);
+      // Auto-correct stale numeric employee.id in localStorage if needed
+      if (currentDbUser?.employee_id && localStorage.getItem("employee_id") !== String(currentDbUser.employee_id)) {
+        localStorage.setItem("employee_id", String(currentDbUser.employee_id));
+      }
+
+      // Canonical employee_id strictly for Evaluation (E2R) matching — prefer verified DB employee_id
+      const canonicalEmpId = clean(currentDbUser?.employee_id || currentEmployee?.employee_id);
+      const myEvalEmpIds = canonicalEmpId
+        ? [canonicalEmpId]
+        : [
+            clean(user?.employee_id),
+            clean((user as any)?.emp_id),
+            clean((user as any)?.employeeId),
+            clean(localStorage.getItem("employee_id")),
+          ].filter(Boolean);
 
       const myIds = [
         ...myEvalEmpIds,
@@ -1170,6 +1207,23 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
       // 1. Manager Phase: Check unassigned subordinates during the setup window
       const assignableDirects = dbEmps.filter(e => isAssignableSubordinate(e));
+
+      const scopedEmpIds = [
+        ...myEvalEmpIds,
+        clean(currentDbUser?.employee_id),
+        clean(currentEmployee?.employee_id),
+        ...assignableDirects.map((d: any) => clean(d.employee_id)),
+      ].filter(Boolean);
+
+      let remoteData: { cycles: any[]; responses: any[] } = { cycles: [], responses: [] };
+      try {
+        remoteData = await evaluationService.fetchCheckoutEvaluationData(scopedEmpIds);
+      } catch (e) {
+        remoteData = { cycles: evaluationService.getCycles(), responses: evaluationService.getResponses() };
+      }
+
+      const cycles = remoteData.cycles || [];
+      const responses = remoteData.responses || [];
 
       // Strictly verify if Admin has released / assigned an evaluation cycle for this manager / manager's team
       let hasAssignedCycleFromAdmin = false;
@@ -1355,18 +1409,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
           p.includes('daily')
         );
       };
-
-      let holidaysList: any[] = [];
-      try {
-        const token = localStorage.getItem('token');
-        const hRes = await fetch(`${BASE_URL}/employee/holidays?month=${today.getMonth() + 1}&year=${today.getFullYear()}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
-        if (hRes.ok) {
-          const hData = await hRes.json();
-          holidaysList = Array.isArray(hData?.current_month_schedule) ? hData.current_month_schedule : [];
-        }
-      } catch (e) {}
 
       const isCompanyHoliday = (dateStr: string): boolean => {
         return holidaysList.some((h: any) => {
@@ -1913,21 +1955,23 @@ if (isHalfDayLeave(leave.total_days)) return false;
         return;
       }
       const clientIp = await getClientPublicIp();
-      const response = await fetch(`${BASE_URL}/attendance/checkout`, {
+      const response = await fetchWithTimeout(`${BASE_URL}/attendance/checkout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
         body: JSON.stringify({ user_id: Number(userId), client_ip: clientIp }),
-      });
+      }, 15_000);
       const data = await response.json();
       if (!response.ok) {
         toast.error(data.error || "Checkout Failed");
         return;
       }
-      const attendanceResponse = await fetch(
+      const attendanceResponse = await fetchWithTimeout(
         `${BASE_URL}/attendance/history/${userId}`,
+        {},
+        15_000,
       );
       const attendanceHistory = await attendanceResponse.json();
       setAttendanceData(attendanceHistory);
@@ -2545,7 +2589,12 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
 
   const loadAllDashboardData = async () => {
-    setIsPageLoading(true);
+    const hasCache = employees.length > 0;
+    if (hasCache) {
+      setIsRefreshing(true);
+    } else {
+      setIsPageLoading(true);
+    }
     const userId = localStorage.getItem("user_id");
 
     // Critical requests: the page renders as soon as these finish.
@@ -2680,6 +2729,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
     setIsPageLoading(false);
 
     const background = await Promise.allSettled(backgroundPromises);
+    setIsRefreshing(false);
     [...critical, ...background].forEach((r) => {
       if (r.status === "rejected") {
         console.error("Failed to load dashboard data:", r.reason);
@@ -3087,6 +3137,12 @@ if (isHalfDayLeave(leave.total_days)) return false;
                       <h1 className="text-xl font-sans font-bold text-neutral-800">
                         Dashboard
                       </h1>
+                      {isRefreshing && (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary-50 text-primary-700 border border-primary-200/80">
+                          <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-ping" />
+                          Syncing...
+                        </span>
+                      )}
                       <span className="w-px h-5 bg-neutral-200" />
                       <span className="text-xl font-sans select-none font-semibold" style={{ letterSpacing: "-0.01em" }}>
                         <span className="peoplehub-typed">{welcomeTyped || '\u00A0'}</span>
@@ -3174,35 +3230,37 @@ if (isHalfDayLeave(leave.total_days)) return false;
                 itemVariants={itemVariants}
               />
             )}
-            {activeTab === "requests" && (
-              <RequestsTab
-                leaveRequests={leaveRequests}
-                currentEmployee={currentEmployee}
-                employees={employees}
-                approvalLeaves={approvalLeaves}
-                totalBalance={totalBalance}
-                itemVariants={itemVariants}
-                onApproveLeave={approveLeave}
-                onRejectLeave={rejectLeave}
-                onCancelLeave={cancelLeave}
-                onSubmitLeave={handleLeaveSubmit}
-                shiftRequests={shiftRequests}
-                managerShiftRequests={managerShiftRequests}
-                onSubmitShift={submitShiftRequest}
-                onApproveShift={approveShift}
-                onRejectShift={rejectShift}
-                onCancelShift={cancelShiftRequest}
-              />
-            )}
-            {activeTab === "attendance" && (
-              <AttendanceTab attendanceData={attendanceData} currentEmployee={currentEmployee} />
-            )}
-            {activeTab === "new-hire" && (
-              <NewHireTab employees={employees} />
-            )}
-            {activeTab === "profile" && <ProfileTab />}
-            {activeTab === "payroll" && <EmployeePayrollTab />}
-            {activeTab === "job-openings" && <JobOpeningsTab user={user} />}
+            <Suspense fallback={<BookLoader />}>
+              {activeTab === "requests" && (
+                <RequestsTab
+                  leaveRequests={leaveRequests}
+                  currentEmployee={currentEmployee}
+                  employees={employees}
+                  approvalLeaves={approvalLeaves}
+                  totalBalance={totalBalance}
+                  itemVariants={itemVariants}
+                  onApproveLeave={approveLeave}
+                  onRejectLeave={rejectLeave}
+                  onCancelLeave={cancelLeave}
+                  onSubmitLeave={handleLeaveSubmit}
+                  shiftRequests={shiftRequests}
+                  managerShiftRequests={managerShiftRequests}
+                  onSubmitShift={submitShiftRequest}
+                  onApproveShift={approveShift}
+                  onRejectShift={rejectShift}
+                  onCancelShift={cancelShiftRequest}
+                />
+              )}
+              {activeTab === "attendance" && (
+                <AttendanceTab attendanceData={attendanceData} currentEmployee={currentEmployee} />
+              )}
+              {activeTab === "new-hire" && (
+                <NewHireTab employees={employees} />
+              )}
+              {activeTab === "profile" && <ProfileTab />}
+              {activeTab === "payroll" && <EmployeePayrollTab />}
+              {activeTab === "job-openings" && <JobOpeningsTab user={user} />}
+            </Suspense>
           </motion.div>
         </main>
       </div>

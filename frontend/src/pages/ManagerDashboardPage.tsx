@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import TimePicker from "../components/ui/TimePicker";
 import { socket } from "../services/socket";
+import { debounce } from "../utils/debounce";
 import {
   UsersIcon,
   CheckCircleIcon,
@@ -777,18 +778,18 @@ const ManagerDashboardPage = () => {
   }, [teamAttendance]);
 
   useEffect(() => {
-    const handleRefresh = () => {
+    const handleRefresh = debounce(() => {
       loadTeamAttendance(currentViewedManagerId);
       loadYesterdaySummary(true);
       loadPendingCycleSummary(true);
-    };
+    }, 1500);
 
     socket.on("attendance_update", handleRefresh);
     socket.on("attendance_approved_all", handleRefresh);
     socket.on("leave_update", handleRefresh);
     socket.on("shift_update", handleRefresh);
 
-    socket.on("employee_profile_update", (payload: any) => {
+    const handleEmployeeProfileUpdate = (payload: any) => {
       handleRefresh();
       setTeamMembers((prev) =>
         prev.map((m) =>
@@ -802,14 +803,16 @@ const ManagerDashboardPage = () => {
             : m
         )
       );
-    });
+    };
+    socket.on("employee_profile_update", handleEmployeeProfileUpdate);
 
     return () => {
+      handleRefresh.cancel();
       socket.off("attendance_update", handleRefresh);
       socket.off("attendance_approved_all", handleRefresh);
       socket.off("leave_update", handleRefresh);
       socket.off("shift_update", handleRefresh);
-      socket.off("employee_profile_update");
+      socket.off("employee_profile_update", handleEmployeeProfileUpdate);
     };
   }, [managerName, currentViewedManagerId]);
 

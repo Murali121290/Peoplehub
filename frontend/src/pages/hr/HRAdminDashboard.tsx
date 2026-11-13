@@ -1,8 +1,9 @@
 import { API_URL } from "../../config/api";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, Suspense, lazy } from "react";
 import { formatDateStr } from "../../utils/date";
+import { debounce } from "../../utils/debounce";
 import { apiService } from "../../services/api";
-import { getEmployees } from "../../services/employeesCache";
+import { getEmployees, getCachedEmployeesSync } from "../../services/employeesCache";
 import {
   HomeIcon,
   UserGroupIcon,
@@ -21,22 +22,24 @@ import { toast } from "react-hot-toast";
 import { socket } from "../../services/socket";
 
 import DashboardTab from "./tabs/DashboardTab";
-import DirectoryTab from "./tabs/DirectoryTab";
-import AttendanceTab from "./tabs/AttendanceTab";
-import LeaveTab from "./tabs/LeaveTab";
-import ShiftTab from "./tabs/ShiftTab";
-import HolidayTab from "./tabs/HolidayTab";
-import PayrollPage from "./tabs/PayrollPage";
-import PerformanceTab from "./tabs/PerformanceTab";
-import DocumentsTab from "./tabs/DocumentsTab";
-import SettingsTab from "./tabs/SettingsTab";
+const DirectoryTab = lazy(() => import("./tabs/DirectoryTab"));
+const AttendanceTab = lazy(() => import("./tabs/AttendanceTab"));
+const LeaveTab = lazy(() => import("./tabs/LeaveTab"));
+const ShiftTab = lazy(() => import("./tabs/ShiftTab"));
+const HolidayTab = lazy(() => import("./tabs/HolidayTab"));
+const PayrollPage = lazy(() => import("./tabs/PayrollPage"));
+const PerformanceTab = lazy(() => import("./tabs/PerformanceTab"));
+const DocumentsTab = lazy(() => import("./tabs/DocumentsTab"));
+const SettingsTab = lazy(() => import("./tabs/SettingsTab"));
+const ProfileTab = lazy(() =>
+  import("../employee/tabs/ProfileTab").then((m) => ({ default: m.ProfileTab }))
+);
 import AddEmployeeModal from "./modals/AddEmployeeModal";
 import ProfileCompleteModal from "./modals/ProfileCompleteModal";
 import AddTeamModal from "./modals/AddTeamModal";
 import { Tabs } from "../../components/ui/Tabs";
 import ConfirmDialog from "../../components/ui/Modal/ConfirmDialog";
 import { Modal } from "../../components/ui/Modal";
-import { ProfileTab } from "../employee/tabs/ProfileTab";
 import { BookLoader } from "../../components/ui/Spinner";
 const NAV = [
   { id: "dashboard", label: "Dashboard" },
@@ -113,17 +116,44 @@ const NAV_ICONS: Record<string, React.ElementType> = {
 
 const BASE_URL = `${API_URL}/api`;
 
+const getHrSnapshotKey = () =>
+  `peoplehub_hr_swr_${localStorage.getItem("user_id") || "anon"}`;
+
+const readHrSnapshot = () => {
+  try {
+    const raw = sessionStorage.getItem(getHrSnapshotKey());
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
 export default function HRAdminDashboard() {
-  const [isPageLoading, setIsPageLoading] = useState(true);
+  const initialHrSnapshot = useMemo(() => readHrSnapshot(), []);
+  const initialCachedEmps = useMemo(() => {
+    const list = initialHrSnapshot?.employees || getCachedEmployeesSync();
+    return Array.isArray(list)
+      ? list.filter((emp: any) => emp.access_level?.toLowerCase() !== "admin")
+      : [];
+  }, [initialHrSnapshot]);
+  const hasInitialHrCache =
+    initialCachedEmps.length > 0 ||
+    (initialHrSnapshot?.teams?.length || 0) > 0 ||
+    (initialHrSnapshot?.teamOverview?.length || 0) > 0;
+
+  const [isPageLoading, setIsPageLoading] = useState(() => !hasInitialHrCache);
+  const [isRefreshing, setIsRefreshing] = useState(hasInitialHrCache);
   const [nav, setNav] = useState("dashboard");
   const [search, setSearch] = useState("");
-  const [leaves, setLeaves] = useState<any[]>([]);
-  const [shifts, setShifts] = useState<any[]>([]);
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [attendance, setAttendance] = useState<any[]>([]);
-  const [teams, setTeams] = useState<any[]>([]);
-  const [teamOverview, setTeamOverview] = useState<any[]>([]);
-  const [roles, setRoles] = useState<any[]>([]);
+  const [leaves, setLeaves] = useState<any[]>(initialHrSnapshot?.leaves || []);
+  const [shifts, setShifts] = useState<any[]>(initialHrSnapshot?.shifts || []);
+  const [employees, setEmployees] = useState<any[]>(initialCachedEmps);
+  const [attendance, setAttendance] = useState<any[]>(initialHrSnapshot?.attendance || []);
+  const [teams, setTeams] = useState<any[]>(initialHrSnapshot?.teams || []);
+  const [teamOverview, setTeamOverview] = useState<any[]>(initialHrSnapshot?.teamOverview || []);
+  const [roles, setRoles] = useState<any[]>(initialHrSnapshot?.roles || []);
   const [addEmpOpen, setAddEmpOpen] = useState(false);
   const [addTeamOpen, setAddTeamOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<any>(null);
@@ -270,35 +300,67 @@ export default function HRAdminDashboard() {
   };
 
   useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        getHrSnapshotKey(),
+        JSON.stringify({
+          employees,
+          attendance,
+          leaves,
+          shifts,
+          teams,
+          teamOverview,
+          roles,
+        })
+      );
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [employees, attendance, leaves, shifts, teams, teamOverview, roles]);
+
+  useEffect(() => {
     const init = async () => {
-      setIsPageLoading(true);
+      if (hasInitialHrCache) {
+        setIsRefreshing(true);
+      } else {
+        setIsPageLoading(true);
+      }
       try {
-        await Promise.all([
-          fetchEmployees(true),
-          fetchAttendance(),
-          fetchLeaveRequests(),
-          fetchShiftRequests(),
+        const corePromises = Promise.all([
+          fetchEmployees(false),
           fetchTeams(),
           fetchRoles(),
           fetchTeamOverview(),
         ]);
+        const backgroundPromises = Promise.all([
+          fetchAttendance(),
+          fetchLeaveRequests(),
+          fetchShiftRequests(),
+        ]);
+        await corePromises;
+        setIsPageLoading(false);
+        await backgroundPromises;
       } catch (err) {
         console.error(err);
       } finally {
         setIsPageLoading(false);
+        setIsRefreshing(false);
       }
     };
     init();
 
-    const handleLeaveUpdate = () => fetchLeaveRequests();
-    const handleShiftUpdate = () => fetchShiftRequests();
-    const handleAttendanceUpdate = () => fetchAttendance();
+    const handleLeaveUpdate = debounce(() => fetchLeaveRequests(), 1500);
+    const handleShiftUpdate = debounce(() => fetchShiftRequests(), 1500);
+    const handleAttendanceUpdate = debounce(() => fetchAttendance(), 1500);
 
     socket.on("leave_update", handleLeaveUpdate);
     socket.on("shift_update", handleShiftUpdate);
     socket.on("attendance_update", handleAttendanceUpdate);
 
     return () => {
+      handleLeaveUpdate.cancel();
+      handleShiftUpdate.cancel();
+      handleAttendanceUpdate.cancel();
       socket.off("leave_update", handleLeaveUpdate);
       socket.off("shift_update", handleShiftUpdate);
       socket.off("attendance_update", handleAttendanceUpdate);
@@ -729,8 +791,16 @@ export default function HRAdminDashboard() {
               <BuildingOfficeIcon className="w-[22px] h-[22px] text-white" />
             </div>
             <div>
-              <div className="text-base font-extrabold text-neutral-800">
-                HR Admin Dashboard
+              <div className="flex items-center gap-2.5">
+                <div className="text-base font-extrabold text-neutral-800">
+                  HR Admin Dashboard
+                </div>
+                {isRefreshing && (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary-50 text-primary-700 border border-primary-200/80">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-ping" />
+                    Syncing latest...
+                  </span>
+                )}
               </div>
               <div className="text-xs text-neutral-400 mt-0.5">
                 {navTabs.find((n) => n.id === nav)?.label}
@@ -768,71 +838,73 @@ export default function HRAdminDashboard() {
 
       {/* Main Content */}
       <main className="p-6">
-        {nav === "dashboard" && (
-          <DashboardTab
-            counts={counts}
-            teamOverview={teamOverview}
-            teams={teams}
-            onEditTeam={(team) => {
-              setEditingTeam(team);
-              setAddTeamOpen(true);
-            }}
-            onCreateTeam={() => {
-              setEditingTeam(null);
-              setAddTeamOpen(true);
-            }}
-          />
-        )}
-        {nav === "directory" && (
-          <DirectoryTab
-            filteredEmps={filteredEmps}
-            search={search}
-            onSearchChange={setSearch}
-            onAddEmployee={() => {
-              setIsEditMode(false);
-              setNewEmp(DEFAULT_NEW_EMP);
-              setProfileImage(null);
-              setAddEmpOpen(true);
-            }}
-            onEditEmployee={handleEditEmployee}
-            onEditDetailedProfile={handleEditDetailedProfile}
-            onResetPassword={async (userId) => {
-              if (!userId) {
-                toast.error("User ID not found for this employee");
-                return;
-              }
-              setResetUserId(userId);
-            }}
-            onResetAllPasswords={async () => {
-              setResetAllOpen(true);
-            }}
-            BASE_URL={BASE_URL}
-            onStatusChange={() => fetchEmployees(true)}
-            isLoading={isEmployeesLoading}
-          />
-        )}
-        {nav === "attendance" && (
-          <AttendanceTab attendance={attendance} BASE_URL={BASE_URL} />
-        )}
-        {nav === "leave" && (
-          <LeaveTab
-            leaves={leaves}
-            onApprove={handleApproveLeave}
-            onReject={handleRejectLeave}
-          />
-        )}
-        {nav === "shift" && (
-          <ShiftTab
-            shifts={shifts}
-            onApprove={handleApproveShift}
-            onReject={handleRejectShift}
-          />
-        )}
-        {nav === "holiday" && <HolidayTab />}
-        {nav === "payroll" && <PayrollPage />}
-        {nav === "performance" && <PerformanceTab />}
-        {nav === "documents" && <DocumentsTab />}
-        {nav === "settings" && <SettingsTab employees={employees} />}
+        <Suspense fallback={<BookLoader />}>
+          {nav === "dashboard" && (
+            <DashboardTab
+              counts={counts}
+              teamOverview={teamOverview}
+              teams={teams}
+              onEditTeam={(team) => {
+                setEditingTeam(team);
+                setAddTeamOpen(true);
+              }}
+              onCreateTeam={() => {
+                setEditingTeam(null);
+                setAddTeamOpen(true);
+              }}
+            />
+          )}
+          {nav === "directory" && (
+            <DirectoryTab
+              filteredEmps={filteredEmps}
+              search={search}
+              onSearchChange={setSearch}
+              onAddEmployee={() => {
+                setIsEditMode(false);
+                setNewEmp(DEFAULT_NEW_EMP);
+                setProfileImage(null);
+                setAddEmpOpen(true);
+              }}
+              onEditEmployee={handleEditEmployee}
+              onEditDetailedProfile={handleEditDetailedProfile}
+              onResetPassword={async (userId) => {
+                if (!userId) {
+                  toast.error("User ID not found for this employee");
+                  return;
+                }
+                setResetUserId(userId);
+              }}
+              onResetAllPasswords={async () => {
+                setResetAllOpen(true);
+              }}
+              BASE_URL={BASE_URL}
+              onStatusChange={() => fetchEmployees(true)}
+              isLoading={isEmployeesLoading}
+            />
+          )}
+          {nav === "attendance" && (
+            <AttendanceTab attendance={attendance} BASE_URL={BASE_URL} />
+          )}
+          {nav === "leave" && (
+            <LeaveTab
+              leaves={leaves}
+              onApprove={handleApproveLeave}
+              onReject={handleRejectLeave}
+            />
+          )}
+          {nav === "shift" && (
+            <ShiftTab
+              shifts={shifts}
+              onApprove={handleApproveShift}
+              onReject={handleRejectShift}
+            />
+          )}
+          {nav === "holiday" && <HolidayTab />}
+          {nav === "payroll" && <PayrollPage />}
+          {nav === "performance" && <PerformanceTab />}
+          {nav === "documents" && <DocumentsTab />}
+          {nav === "settings" && <SettingsTab employees={employees} />}
+        </Suspense>
       </main>
 
       {/* Modals */}
@@ -887,7 +959,9 @@ export default function HRAdminDashboard() {
           title="Edit Employee Profile"
         >
           <div className="p-1 max-w-[1400px] mx-auto">
-            <ProfileTab employeeId={detailedEditEmployeeId} initialEditing={true} />
+            <Suspense fallback={<BookLoader />}>
+              <ProfileTab employeeId={detailedEditEmployeeId} initialEditing={true} />
+            </Suspense>
           </div>
         </Modal>
       )}

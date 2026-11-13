@@ -1,5 +1,6 @@
 import { API_URL } from '../config/api';
 import { getEmployees } from './employeesCache';
+import { fetchWithTimeout } from './fetchWithTimeout';
 import {
   EvaluationCycle,
   EvaluationResponse,
@@ -197,9 +198,45 @@ export const initializeYearlyWeeklyRecords = (
 };
 
 // Authoritative source of truth is PostgreSQL database via backend API.
-// In-memory cache is used only for active session runtime reactivity.
+// In-memory + user-scoped sessionStorage cache provides instant stale-while-revalidate rendering.
 let memoryCycles: EvaluationCycle[] = [];
 let memoryResponses: EvaluationResponse[] = [];
+let memoryTeams: any[] = [];
+let memoryOwnerKey = '';
+
+const getEvalUserKey = () =>
+  (typeof window !== 'undefined' && localStorage.getItem('user_id')) || 'anon';
+
+const readEvalSessionCache = <T,>(suffix: string): T[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = sessionStorage.getItem(`peoplehub_eval_${suffix}_${getEvalUserKey()}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeEvalSessionCache = (suffix: string, items: any[]) => {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(`peoplehub_eval_${suffix}_${getEvalUserKey()}`, JSON.stringify(items));
+  } catch {
+    // Ignore storage quota errors
+  }
+};
+
+const ensureMemoryOwner = () => {
+  const currentKey = getEvalUserKey();
+  if (memoryOwnerKey !== currentKey) {
+    memoryCycles = [];
+    memoryResponses = [];
+    memoryTeams = [];
+    memoryOwnerKey = currentKey;
+  }
+};
 
 // Purge any legacy evaluation keys from localStorage so browser storage stays 100% clean
 if (typeof window !== 'undefined') {
@@ -460,6 +497,20 @@ export const evaluationService = {
     }
   },
 
+  getTeams(): any[] {
+    ensureMemoryOwner();
+    if (memoryTeams.length === 0) {
+      memoryTeams = readEvalSessionCache<any>('teams');
+    }
+    return memoryTeams;
+  },
+
+  saveTeamsLocal(teams: any[]): void {
+    ensureMemoryOwner();
+    memoryTeams = Array.isArray(teams) ? teams : [];
+    writeEvalSessionCache('teams', memoryTeams);
+  },
+
   async fetchDBTeams(): Promise<any[]> {
     try {
       const token = localStorage.getItem('token');
@@ -469,6 +520,7 @@ export const evaluationService = {
       if (!res.ok) throw new Error('Failed to fetch teams');
       const data = await res.json();
       const list = Array.isArray(data) ? data : (Array.isArray(data?.teams) ? data.teams : []);
+      this.saveTeamsLocal(list);
       return list;
     } catch (e) {
       // If teams API not available, construct dynamic teams from employee departments/teams
@@ -484,7 +536,9 @@ export const evaluationService = {
           });
         }
       });
-      return Array.from(teamMap.values());
+      const fallback = Array.from(teamMap.values());
+      this.saveTeamsLocal(fallback);
+      return fallback;
     }
   },
 
@@ -514,6 +568,39 @@ export const evaluationService = {
       console.warn('Evaluation backend API offline or unreachable, using active cache', e);
     }
     return { cycles: this.getCycles(), responses: this.getResponses() };
+  },
+
+  /**
+   * Lightweight, employee-scoped evaluation fetch for pre-checkout verification.
+   * Does not overwrite the full E2R session cache.
+   */
+  async fetchCheckoutEvaluationData(
+    employeeIds: string[] = []
+  ): Promise<{ cycles: EvaluationCycle[]; responses: EvaluationResponse[] }> {
+    try {
+      const token = localStorage.getItem('token');
+      const cleanedIds = Array.from(
+        new Set(employeeIds.map((id) => String(id || '').trim()).filter(Boolean))
+      );
+      const qs = cleanedIds.length > 0
+        ? `?employee_ids=${encodeURIComponent(cleanedIds.join(','))}`
+        : '';
+      const res = await fetchWithTimeout(
+        `${API_URL}/api/performance/evaluation/checkout-data${qs}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+        10_000,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          cycles: Array.isArray(data.cycles) ? data.cycles : [],
+          responses: Array.isArray(data.responses) ? data.responses : [],
+        };
+      }
+    } catch (e) {
+      console.warn('Scoped checkout evaluation API unavailable, falling back to full fetch', e);
+    }
+    return this.fetchRemoteEvaluationData();
   },
 
   async fetchRatingScale(): Promise<RatingLevel[]> {
@@ -553,11 +640,17 @@ export const evaluationService = {
   },
 
   getCycles(): EvaluationCycle[] {
+    ensureMemoryOwner();
+    if (memoryCycles.length === 0) {
+      memoryCycles = readEvalSessionCache<EvaluationCycle>('cycles');
+    }
     return memoryCycles;
   },
 
   saveCyclesLocal(cycles: EvaluationCycle[]): void {
+    ensureMemoryOwner();
     memoryCycles = Array.isArray(cycles) ? cycles : [];
+    writeEvalSessionCache('cycles', memoryCycles);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('evaluationUpdated'));
     }
@@ -581,11 +674,17 @@ export const evaluationService = {
   },
 
   getResponses(): EvaluationResponse[] {
+    ensureMemoryOwner();
+    if (memoryResponses.length === 0) {
+      memoryResponses = readEvalSessionCache<EvaluationResponse>('responses');
+    }
     return memoryResponses;
   },
 
   saveResponsesLocal(responses: EvaluationResponse[]): void {
+    ensureMemoryOwner();
     memoryResponses = Array.isArray(responses) ? responses : [];
+    writeEvalSessionCache('responses', memoryResponses);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('evaluationUpdated'));
     }

@@ -13,7 +13,6 @@ def complete_old_bookings():
             booking.status = "Completed"
 
         db.session.commit()
-        print("Meeting rooms refreshed")
     except Exception as e:
         db.session.rollback()
         print(f"Error completing old bookings: {e}")

@@ -41,6 +41,62 @@ attendance_bp = Blueprint(
     __name__
 )
 
+# ---------------------------------------------------------------------------
+# Redis cache for GET /api/attendance/ (daily attendance list).
+# Uses a version key so ANY commit touching Attendance, LeaveRequest, or
+# ShiftRequest invalidates all cached dates in O(1).
+# ---------------------------------------------------------------------------
+from sqlalchemy import event as _sa_event, and_
+from models.shift_request import ShiftRequest
+from utils.redis_client import get_redis as _get_redis, cache_get_json, cache_set_json
+
+ATTENDANCE_VER_KEY = "peoplehub:api:attendance:ver"
+ATTENDANCE_CACHE_PREFIX = "peoplehub:api:attendance:daily:v2"
+ATTENDANCE_CACHE_TTL = 15  # seconds (keeps live elapsed gross_hours fresh)
+
+
+def _get_attendance_cache_ver():
+    r = _get_redis()
+    if r is None:
+        return "1"
+    try:
+        return r.get(ATTENDANCE_VER_KEY) or "1"
+    except Exception:
+        return "1"
+
+
+def invalidate_attendance_cache():
+    r = _get_redis()
+    if r is None:
+        return
+    try:
+        r.incr(ATTENDANCE_VER_KEY)
+    except Exception:
+        pass
+
+
+def _mark_attendance_changes(session, flush_context):
+    for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+        if isinstance(obj, (Attendance, LeaveRequest, ShiftRequest)):
+            session.info["attendance_changed"] = True
+            return
+
+
+def _invalidate_attendance_after_commit(session):
+    if session.info.pop("attendance_changed", False):
+        invalidate_attendance_cache()
+
+
+def _clear_attendance_flag_after_rollback(session):
+    session.info.pop("attendance_changed", None)
+
+
+_att_session_factory = db.session.session_factory
+if not _sa_event.contains(_att_session_factory, "after_flush", _mark_attendance_changes):
+    _sa_event.listen(_att_session_factory, "after_flush", _mark_attendance_changes)
+    _sa_event.listen(_att_session_factory, "after_commit", _invalidate_attendance_after_commit)
+    _sa_event.listen(_att_session_factory, "after_rollback", _clear_attendance_flag_after_rollback)
+
 
 def get_ist_now():
     return datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
@@ -368,12 +424,12 @@ def check_in():
             from extensions import socketio
 
             # 1. Look up manager's employee details to locate their socket room
-            manager_name = employee.reporting_manager.strip().lower() if employee.reporting_manager else ""
+            from routes.employees import is_manager_match
+            manager_name = employee.reporting_manager or ""
             manager_emp = None
             for e in [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]:
-                full_name = f"{e.first_name} {e.last_name}".strip().lower()
-                is_match = (full_name == manager_name) or (len(manager_name.split()) == 1 and full_name.split()[0] == manager_name) or (len(full_name.split()) == 1 and manager_name.split()[0] == full_name)
-                if is_match:
+                full_name = f"{e.first_name or ''} {e.last_name or ''}".strip()
+                if is_manager_match(manager_name, full_name):
                     manager_emp = e
                     break
 
@@ -2013,6 +2069,11 @@ def get_attendance():
     else:
         today = get_ist_today()
 
+    cache_key = f"{ATTENDANCE_CACHE_PREFIX}:{_get_attendance_cache_ver()}:{today.isoformat()}"
+    cached = cache_get_json(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
     all_employees = get_all_employees_cached()
 
     # Filter: exclude inactive employees ONLY if the query date is after their last_working_date
@@ -2027,6 +2088,56 @@ def get_attendance():
                 continue  # Skip if status is inactive but no last_working_date
         employees.append(e)
 
+    # Batch-load all attendance, leave/permission, and shift/WFH records for `today`
+    # in 3 queries instead of ~870 N+1 queries per request.
+    att_by_user = {
+        a.user_id: a
+        for a in Attendance.query.filter(Attendance.attendance_date == today).all()
+    }
+
+    leaves_by_emp = {}
+    perms_by_emp = {}
+    day_leave_rows = LeaveRequest.query.filter(
+        LeaveRequest.status == "Approved",
+        or_(
+            and_(LeaveRequest.from_date <= today, LeaveRequest.to_date >= today),
+            and_(LeaveRequest.request_type == "Permission", LeaveRequest.permission_date == today)
+        )
+    ).all()
+    for lv in day_leave_rows:
+        emp_code = lv.employee_id
+        if not emp_code:
+            continue
+        if lv.from_date and lv.to_date and lv.from_date <= today <= lv.to_date:
+            leaves_by_emp.setdefault(emp_code, []).append(lv)
+        if lv.request_type == "Permission" and lv.permission_date == today:
+            perms_by_emp.setdefault(emp_code, []).append(lv)
+
+    wfh_by_emp = {}
+    shift_by_emp = {}
+    shift_rows = ShiftRequest.query.filter(
+        ShiftRequest.status == "Approved",
+        ShiftRequest.request_type.in_(["WFH", "Shift"]),
+        ShiftRequest.from_date <= today,
+        ShiftRequest.to_date >= today
+    ).all()
+    for sr in shift_rows:
+        if not sr.employee_id:
+            continue
+        if sr.request_type == "WFH" and sr.employee_id not in wfh_by_emp:
+            wfh_by_emp[sr.employee_id] = sr
+        elif sr.request_type == "Shift" and sr.employee_id not in shift_by_emp:
+            shift_by_emp[sr.employee_id] = sr
+
+    ist_today = get_ist_today()
+    ist_now = get_ist_now() if today == ist_today else None
+
+    def fmt_time(t):
+        h = t.hour
+        ampm = "AM" if h < 12 else "PM"
+        h12 = h % 12 or 12
+        return f"{h12:02d}:{t.minute:02d} {ampm}"
+
     attendance_list = []
 
     for employee in employees:
@@ -2034,29 +2145,25 @@ def get_attendance():
         if employee.joining_date and today < employee.joining_date:
             continue
 
-        attendance = Attendance.query.filter_by(
-            user_id=employee.user_id,
-            attendance_date=today
-        ).first()
+        attendance = att_by_user.get(employee.user_id)
 
         if attendance:
             status = attendance.status
-            
+
             eff_in = attendance.check_in
             eff_out = attendance.check_out
             paused_seconds_gross = (attendance.paused_minutes or 0) * 60
             gap_seconds_gross = (attendance.total_gap_minutes or 0) * 60
-            
+
             if eff_in and eff_out:
                 gross_sec = (eff_out - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
                 gross_hours = max(gross_sec, 0) / 3600
-            elif eff_in and today == get_ist_today():
-                now = get_ist_now()
-                gross_sec = (now - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
+            elif eff_in and ist_now is not None:
+                gross_sec = (ist_now - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
                 gross_hours = max(gross_sec, 0) / 3600
             else:
                 gross_hours = 0.0
-            
+
             gross_hours = int(gross_hours * 100) / 100
 
             if not status:
@@ -2072,14 +2179,10 @@ def get_attendance():
             # Override: if checked in but not yet checked out today, show 'Check In'
             if (attendance.check_in and not attendance.check_out
                     and not attendance.card_check_out
-                    and today == get_ist_today()):
+                    and today == ist_today):
                 status = "Check In"
 
-
-            web_hrs = attendance.total_hours or 0.0
             card_hrs = attendance.card_working_hours or 0.0
-
-            max_hrs = max(web_hrs, card_hrs)
 
             check_in = (
                 attendance.check_in.strftime("%H:%M:%S")
@@ -2117,22 +2220,15 @@ def get_attendance():
             gross_hours = 0.0
             card_hrs = 0.0
 
-
         # Track leave details for complex badge rendering
         daily_leave_details = []
         if status in ("Absent", "Half Day"):
-            from models.leave import LeaveRequest
-            leaves = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == employee.employee_id,
-                LeaveRequest.status == "Approved",
-                LeaveRequest.from_date <= today,
-                LeaveRequest.to_date >= today
-            ).all()
+            leaves = leaves_by_emp.get(employee.employee_id, [])
             if leaves:
                 total_leave_days = sum(l.total_days or 0.0 for l in leaves)
                 if status == "Absent":
                     status = "Half Day" if total_leave_days <= 0.5 else "Leave"
-                
+
                 for lv in leaves:
                     daily_leave_details.append({
                         "leave_type": lv.leave_type or "",
@@ -2140,27 +2236,15 @@ def get_attendance():
                         "reason": lv.reason or "",
                         "status": lv.status
                     })
+
         # Check for an approved Permission on this date and credit its hours
-        from models.leave import LeaveRequest as LR
-        from datetime import time as dtime
-        permission_reqs = LR.query.filter(
-            LR.employee_id == employee.employee_id,
-            LR.request_type == "Permission",
-            LR.status == "Approved",
-            LR.permission_date == today
-        ).all()
+        permission_reqs = perms_by_emp.get(employee.employee_id, [])
 
         has_permission = False
         permission_label = ""
         actual_hours = total_hours or 0.0
         perm_hours = 0.0
-        
-        def fmt_time(t):
-            h = t.hour
-            ampm = "AM" if h < 12 else "PM"
-            h12 = h % 12 or 12
-            return f"{h12:02d}:{t.minute:02d} {ampm}"
-            
+
         perm_labels = []
         for p_req in permission_reqs:
             if p_req.from_time and p_req.to_time:
@@ -2170,7 +2254,7 @@ def get_attendance():
                 perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
                 perm_hours += max(perm_seconds, 0) / 3600
                 perm_labels.append(f"{fmt_time(ft)} – {fmt_time(tt)}")
-                
+
         if has_permission:
             virtual_total_hours = actual_hours + perm_hours
             permission_label = ", ".join(perm_labels)
@@ -2184,25 +2268,8 @@ def get_attendance():
                 else:
                     status = "Present"
 
-
-        from models.shift_request import ShiftRequest
-        emp_ids = [employee.employee_id] if employee.employee_id else []
-
-        wfh_today = ShiftRequest.query.filter(
-            ShiftRequest.employee_id.in_(emp_ids),
-            ShiftRequest.status == "Approved",
-            ShiftRequest.request_type == "WFH",
-            ShiftRequest.from_date <= today,
-            ShiftRequest.to_date >= today
-        ).first()
-
-        shift_change_today = ShiftRequest.query.filter(
-            ShiftRequest.employee_id.in_(emp_ids),
-            ShiftRequest.status == "Approved",
-            ShiftRequest.request_type == "Shift",
-            ShiftRequest.from_date <= today,
-            ShiftRequest.to_date >= today
-        ).first()
+        wfh_today = wfh_by_emp.get(employee.employee_id)
+        shift_change_today = shift_by_emp.get(employee.employee_id)
 
         attendance_list.append({
             "user_id": employee.user_id,
@@ -2258,7 +2325,7 @@ def get_attendance():
             )
         })
 
-
+    cache_set_json(cache_key, attendance_list, ATTENDANCE_CACHE_TTL)
     return jsonify(attendance_list)
 
 @attendance_bp.route("/generate-daily-attendance")
@@ -5051,16 +5118,15 @@ def approve_all_attendance():
 
         if manager_id:
             from models.employee import Employee
+            from routes.employees import is_manager_match
             manager = Employee.query.filter_by(user_id=int(manager_id)).first()
             if manager:
-                manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
+                manager_name = f"{manager.first_name} {manager.last_name}".strip()
                 reporting_employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
                 for employee in reporting_employees:
                     if not employee.reporting_manager:
                         continue
-                    e_mgr = employee.reporting_manager.strip().lower()
-                    is_match = (e_mgr == manager_name) or (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) or (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name)
-                    if is_match:
+                    if is_manager_match(employee.reporting_manager, manager_name):
                         attendances = Attendance.query.filter_by(
                             user_id=employee.user_id,
                             attendance_date=yesterday
@@ -5131,16 +5197,15 @@ def reject_all_attendance():
 
         if manager_id:
             from models.employee import Employee
+            from routes.employees import is_manager_match
             manager = Employee.query.filter_by(user_id=int(manager_id)).first()
             if manager:
-                manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
+                manager_name = f"{manager.first_name} {manager.last_name}".strip()
                 reporting_employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
                 for employee in reporting_employees:
                     if not employee.reporting_manager:
                         continue
-                    e_mgr = employee.reporting_manager.strip().lower()
-                    is_match = (e_mgr == manager_name) or (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) or (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name)
-                    if is_match:
+                    if is_manager_match(employee.reporting_manager, manager_name):
                         attendance = Attendance.query.filter_by(
                             user_id=employee.user_id,
                             attendance_date=yesterday

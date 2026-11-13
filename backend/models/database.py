@@ -23,7 +23,6 @@ def create_database_if_not_exists(url):
             exists = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": dbname}).scalar()
             if not exists:
                 conn.execute(text(f"CREATE DATABASE {dbname}"))
-                print(f"Database '{dbname}' created successfully.")
         temp_engine.dispose()
     except Exception as e:
         print(f"Error checking or creating database: {e}")
@@ -142,6 +141,16 @@ def init_db(app=None):
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mgr_template_mgr_id ON manager_kpi_templates (manager_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mgr_template_key ON manager_kpi_templates (template_key)"))
             conn.execute(text("ALTER TABLE manager_kpi_templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'draft'"))
+            # High-traffic read indexes for attendance, employees, kpi_evaluations, and employee_notifications
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance (attendance_date)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_attendance_user_date ON attendance (user_id, attendance_date)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_employees_employee_id ON employees (employee_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_employees_team_id ON employees (team_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_employees_user_id ON employees (user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_kpi_eval_archived ON kpi_evaluations (is_archived)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_kpi_eval_emp_id ON kpi_evaluations (employee_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_emp_notif_created ON employee_notifications (created_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_emp_notif_receiver ON employee_notifications (receiver_name)"))
             conn.commit()
     except Exception as dberr:
         print(f"Error checking/adding employee status columns: {dberr}")
