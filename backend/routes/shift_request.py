@@ -144,7 +144,7 @@ def apply_shift():
                         }), 400
 
                 existing_odw = ShiftRequest.query.filter(
-                    ShiftRequest.employee_id.in_([employee.employee_id, employee.id]),
+                    ShiftRequest.employee_id == employee.employee_id,
                     ShiftRequest.request_type == "One Day Wages",
                     ShiftRequest.status.in_(["Pending", "Approved"]),
                     ShiftRequest.from_date <= req_to,

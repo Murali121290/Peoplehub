@@ -106,11 +106,17 @@ import { ConfirmDialog } from '../../../components/ui/Modal/ConfirmDialog';
  * - Low-target KPIs: actual > 0 (delays/misses/escalations occurred).
  * If target is met exactly / standard, remark is optional.
  */
-export const isHoursKpi = (kpi: any): boolean => {
+export const isDecimalAllowedKpi = (kpi: any): boolean => {
   if (!kpi) return false;
   if (typeof kpi === 'string') {
     const s = kpi.toLowerCase();
-    return s.includes('hour') || s.includes('hrs');
+    return (
+      s.includes('hour') ||
+      s.includes('hrs') ||
+      s.includes('attendance') ||
+      s.includes('team support') ||
+      s.includes('initiative')
+    );
   }
   const name = String(kpi?.name || '').toLowerCase();
   const unit = String(kpi?.unit || '').toLowerCase();
@@ -121,9 +127,20 @@ export const isHoursKpi = (kpi: any): boolean => {
     unit.includes('hour') ||
     unit.includes('hrs') ||
     target.includes('hour') ||
-    target.includes('hrs')
+    target.includes('hrs') ||
+    name.includes('attendance') ||
+    unit.includes('attendance') ||
+    target.includes('attendance') ||
+    name.includes('team support') ||
+    unit.includes('team support') ||
+    target.includes('team support') ||
+    name.includes('initiative') ||
+    unit.includes('initiative') ||
+    target.includes('initiative')
   );
 };
+
+export const isHoursKpi = isDecimalAllowedKpi;
 
 export const sanitizeKpiActualValue = (kpi: any, val: string | number): string | number => {
   if (val === '' || val === undefined || val === null) {
@@ -1008,6 +1025,7 @@ export const EvaluationTab: React.FC = () => {
   // Manager Create & Assign Metrics Modal State
   const [isMgrCreateModalOpen, setIsMgrCreateModalOpen] = useState<boolean>(false);
   const [mgrAssignTeamId, setMgrAssignTeamId] = useState<string>('');
+  const [mgrAssignReportingManager, setMgrAssignReportingManager] = useState<string>('all');
   const [mgrAssignEmpIds, setMgrAssignEmpIds] = useState<string[]>([]);
   const [mgrAssignFormName, setMgrAssignFormName] = useState<string>(`Q${currentQuarter} KPI Assessment - PM Team`);
   const [mgrAssignPeriod, setMgrAssignPeriod] = useState<string>(`Q${currentQuarter} ${currentYear} (${quarterLabel}) - Stage ${currentQuarter}`);
@@ -1173,10 +1191,15 @@ export const EvaluationTab: React.FC = () => {
     pTeamId = mgrAssignTeamId,
     leavesList = dbApprovedLeaves,
     holidaysList = dbHolidays,
-    pSubFreq = mgrSubFrequency
+    pSubFreq = mgrSubFrequency,
+    pSelectedManager = mgrAssignReportingManager
   ) => {
-    const managerDisplayName = user?.full_name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Manager';
-    const formTeamLabel = pTeamId === 'all_teams' ? `${managerDisplayName}'s Team` : (pTeamId || 'Team');
+    const managerDisplayName = (isHrOrAdmin && pSelectedManager && pSelectedManager !== 'all')
+      ? pSelectedManager
+      : (user?.full_name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Manager');
+    const formTeamLabel = pTeamId === 'all_teams'
+      ? `${managerDisplayName}'s Team`
+      : (pSelectedManager && pSelectedManager !== 'all' ? `${pTeamId} (${managerDisplayName})` : (pTeamId || 'Team'));
 
     let periodStr = '';
     let formTitle = '';
@@ -1275,6 +1298,8 @@ export const EvaluationTab: React.FC = () => {
   const [mgrEditCustomDate, setMgrEditCustomDate] = useState<string>('');
   const [mgrEditMemberFilterTab, setMgrEditMemberFilterTab] = useState<'all' | 'selected' | 'unselected'>('all');
   const [mgrEditMemberSearch, setMgrEditMemberSearch] = useState<string>('');
+  const [mgrEditSelectedManagerName, setMgrEditSelectedManagerName] = useState<string>('all');
+  const [mgrEditSelectedFormTitle, setMgrEditSelectedFormTitle] = useState<string>('all');
 
   // Employee Form State
   const [selectedResponseId, setSelectedResponseId] = useState<string>('');
@@ -3764,6 +3789,7 @@ export const EvaluationTab: React.FC = () => {
     }
     const defaultTeamVal = targetDept || (managerDepartments.length > 1 ? 'all_teams' : (managerDepartments[0] || 'all_teams'));
     setMgrAssignTeamId(defaultTeamVal);
+    setMgrAssignReportingManager('all');
 
     // Reset date fields cleanly
     const todayStr = getLocalTodayDateString();
@@ -3776,7 +3802,7 @@ export const EvaluationTab: React.FC = () => {
     setMgrPeriodType('yearly');
     setMgrSubFrequency('');
     setMgrPeriodYear(currentYear);
-    syncPeriodAndFormName('yearly', currentQuarter, currentYear, currentMonth, week.from, week.to, undefined, defaultTeamVal);
+    syncPeriodAndFormName('yearly', currentQuarter, currentYear, currentMonth, week.from, week.to, undefined, defaultTeamVal, undefined, undefined, '', 'all');
 
     // Asynchronously load manager's saved templates from PostgreSQL DB
     const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.id || '');
@@ -3796,6 +3822,7 @@ export const EvaluationTab: React.FC = () => {
 
   const handleMgrTeamChange = (newTeamId: string) => {
     setMgrAssignTeamId(newTeamId);
+    setMgrAssignReportingManager('all');
 
     const teamObj = dbTeams.find(t => String(t.id) === String(newTeamId) || String(t.name).toLowerCase() === String(newTeamId).toLowerCase() || t.id === newTeamId || t.name === newTeamId);
     const tIdStr = teamObj?.id ? String(teamObj.id).toLowerCase() : '';
@@ -3833,7 +3860,28 @@ export const EvaluationTab: React.FC = () => {
     });
     setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || '')).filter(Boolean));
     setMgrCustomizeMembers(false);
-    syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, newTeamId);
+    syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, newTeamId, undefined, undefined, mgrSubFrequency, 'all');
+  };
+
+  const handleMgrReportingManagerChange = (newMgrName: string) => {
+    setMgrAssignReportingManager(newMgrName);
+
+    const baseTeamMembers = managerAssignableEmployees.filter((e: any) => {
+      if (!isEmployeeActive(e)) return false;
+      if (!isEmpInSelectedTeam(e, mgrAssignTeamId)) return false;
+      if (newMgrName !== 'all') {
+        const empMgr = String(e.reporting_manager || (e as any).reportingManager || '').trim();
+        if (empMgr !== newMgrName) return false;
+      }
+      return true;
+    });
+
+    const unassignedMembers = baseTeamMembers.filter((e: any) => {
+      return !isEmpAlreadyAssignedForPeriod(e) && !getEmpPendingEvaluation(e);
+    });
+    setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || '')).filter(Boolean));
+    setMgrCustomizeMembers(false);
+    syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId, undefined, undefined, mgrSubFrequency, newMgrName);
   };
 
   const handleSelectTemplate = (targetKey: string) => {
@@ -4362,7 +4410,25 @@ export const EvaluationTab: React.FC = () => {
       const selectedTeamName = mgrAssignTeamId === 'all_teams'
         ? (managerDepartments.join(', ') || 'All Direct Reports')
         : mgrAssignTeamId;
-      const currentMgrName = `${user?.full_name || userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Reporting Manager';
+
+      // If HR selected a specific reporting manager, resolve that manager's name and ID
+      let assignedManagerName = `${user?.full_name || userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Reporting Manager';
+      let assignedManagerId = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.employee_id || '');
+
+      if (isHrOrAdmin && mgrAssignReportingManager && mgrAssignReportingManager !== 'all') {
+        assignedManagerName = mgrAssignReportingManager;
+        const matchedMgrEmp = dbEmployees.find(e => {
+          const fullName = `${e.first_name || ''} ${e.last_name || ''}`.trim() || e.name || '';
+          return fullName.toLowerCase() === mgrAssignReportingManager.toLowerCase() ||
+                 String(e.employee_id) === mgrAssignReportingManager;
+        });
+        if (matchedMgrEmp) {
+          assignedManagerId = String(matchedMgrEmp.employee_id || '');
+        }
+      }
+
+      const currentMgrName = assignedManagerName;
+      const currentMgrEmpCode = assignedManagerId;
 
       let effectiveStartDate = startDate;
       let effectiveEndDate = endDate;
@@ -4399,7 +4465,6 @@ export const EvaluationTab: React.FC = () => {
         effectiveEndDate = mgrPeriodToDate || `${mgrPeriodYear + 1}-03-31`;
       }
 
-      const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.employee_id || '');
       const smObj = dbEmployees.find(e => String(e.employee_id) === String(selectedSmId));
       const resolvedSmCode = smObj?.employee_id || selectedSmId;
 
@@ -5310,13 +5375,87 @@ export const EvaluationTab: React.FC = () => {
     setMgrEditEffectiveOption(defaultEff);
 
     // Store direct members for strict team-scoped selection
-    if (directMembers && directMembers.length > 0) {
+    const deptResponsesForModal = responses.filter(r => {
+      const rDept = (r.teamName || (r as any).team_name || (r as any).department || '').toLowerCase();
+      const targetDept = (cycleToEdit.teamName || effectiveTeamName || 'Your Team').toLowerCase();
+      return rDept && targetDept && (rDept === targetDept || rDept.includes(targetDept) || targetDept.includes(rDept));
+    });
+
+    const detectedManagers = Array.from(new Set([
+      ...deptResponsesForModal.map(r => String(r.reportingManager || (r as any).reporting_manager || (r as any).managerName || '').trim()).filter(Boolean),
+      ...dbEmployees.filter(e => {
+        const eDept = (e.department || (e as any).team || '').toLowerCase();
+        const targetDept = (cycleToEdit.teamName || effectiveTeamName || 'Your Team').toLowerCase();
+        return eDept && targetDept && (eDept === targetDept || eDept.includes(targetDept) || targetDept.includes(eDept));
+      }).map(e => String(e.reporting_manager || '').trim()).filter(Boolean)
+    ]));
+
+    if (!isHrOrAdmin) {
+      // Logged-in user is a MANAGER (e.g. Murali B): strictly lock to logged-in manager and direct team!
+      const currentMgrName = (user?.full_name || userAny?.name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`).trim();
+      setMgrEditSelectedManagerName(currentMgrName || 'all');
+      
+      // Auto-select form if manager has forms
+      const mgrResponses = deptResponsesForModal.filter(r => 
+        String(r.reportingManager || (r as any).reporting_manager || (r as any).managerName || '').trim().toLowerCase() === currentMgrName.toLowerCase()
+      );
+      const mgrForms = Array.from(new Set(mgrResponses.map(r => String((r as any).form || r.periodName || '').trim()).filter(Boolean)));
+      if (mgrForms.length > 0) {
+        setMgrEditSelectedFormTitle(mgrForms[0]);
+        const sampleResp = mgrResponses.find(r => String((r as any).form || r.periodName || '').trim() === mgrForms[0]);
+        if (sampleResp) {
+          setMgrEditFormName((sampleResp as any).form || sampleResp.periodName || mgrForms[0]);
+          setMgrEditPeriod(sampleResp.periodName || (sampleResp as any).form || mgrForms[0]);
+          const rCats = (sampleResp as any).categories || (sampleResp as any).metrics_data?.categories;
+          if (rCats && Array.isArray(rCats) && rCats.length > 0) {
+            setMgrEditCategories(JSON.parse(JSON.stringify(rCats)));
+          }
+          const rCadence = getResponseCadence(sampleResp);
+          setMgrEditCadence(rCadence);
+        }
+      } else {
+        setMgrEditSelectedFormTitle('all');
+      }
+
+      if (directMembers && directMembers.length > 0) {
+        setMgrEditDirectMembers(directMembers);
+        const memberIds = directMembers
+          .map(m => String(m.employeeCode || m.response?.employeeId || m.response?.employeeCode || ''))
+          .filter(Boolean)
+          .filter(id => !isEmpMilestoneApprovedForTargetEffectiveDate(id, cycleToEdit, defaultEff, resolvedCadence).isBlocked);
+        setMgrEditSelectedEmpIds(memberIds);
+      } else {
+        const mgrDirectEmpIds = Array.from(new Set([
+          ...mgrResponses.map(r => String(r.employeeId || r.employeeCode || '')).filter(Boolean),
+          ...dbEmployees.filter(e => String(e.reporting_manager || '').trim().toLowerCase() === currentMgrName.toLowerCase()).map(e => String(e.employee_id || '')).filter(Boolean)
+        ])).filter(id => !isEmpMilestoneApprovedForTargetEffectiveDate(id, cycleToEdit, defaultEff, resolvedCadence).isBlocked);
+        setMgrEditDirectMembers([]);
+        setMgrEditSelectedEmpIds(mgrDirectEmpIds);
+      }
+    } else if (detectedManagers.length > 1) {
+      // Logged-in user is HR / Admin: allow selecting any manager & form across the department
+      setMgrEditDirectMembers([]);
+      const allDeptEmpIds = Array.from(new Set([
+        ...deptResponsesForModal.map(r => String(r.employeeId || r.employeeCode || '')).filter(Boolean),
+        ...dbEmployees.filter(e => {
+          const eDept = (e.department || (e as any).team || '').toLowerCase();
+          const targetDept = (cycleToEdit.teamName || effectiveTeamName || 'Your Team').toLowerCase();
+          return eDept && targetDept && (eDept === targetDept || eDept.includes(targetDept) || targetDept.includes(eDept));
+        }).map(e => String(e.employee_id || '')).filter(Boolean)
+      ])).filter(id => !isEmpMilestoneApprovedForTargetEffectiveDate(id, cycleToEdit, defaultEff, resolvedCadence).isBlocked);
+
+      setMgrEditSelectedEmpIds(allDeptEmpIds);
+      setMgrEditSelectedManagerName('all');
+      setMgrEditSelectedFormTitle('all');
+    } else if (directMembers && directMembers.length > 0) {
       setMgrEditDirectMembers(directMembers);
       const memberIds = directMembers
         .map(m => String(m.employeeCode || m.response?.employeeId || m.response?.employeeCode || ''))
         .filter(Boolean)
         .filter(id => !isEmpMilestoneApprovedForTargetEffectiveDate(id, cycleToEdit, defaultEff, resolvedCadence).isBlocked);
       setMgrEditSelectedEmpIds(memberIds);
+      setMgrEditSelectedManagerName('all');
+      setMgrEditSelectedFormTitle('all');
     } else {
       setMgrEditDirectMembers([]);
       const initialEmpIds: string[] = [];
@@ -5338,6 +5477,8 @@ export const EvaluationTab: React.FC = () => {
         });
       }
       setMgrEditSelectedEmpIds(initialEmpIds);
+      setMgrEditSelectedManagerName('all');
+      setMgrEditSelectedFormTitle('all');
     }
     setMgrEditMemberFilterTab('all');
     setMgrEditMemberSearch('');
@@ -5465,6 +5606,19 @@ export const EvaluationTab: React.FC = () => {
     }));
   };
 
+  const handleMgrMoveEditKPI = (catId: string, kpiIndex: number, direction: 'up' | 'down') => {
+    setMgrEditCategories(prev => prev.map(c => {
+      if (c.id !== catId) return c;
+      const targetIndex = direction === 'up' ? kpiIndex - 1 : kpiIndex + 1;
+      if (targetIndex < 0 || targetIndex >= c.kpis.length) return c;
+      const newKpis = [...c.kpis];
+      const temp = newKpis[kpiIndex];
+      newKpis[kpiIndex] = newKpis[targetIndex];
+      newKpis[targetIndex] = temp;
+      return { ...c, kpis: newKpis };
+    }));
+  };
+
   const mgrEditTotalWeightage = mgrEditCategories.reduce((sum, c) => sum + (Number(c.weightage) || 0), 0);
   const isMgrEditWeightageValid = mgrEditTotalWeightage === 100;
   const areAllMgrEditCategoriesBalanced = mgrEditCategories.every(cat => {
@@ -5560,6 +5714,9 @@ export const EvaluationTab: React.FC = () => {
             };
           });
 
+          const finalFormName = mgrEditFormName || targetCycle.name;
+          const finalReportingManager = (mgrEditSelectedManagerName !== 'all' ? mgrEditSelectedManagerName : targetCycle.managerName) || '';
+
           await fetch(`${API_URL}/api/performance/kpi-evaluations/update-deliverables-matrix`, {
             method: 'POST',
             headers: {
@@ -5567,11 +5724,11 @@ export const EvaluationTab: React.FC = () => {
               ...(token ? { 'Authorization': `Bearer ${token}` } : {})
             },
             body: JSON.stringify({
-              form: targetCycle.name,
+              form: finalFormName,
               team_id: targetCycle.teamId,
               team_name: targetCycle.teamName,
-              periodName: targetCycle.periodName,
-              reporting_manager: targetCycle.managerName,
+              periodName: mgrEditPeriod || targetCycle.periodName,
+              reporting_manager: finalReportingManager,
               reporting_manager_id: targetCycle.managerId,
               categories: mgrEditCategories,
               effective_from: computedEffectiveFrom,
@@ -18063,6 +18220,48 @@ export const EvaluationTab: React.FC = () => {
                             </select>
                           </div>
 
+                          {/* 1b. Responsible Reporting Manager Selector (Visible to HR/Admin) */}
+                          {isHrOrAdmin && (() => {
+                            // Extract distinct managers relevant to this team/department
+                            const relevantEmployees = dbEmployees.filter(e =>
+                              isEmployeeActive(e) && isEmpInSelectedTeam(e, mgrAssignTeamId)
+                            );
+                            const mgrSet = new Set<string>();
+                            relevantEmployees.forEach(e => {
+                              const m = String(e.reporting_manager || (e as any).reportingManager || '').trim();
+                              if (m) mgrSet.add(m);
+                            });
+                            // Also check if any employee themselves is a manager in this team
+                            relevantEmployees.forEach(e => {
+                              const eName = `${e.first_name || ''} ${e.last_name || ''}`.trim() || e.name || '';
+                              if (eName && dbEmployees.some(sub => String(sub.reporting_manager || '').trim().toLowerCase() === eName.toLowerCase())) {
+                                mgrSet.add(eName);
+                              }
+                            });
+                            const availableManagers = Array.from(mgrSet).sort();
+
+                            return (
+                              <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                                <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center justify-between">
+                                  <span>Reporting Manager <span className="text-rose-500">*</span></span>
+                                  <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">
+                                    {availableManagers.length} Available
+                                  </span>
+                                </label>
+                                <select
+                                  value={mgrAssignReportingManager}
+                                  onChange={e => handleMgrReportingManagerChange(e.target.value)}
+                                  className="w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20 transition cursor-pointer"
+                                >
+                                  <option value="all">All Managers ({availableManagers.length})</option>
+                                  {availableManagers.map(mName => (
+                                    <option key={mName} value={mName}>{mName}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          })()}
+
                           {/* 2. Frequency Selector */}
                           <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
                             <label className="block text-xs font-medium text-slate-600 mb-1.5">
@@ -18356,9 +18555,15 @@ export const EvaluationTab: React.FC = () => {
 
                         {/* Assign Members Section */}
                         {(() => {
-                          const baseTeamMembers = managerAssignableEmployees.filter((e: any) =>
-                            isEmployeeActive(e) && isEmpInSelectedTeam(e, mgrAssignTeamId)
-                          );
+                          const baseTeamMembers = managerAssignableEmployees.filter((e: any) => {
+                            if (!isEmployeeActive(e)) return false;
+                            if (!isEmpInSelectedTeam(e, mgrAssignTeamId)) return false;
+                            if (isHrOrAdmin && mgrAssignReportingManager && mgrAssignReportingManager !== 'all') {
+                              const empMgr = String(e.reporting_manager || (e as any).reportingManager || '').trim();
+                              if (empMgr !== mgrAssignReportingManager) return false;
+                            }
+                            return true;
+                          });
 
                           const completedCount = baseTeamMembers.filter((m: any) => getEmpPeriodAssignmentInfo(m).isCompleted).length;
                           const bookedInProgressCount = baseTeamMembers.filter((m: any) => {
@@ -22787,6 +22992,221 @@ export const EvaluationTab: React.FC = () => {
                         </div>
                       )}
 
+                      {/* Manager & Form Cascading Filters (Especially for Departments with Multiple Managers & Forms) */}
+                      {(() => {
+                        // Collect all unique reporting managers & their forms for this department
+                        const deptResponses = responses.filter(r => {
+                          const rDept = (r.teamName || (r as any).team_name || (r as any).department || '').toLowerCase();
+                          const targetDept = (mgrEditTeamName || '').toLowerCase();
+                          return rDept && targetDept && (rDept === targetDept || rDept.includes(targetDept) || targetDept.includes(rDept));
+                        });
+
+                        const managerMap = new Map<string, { id: string; name: string; forms: Set<string> }>();
+                        deptResponses.forEach(r => {
+                          const mgrName = String(r.reportingManager || (r as any).reporting_manager || (r as any).managerName || '').trim();
+                          const mgrId = String((r as any).reporting_manager_id || (r as any).reportingManagerId || (r as any).managerId || '').trim();
+                          const formName = String((r as any).form || r.periodName || '').trim();
+
+                          if (mgrName) {
+                            if (!managerMap.has(mgrName)) {
+                              managerMap.set(mgrName, { id: mgrId, name: mgrName, forms: new Set<string>() });
+                            }
+                            if (formName) {
+                              managerMap.get(mgrName)!.forms.add(formName);
+                            }
+                          }
+                        });
+
+                        // Also inspect dbEmployees in this department to catch managers and unassigned members (e.g. Madhu Malini N S)
+                        dbEmployees.forEach(e => {
+                          const eDept = (e.department || (e as any).team || '').toLowerCase();
+                          const targetDept = (mgrEditTeamName || '').toLowerCase();
+                          if (eDept && targetDept && (eDept === targetDept || eDept.includes(targetDept) || targetDept.includes(eDept))) {
+                            const mgrName = String(e.reporting_manager || '').trim();
+                            if (mgrName) {
+                              if (!managerMap.has(mgrName)) {
+                                managerMap.set(mgrName, { id: '', name: mgrName, forms: new Set<string>() });
+                              }
+                            }
+                          }
+                        });
+
+                        const uniqueManagers = Array.from(managerMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+                        // If department has multiple managers or forms, render this selector
+                        if (uniqueManagers.length === 0) return null;
+
+                        const selectedMgrObj = uniqueManagers.find(m => m.name === mgrEditSelectedManagerName);
+                        const availableForms = selectedMgrObj
+                          ? Array.from(selectedMgrObj.forms)
+                          : Array.from(new Set(uniqueManagers.flatMap(m => Array.from(m.forms))));
+
+                        const handleManagerChange = (newMgrName: string) => {
+                          setMgrEditSelectedManagerName(newMgrName);
+
+                          // Find available forms for this manager
+                          let formsForThisMgr: string[] = [];
+                          if (newMgrName === 'all') {
+                            formsForThisMgr = Array.from(new Set(uniqueManagers.flatMap(m => Array.from(m.forms))));
+                            setMgrEditSelectedFormTitle('all');
+                          } else {
+                            const mgrObj = uniqueManagers.find(m => m.name === newMgrName);
+                            formsForThisMgr = mgrObj ? Array.from(mgrObj.forms) : [];
+                            if (formsForThisMgr.length === 1) {
+                              // Automatically select the single form and load its deliverables!
+                              handleFormChange(formsForThisMgr[0]);
+                            } else {
+                              setMgrEditSelectedFormTitle('all');
+                            }
+                          }
+
+                          // Dynamically scope team members from both responses AND dbEmployees
+                          const matchingEmps = new Set<string>();
+                          deptResponses
+                            .filter(r => newMgrName === 'all' || String(r.reportingManager || (r as any).reporting_manager || (r as any).managerName || '').trim() === newMgrName)
+                            .forEach(r => {
+                              const sid = String(r.employeeId || r.employeeCode || '');
+                              if (sid) matchingEmps.add(sid);
+                            });
+
+                          // Also include from dbEmployees under this manager
+                          dbEmployees
+                            .filter(e => {
+                              const eDept = (e.department || (e as any).team || '').toLowerCase();
+                              const targetDept = (mgrEditTeamName || '').toLowerCase();
+                              const matchDept = eDept && targetDept && (eDept === targetDept || eDept.includes(targetDept) || targetDept.includes(eDept));
+                              const matchMgr = newMgrName === 'all' || String(e.reporting_manager || '').trim() === newMgrName;
+                              return matchDept && matchMgr;
+                            })
+                            .forEach(e => {
+                              const sid = String(e.employee_id || '');
+                              if (sid) matchingEmps.add(sid);
+                            });
+
+                          if (matchingEmps.size > 0) {
+                            setMgrEditSelectedEmpIds(Array.from(matchingEmps));
+                          }
+                        };
+
+                        const handleFormChange = (newFormTitle: string) => {
+                          setMgrEditSelectedFormTitle(newFormTitle);
+                          if (newFormTitle === 'all') return;
+
+                          // Find a response with this form title to reload its categories, cadence & members
+                          const sampleResp = deptResponses.find(r => String((r as any).form || r.periodName || '').trim() === newFormTitle);
+                          if (sampleResp) {
+                            setMgrEditFormName((sampleResp as any).form || sampleResp.periodName || newFormTitle);
+                            setMgrEditPeriod(sampleResp.periodName || (sampleResp as any).form || newFormTitle);
+
+                            const rCats = (sampleResp as any).categories || (sampleResp as any).metrics_data?.categories;
+                            if (rCats && Array.isArray(rCats) && rCats.length > 0) {
+                              setMgrEditCategories(JSON.parse(JSON.stringify(rCats)));
+                            }
+
+                            const rCadence = getResponseCadence(sampleResp);
+                            setMgrEditCadence(rCadence);
+
+                            // Select employees who have this form (and match selected manager if any)
+                            const formEmpIds = deptResponses
+                              .filter(r => {
+                                const matchForm = String((r as any).form || r.periodName || '').trim() === newFormTitle;
+                                const matchMgr = mgrEditSelectedManagerName === 'all' || String(r.reportingManager || (r as any).reporting_manager || (r as any).managerName || '').trim() === mgrEditSelectedManagerName;
+                                return matchForm && matchMgr;
+                              })
+                              .map(r => String(r.employeeId || r.employeeCode || ''))
+                              .filter(Boolean);
+                            if (formEmpIds.length > 0) {
+                              setMgrEditSelectedEmpIds(Array.from(new Set(formEmpIds)));
+                            }
+                          }
+                        };
+
+                        if (!isHrOrAdmin) {
+                          // For a Manager (e.g. Murali B): Always show their specific evaluation form selector!
+                          const myForms = selectedMgrObj ? Array.from(selectedMgrObj.forms) : availableForms;
+                          return (
+                            <div className="bg-white p-3.5 rounded-2xl border border-teal-200/90 shadow-2xs space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-teal-600" />
+                                  Evaluation Form
+                                </span>
+                                <span className="text-[10px] font-semibold text-slate-400">
+                                  {myForms.length} Form{myForms.length > 1 ? 's' : ''} under {mgrEditSelectedManagerName || 'You'}
+                                </span>
+                              </div>
+                              <div className="w-full sm:w-2/3 pt-0.5">
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Select Form to Edit
+                                </label>
+                                <select
+                                  value={mgrEditSelectedFormTitle}
+                                  onChange={e => handleFormChange(e.target.value)}
+                                  className="w-full h-8 px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-teal-600 focus:bg-white shadow-2xs cursor-pointer transition"
+                                >
+                                  {myForms.map(f => (
+                                    <option key={f} value={f}>
+                                      {f}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="bg-white p-3.5 rounded-2xl border border-teal-200/90 shadow-2xs space-y-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-teal-600" />
+                                Department Manager & Form Filter
+                              </span>
+                              <span className="text-[10px] font-semibold text-slate-400">
+                                {uniqueManagers.length} Manager{uniqueManagers.length > 1 ? 's' : ''} in {mgrEditTeamName}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  1. Select Manager
+                                </label>
+                                <select
+                                  value={mgrEditSelectedManagerName}
+                                  onChange={e => handleManagerChange(e.target.value)}
+                                  className="w-full h-8 px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-teal-600 focus:bg-white shadow-2xs cursor-pointer transition"
+                                >
+                                  <option value="all">All Managers ({uniqueManagers.length})</option>
+                                  {uniqueManagers.map(m => (
+                                    <option key={m.name} value={m.name}>
+                                      {m.name} ({m.forms.size} Form{m.forms.size > 1 ? 's' : ''})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  2. Select Evaluation Form
+                                </label>
+                                <select
+                                  value={mgrEditSelectedFormTitle}
+                                  onChange={e => handleFormChange(e.target.value)}
+                                  className="w-full h-8 px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-teal-600 focus:bg-white shadow-2xs cursor-pointer transition"
+                                >
+                                  <option value="all">All Forms ({availableForms.length})</option>
+                                  {availableForms.map(f => (
+                                    <option key={f} value={f}>
+                                      {f}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {mgrEditEffectiveOption === 'tomorrow' && (
                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-teal-50/70 border border-teal-200 text-teal-900 text-[11px] animate-in fade-in duration-150">
                           <span className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
@@ -22807,7 +23227,7 @@ export const EvaluationTab: React.FC = () => {
                     const addedIds = new Set<string>();
 
                     // 1. Direct members passed from the table (exact team members under this manager)
-                    if (mgrEditDirectMembers && mgrEditDirectMembers.length > 0) {
+                    if (mgrEditDirectMembers && mgrEditDirectMembers.length > 0 && mgrEditSelectedManagerName === 'all' && mgrEditSelectedFormTitle === 'all') {
                       mgrEditDirectMembers.forEach(m => {
                         const strId = String(m.employeeCode || m.response?.employeeId || m.response?.employeeCode || '');
                         if (strId && !addedIds.has(strId)) {
@@ -22852,13 +23272,14 @@ export const EvaluationTab: React.FC = () => {
                       }
                     });
 
-                    // 4. Fallback to dbEmployees matching team name
-                    if (foundEmps.length === 0 && mgrEditTeamName) {
+                    // 4. Always include all dbEmployees matching this department so unassigned members (e.g. Madhu Malini N S & team) are never omitted
+                    if (mgrEditTeamName) {
                       dbEmployees.forEach(e => {
                         const strId = String(e.employee_id || '');
                         if (strId && !addedIds.has(strId)) {
-                          const eTeam = String(e.team || e.department || '').toLowerCase();
-                          if (eTeam === mgrEditTeamName.toLowerCase()) {
+                          const eTeam = String(e.department || (e as any).team || '').toLowerCase();
+                          const targetTeam = mgrEditTeamName.toLowerCase();
+                          if (eTeam === targetTeam || eTeam.includes(targetTeam) || targetTeam.includes(eTeam)) {
                             addedIds.add(strId);
                             foundEmps.push(e);
                           }
@@ -22866,7 +23287,28 @@ export const EvaluationTab: React.FC = () => {
                       });
                     }
 
-                    return foundEmps;
+                    // Filter found team members according to the selected Manager & Form filter
+                    const filteredByMgrAndForm = foundEmps.filter(emp => {
+                      const empId = String(emp.employee_id || '');
+                      const matchingResp = responses.find(r => {
+                        const rEmpId = String(r.employeeId || r.employeeCode || '');
+                        return rEmpId === empId;
+                      });
+
+                      if (mgrEditSelectedManagerName !== 'all') {
+                        const rMgr = String(matchingResp?.reportingManager || (matchingResp as any)?.reporting_manager || (matchingResp as any)?.managerName || emp.reporting_manager || '').trim();
+                        if (rMgr !== mgrEditSelectedManagerName) return false;
+                      }
+
+                      if (mgrEditSelectedFormTitle !== 'all') {
+                        const rForm = String((matchingResp as any)?.form || matchingResp?.periodName || '').trim();
+                        if (rForm && rForm !== mgrEditSelectedFormTitle) return false;
+                      }
+
+                      return true;
+                    });
+
+                    return filteredByMgrAndForm;
                   })();
 
                   if (teamMembers.length === 0) return null;
@@ -23205,11 +23647,11 @@ export const EvaluationTab: React.FC = () => {
                                   <th className="px-3 py-2 w-24 text-center">Score %</th>
                                   <th className="px-3 py-2 w-24 text-center">Unit</th>
                                   <th className="px-3 py-2 w-24 text-center">Type</th>
-                                  <th className="px-2 py-2 w-10 text-center"></th>
+                                  <th className="px-2 py-2 w-20 text-center">Actions</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                {cat.kpis.map(kpi => {
+                                {cat.kpis.map((kpi, kpiIdx) => {
                                   const isNeg = isNegativeKpi(kpi);
                                   return (
                                     <tr key={kpi.id} className={`transition ${isNeg ? 'bg-rose-50/25 hover:bg-rose-50/50' : 'hover:bg-slate-50/50'}`}>
@@ -23274,14 +23716,34 @@ export const EvaluationTab: React.FC = () => {
                                         </button>
                                       </td>
                                       <td className="px-2 py-2 align-middle text-center">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleMgrDeleteEditKPI(cat.id, kpi.id)}
-                                          className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
-                                          title="Delete deliverable"
-                                        >
-                                          <TrashIcon className="w-3.5 h-3.5" />
-                                        </button>
+                                        <div className="flex items-center justify-center gap-1">
+                                          <button
+                                            type="button"
+                                            disabled={kpiIdx === 0}
+                                            onClick={() => handleMgrMoveEditKPI(cat.id, kpiIdx, 'up')}
+                                            className="p-1 text-slate-400 hover:text-teal-700 hover:bg-teal-50 disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-400 disabled:cursor-not-allowed rounded-md transition cursor-pointer"
+                                            title="Move Up"
+                                          >
+                                            <ChevronUpIcon className="w-3.5 h-3.5 stroke-[2.5]" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={kpiIdx === cat.kpis.length - 1}
+                                            onClick={() => handleMgrMoveEditKPI(cat.id, kpiIdx, 'down')}
+                                            className="p-1 text-slate-400 hover:text-teal-700 hover:bg-teal-50 disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-400 disabled:cursor-not-allowed rounded-md transition cursor-pointer"
+                                            title="Move Down"
+                                          >
+                                            <ChevronDownIcon className="w-3.5 h-3.5 stroke-[2.5]" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleMgrDeleteEditKPI(cat.id, kpi.id)}
+                                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition cursor-pointer"
+                                            title="Delete deliverable"
+                                          >
+                                            <TrashIcon className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
                                       </td>
                                     </tr>
                                   );

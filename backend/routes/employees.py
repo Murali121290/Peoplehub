@@ -2178,7 +2178,7 @@ def get_reporting_employees(user_id):
             # Check if there is an approved or pending one day wages request for this date (pick latest)
             from models.shift_request import ShiftRequest
             wages_req = ShiftRequest.query.filter(
-                ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
+                ShiftRequest.employee_id == employee.employee_id,
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.from_date <= date_to_check,
                 ShiftRequest.to_date >= date_to_check
@@ -2474,7 +2474,7 @@ def get_reporting_employees(user_id):
 
                 from models.shift_request import ShiftRequest
                 wages_req = ShiftRequest.query.filter(
-                    ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
+                    ShiftRequest.employee_id == employee.employee_id,
                     ShiftRequest.request_type == "One Day Wages",
                     ShiftRequest.from_date <= w_date,
                     ShiftRequest.to_date >= w_date

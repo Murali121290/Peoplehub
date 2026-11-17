@@ -164,14 +164,8 @@ def get_effective_work_mode(employee, today_date=None) -> str:
     from models.shift_request import ShiftRequest
     if today_date is None:
         today_date = get_ist_today()
-    emp_ids = []
-    if employee.employee_id:
-        emp_ids.append(employee.employee_id)
-    if employee.id:
-        emp_ids.append(employee.id)
-
     approved_request = ShiftRequest.query.filter(
-        ShiftRequest.employee_id.in_(emp_ids),
+        ShiftRequest.employee_id == employee.employee_id,
         ShiftRequest.status == "Approved",
         ShiftRequest.from_date <= today_date,
         ShiftRequest.to_date >= today_date
@@ -242,15 +236,8 @@ def check_in():
         from sqlalchemy import or_
         today_date = get_ist_today()
 
-        # Check if there is an approved shift or WFH request for today
-        emp_ids = []
-        if employee.employee_id:
-            emp_ids.append(employee.employee_id)
-        if employee.id:
-            emp_ids.append(employee.id)
-
         approved_request = ShiftRequest.query.filter(
-            ShiftRequest.employee_id.in_(emp_ids),
+            ShiftRequest.employee_id == employee.employee_id,
             ShiftRequest.status == "Approved",
             ShiftRequest.from_date <= today_date,
             ShiftRequest.to_date >= today_date
@@ -1604,22 +1591,17 @@ def attendance_history(user_id):
     ).all()
 
     from models.shift_request import ShiftRequest
-    emp_ids_filter = []
-    if employee.id:
-        try:
-            emp_ids_filter.append(int(employee.id))
-        except (ValueError, TypeError):
-            pass
+    emp_code = None
     if employee.employee_id:
         try:
-            emp_ids_filter.append(int(employee.employee_id))
+            emp_code = int(employee.employee_id)
         except (ValueError, TypeError):
             pass
 
     wfh_dates_set = set()
     try:
         wfh_query = ShiftRequest.query.filter(
-            ShiftRequest.employee_id.in_(emp_ids_filter),
+            ShiftRequest.employee_id == emp_code,
             ShiftRequest.status == "Approved"
         )
         all_shift_reqs = wfh_query.all()
@@ -1663,7 +1645,7 @@ def attendance_history(user_id):
             # Check for One Day Wages request covering this date (pick latest)
             from models.shift_request import ShiftRequest
             wages_req = ShiftRequest.query.filter(
-                ShiftRequest.employee_id.in_(emp_ids_filter),
+                ShiftRequest.employee_id == emp_code,
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.from_date <= current_date,
                 ShiftRequest.to_date >= current_date
@@ -1675,7 +1657,7 @@ def attendance_history(user_id):
             # Determine the effective shift for this date:
             # Priority: approved ShiftRequest covering date > record.shift_timing > employee.shift_timing
             approved_shift_req = ShiftRequest.query.filter(
-                ShiftRequest.employee_id.in_(emp_ids_filter),
+                ShiftRequest.employee_id == emp_code,
                 ShiftRequest.request_type == "Shift",
                 ShiftRequest.status == "Approved",
                 ShiftRequest.from_date <= current_date,
@@ -5909,7 +5891,7 @@ def get_pending_cycle_attendance(manager_user_id):
 
             from models.shift_request import ShiftRequest
             wages_req = ShiftRequest.query.filter(
-                ShiftRequest.employee_id.in_([emp.id, emp.employee_id]),
+                ShiftRequest.employee_id == emp.employee_id,
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.from_date <= rec.attendance_date,
                 ShiftRequest.to_date >= rec.attendance_date

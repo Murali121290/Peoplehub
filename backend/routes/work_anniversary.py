@@ -90,10 +90,25 @@ def send_work_anniversary_wish():
         if not sender_id or not receiver_id or not message:
             return jsonify({"success": False, "error": "Missing required fields"}), 400
 
+        # Resolve sender & receiver by employee_id or primary key id
+        sender = Employee.query.filter(Employee.employee_id == str(sender_id)).first()
+        if not sender:
+            sender = Employee.query.get(sender_id)
+
+        receiver = Employee.query.get(receiver_id)
+        if not receiver:
+            receiver = Employee.query.filter(Employee.employee_id == str(receiver_id)).first()
+
+        if not sender or not receiver:
+            return jsonify({"success": False, "error": "Sender or Receiver not found"}), 404
+
+        actual_sender_id = sender.id
+        actual_receiver_id = receiver.id
+
         today_start = datetime.combine(date.today(), datetime.min.time())
         existing = WorkAnniversaryWish.query.filter(
-            WorkAnniversaryWish.sender_id == sender_id,
-            WorkAnniversaryWish.receiver_id == receiver_id,
+            WorkAnniversaryWish.sender_id == actual_sender_id,
+            WorkAnniversaryWish.receiver_id == actual_receiver_id,
             WorkAnniversaryWish.created_at >= today_start
         ).first()
 
@@ -101,20 +116,14 @@ def send_work_anniversary_wish():
             return jsonify({"success": False, "error": "You have already sent anniversary wishes today."}), 400
 
         wish = WorkAnniversaryWish(
-            sender_id=sender_id,
-            receiver_id=receiver_id,
+            sender_id=actual_sender_id,
+            receiver_id=actual_receiver_id,
             message=message,
             status="Sent",
             thanked=False
         )
         db.session.add(wish)
         db.session.flush()
-
-        sender = Employee.query.get(sender_id)
-        receiver = Employee.query.get(receiver_id)
-
-        if not sender or not receiver:
-            return jsonify({"success": False, "error": "Sender or Receiver not found"}), 404
 
         sender_full_name = f"{sender.first_name} {sender.last_name}".strip()
         receiver_full_name = f"{receiver.first_name} {receiver.last_name}".strip()

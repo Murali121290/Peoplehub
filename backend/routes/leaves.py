@@ -235,8 +235,6 @@ def apply_leave():
 
             # Deduct pending leave requests of the same type to get effective balance
             emp_ids = [str(employee.employee_id)]
-            if employee and employee.id:
-                emp_ids.append(str(employee.id))
 
             pending_leaves = LeaveRequest.query.filter(
                 LeaveRequest.employee_id.in_(emp_ids),
@@ -282,8 +280,6 @@ def apply_leave():
 
             # Block duplicate Pending or Approved permission on same day
             _perm_emp_ids = [str(employee.employee_id)]
-            if employee and employee.id:
-                _perm_emp_ids.append(str(employee.id))
 
             existing_perm_same_day = LeaveRequest.query.filter(
                 LeaveRequest.employee_id.in_(_perm_emp_ids),
@@ -310,8 +306,6 @@ def apply_leave():
 
             # Query all existing permission requests in this cycle (Approved and Pending)
             emp_ids = [str(employee.employee_id)]
-            if employee and employee.id:
-                emp_ids.append(str(employee.id))
 
             existing_perms = LeaveRequest.query.filter(
                 LeaveRequest.employee_id.in_(emp_ids),
@@ -462,8 +456,6 @@ def approve_leave(leave_id):
             # Safeguard: Verify that total approved permissions in this cycle don't exceed 2.0 hours
             cycle_start, cycle_end = get_permission_cycle_range(leave.permission_date)
             emp_ids = [str(employee.employee_id)]
-            if employee.id:
-                emp_ids.append(str(employee.id))
 
             other_approved = LeaveRequest.query.filter(
                 LeaveRequest.employee_id.in_(emp_ids),
