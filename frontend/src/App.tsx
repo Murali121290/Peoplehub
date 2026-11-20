@@ -11,6 +11,7 @@ import { AppToaster } from './components/ui/ToastConfig';
 import { BookLoader } from './components/ui/Spinner';
 import { useAuthStore } from './store/authStore';
 import SessionTimeoutHandler from './components/SessionTimeoutHandler';
+import AppVersionWatcher from './components/AppVersionWatcher';
 import DashboardLayout from './layouts/DashboardLayout';
 
 // Pages
@@ -169,6 +170,9 @@ function App() {
 
     {/* Session Timeout Inactivity Handler */}
     <SessionTimeoutHandler />
+
+    {/* Automatic Live Deployment Version Watcher */}
+    <AppVersionWatcher />
 
     {/* Toast Notifications */}
 

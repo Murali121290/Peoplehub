@@ -3,7 +3,7 @@ import json
 import shutil
 from datetime import datetime
 from sqlalchemy import or_, func
-from utils.compat import Blueprint, request, jsonify
+from utils.compat import Blueprint, request, jsonify, Response
 from utils.uploads import get_uploads_dir
 from models.database import db
 from models.employee import Employee
@@ -14,9 +14,126 @@ from models.manager_kpi_template import ManagerKpiTemplate
 from middleware.auth import auth_required, access_level_required
 from services.kpi_evaluation_rollup_service import calculate_evaluation_working_days
 from utils.jwt_helper import get_jwt_identity, decode_and_set_jwt_context, JWT_SECRET_KEY
+from utils.employee_cache import get_all_employees_cached
+from utils.redis_client import get_redis as _get_redis
+from sqlalchemy import event as _sa_event
+import base64
+import gzip
+import hashlib
 import jwt
+import re
+import threading
+import time
 
 performance_bp = Blueprint("performance", __name__)
+
+# ---------------------------------------------------------------------------
+# Redis versioned cache for heavy Performance / E2R endpoints:
+#   - GET /api/performance/evaluation/data
+#   - GET /api/performance/evaluation/checkout-data
+#   - GET /api/performance/kpi-evaluations
+# Any commit modifying KpiEvaluation or ManagerKpiTemplate increments the
+# version key so all cached payloads invalidate atomically in O(1).
+# ---------------------------------------------------------------------------
+PERF_VER_KEY = "peoplehub:api:performance:ver"
+PERF_CACHE_TTL = 300  # seconds (DB commits invalidate immediately via _invalidate_perf_after_commit)
+_eval_build_lock = threading.Lock()
+_checkout_base_mem = {"ver": None, "ts": 0.0, "data": None}
+
+
+def _get_perf_cache_ver():
+    r = _get_redis()
+    if r is None:
+        return "1"
+    try:
+        return r.get(PERF_VER_KEY) or "1"
+    except Exception:
+        return "1"
+
+
+def invalidate_performance_cache():
+    r = _get_redis()
+    if r is None:
+        return
+    try:
+        r.incr(PERF_VER_KEY)
+    except Exception:
+        pass
+
+
+def _client_accepts_gzip() -> bool:
+    try:
+        return "gzip" in (request.headers.get("accept-encoding") or "").lower()
+    except Exception:
+        return False
+
+
+def _cache_get_precompressed(cache_key: str):
+    """Serve pre-serialized + pre-gzipped JSON directly from Redis (~2 ms, zero JSON/gzip CPU)."""
+    r = _get_redis()
+    if r is None:
+        return None
+    try:
+        b64 = r.get(cache_key)
+        if not b64:
+            return None
+        gz_bytes = base64.b64decode(b64)
+        if _client_accepts_gzip():
+            return Response(
+                content=gz_bytes,
+                status_code=200,
+                mimetype="application/json",
+                headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+            )
+        return Response(
+            content=gzip.decompress(gz_bytes),
+            status_code=200,
+            mimetype="application/json",
+        )
+    except Exception:
+        return None
+
+
+def _cache_set_precompressed(cache_key: str, payload: dict, ttl_seconds: int):
+    raw_bytes = json.dumps(payload, default=str).encode("utf-8")
+    gz_bytes = gzip.compress(raw_bytes, compresslevel=5)
+    r = _get_redis()
+    if r is not None:
+        try:
+            r.setex(cache_key, ttl_seconds, base64.b64encode(gz_bytes).decode("ascii"))
+        except Exception:
+            pass
+    if _client_accepts_gzip():
+        return Response(
+            content=gz_bytes,
+            status_code=200,
+            mimetype="application/json",
+            headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+        )
+    return Response(content=raw_bytes, status_code=200, mimetype="application/json")
+
+
+def _mark_perf_changes(session, flush_context):
+    for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+        if isinstance(obj, (KpiEvaluation, ManagerKpiTemplate)):
+            session.info["perf_changed"] = True
+            return
+
+
+def _invalidate_perf_after_commit(session):
+    if session.info.pop("perf_changed", False):
+        invalidate_performance_cache()
+
+
+def _clear_perf_flag_after_rollback(session):
+    session.info.pop("perf_changed", None)
+
+
+_perf_session_factory = db.session.session_factory
+if not _sa_event.contains(_perf_session_factory, "after_flush", _mark_perf_changes):
+    _sa_event.listen(_perf_session_factory, "after_flush", _mark_perf_changes)
+    _sa_event.listen(_perf_session_factory, "after_commit", _invalidate_perf_after_commit)
+    _sa_event.listen(_perf_session_factory, "after_rollback", _clear_perf_flag_after_rollback)
 
 @performance_bp.route("/", methods=["GET"])
 @auth_required
@@ -1377,12 +1494,11 @@ def export_rankings_matrix():
             period_title = f"Monthly Report - {m_name} {cur_year}"
             period_label = f"Monthly_Report_{m_name}_{cur_year}"
 
-        # Calendar columns: dates within range (skip Sundays for clean reading)
+        # Calendar columns: include all dates within range so Sundays and weekoffs are visibly shown
         cur_d = start_date
         date_cols = []
         while cur_d <= end_date:
-            if cur_d.weekday() != 6:  # Skip Sundays
-                date_cols.append(cur_d.strftime("%Y-%m-%d"))
+            date_cols.append(cur_d.strftime("%Y-%m-%d"))
             cur_d += timedelta(days=1)
 
         # Scoping logic: accurately filter by employee_id and manager_id
@@ -1481,6 +1597,17 @@ def export_rankings_matrix():
         hols = Holiday.query.filter(Holiday.date >= start_date, Holiday.date <= end_date).all()
         holiday_dates = {h.date for h in hols}
 
+        # Calculate standard working days for this period (excludes weekoffs and company holidays)
+        # Weekoffs = Sundays + 2nd & 4th Saturdays
+        # This count is FIXED for everyone in this period (leaves do NOT reduce the working days denominator)
+        standard_working_days_list = []
+        _chk_d = start_date
+        while _chk_d <= end_date:
+            if not is_date_week_off(_chk_d) and _chk_d not in holiday_dates:
+                standard_working_days_list.append(_chk_d)
+            _chk_d += timedelta(days=1)
+        standard_working_days = max(len(standard_working_days_list), 1)
+
         user_ids = [e.user_id for e in employees if e.user_id]
         attendances = Attendance.query.filter(
             Attendance.user_id.in_(user_ids),
@@ -1501,6 +1628,12 @@ def export_rankings_matrix():
 
         for ke in eval_list:
             emp = emp_by_code.get(str(ke.employee_id))
+            # Exclude deactivated / inactive employees from export
+            if emp:
+                emp_st = str(getattr(emp, "status", "") or "").strip().lower()
+                if emp_st in ["inactive", "deactive", "deactivated", "resigned", "terminated"] or getattr(emp, "is_active", None) is False:
+                    continue
+
             emp_code = str(ke.employee_id)
             raw_team = (ke.team_name or "").strip()
             # Resolve canonical team name (avoid comma-separated aggregate manager bundle names like 'Editorial Services, Media, Qbend')
@@ -1543,17 +1676,22 @@ def export_rankings_matrix():
             present_days = 0.0
             absent_days = 0.0
             recorded_dates = set()
+            daily_att_status = {}
 
             for a in user_atts:
                 recorded_dates.add(a.attendance_date)
                 st = (a.status or "").strip().lower()
+                d_key = a.attendance_date.strftime("%Y-%m-%d")
                 if st == "present":
                     present_days += 1.0
+                    daily_att_status[d_key] = "Present"
                 elif st in ["half day", "half-day", "halfday"]:
                     present_days += 0.5
                     absent_days += 0.5
+                    daily_att_status[d_key] = "Half Day"
                 elif st in ["absent", "lop", "leave", "pl", "cl", "sl", "cl/sl"]:
                     absent_days += 1.0
+                    daily_att_status[d_key] = "Leave" if st in ["leave", "pl", "cl", "sl", "cl/sl"] else "Absent"
 
             # Approved leaves from LeaveRequest
             if emp:
@@ -1569,9 +1707,13 @@ def export_rankings_matrix():
                     end_l = min(l.to_date, end_date)
                     while cur_l <= end_l:
                         if cur_l not in holiday_dates and not is_date_week_off(cur_l):
+                            d_key = cur_l.strftime("%Y-%m-%d")
                             if cur_l not in recorded_dates:
                                 absent_days += float(l.total_days if l.from_date == l.to_date else 1.0)
                                 recorded_dates.add(cur_l)
+                                daily_att_status[d_key] = "Leave"
+                            elif d_key not in daily_att_status or daily_att_status[d_key] == "Absent":
+                                daily_att_status[d_key] = "Leave"
                         cur_l += timedelta(days=1)
 
             rep_mgr = (getattr(ke, 'reporting_manager', None) or (getattr(emp, 'reporting_manager', None) if emp else None) or "").strip()
@@ -1585,6 +1727,9 @@ def export_rankings_matrix():
                 "reporting_manager": rep_mgr,
                 "present_days": present_days,
                 "absent_days": absent_days,
+                "daily_att_status": daily_att_status,
+                "cadence_type": "daily",
+                "direct_eval_score": None,
                 "daily_scores": {},
             }
 
@@ -1595,6 +1740,12 @@ def export_rankings_matrix():
         # Aggregate daily scores from the evaluation records
         for ke in eval_list:
             emp = emp_by_code.get(str(ke.employee_id))
+            # Exclude deactivated / inactive employees from export
+            if emp:
+                emp_st = str(getattr(emp, "status", "") or "").strip().lower()
+                if emp_st in ["inactive", "deactive", "deactivated", "resigned", "terminated"] or getattr(emp, "is_active", None) is False:
+                    continue
+
             emp_code = str(ke.employee_id)
             raw_team = (ke.team_name or "").strip()
             if emp:
@@ -1630,7 +1781,8 @@ def export_rankings_matrix():
 
             # 1. Process daily_records (for daily cadence evaluations)
             daily_recs = m_data.get("daily_records", []) if isinstance(m_data, dict) else []
-            if isinstance(daily_recs, list):
+            if isinstance(daily_recs, list) and len(daily_recs) > 0:
+                emp_rec["cadence_type"] = "daily"
                 for d in daily_recs:
                     d_str = d.get("date")
                     if not d_str or d_str not in date_cols:
@@ -1649,7 +1801,8 @@ def export_rankings_matrix():
 
             # 2. Process weekly_records (for weekly cadence evaluations like Media & Qbend teams)
             weekly_recs = m_data.get("weekly_records", []) if isinstance(m_data, dict) else []
-            if isinstance(weekly_recs, list):
+            if isinstance(weekly_recs, list) and len(weekly_recs) > 0:
+                emp_rec["cadence_type"] = "weekly"
                 for w in weekly_recs:
                     w_start_str = w.get("startDate")
                     w_end_str = w.get("endDate")
@@ -1699,8 +1852,10 @@ def export_rankings_matrix():
                     is_appr = (st in ["manager_approved", "approved", "completed"]) or (mgr_sc is not None and float(mgr_sc) > 0)
                     is_subm = (st in ["submitted_to_manager", "submitted", "manager_review"]) or ("submit" in st)
 
+                    emp_rec["cadence_type"] = "periodic"
                     if is_appr:
                         period_val = round(float(mgr_sc if mgr_sc is not None else emp_sc or 0), 2)
+                        emp_rec["direct_eval_score"] = period_val
                     elif is_subm:
                         period_val = "Approval needed"
                     else:
@@ -1734,12 +1889,18 @@ def export_rankings_matrix():
         zebra_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
         not_filled_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
         approval_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+        weekoff_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+        absent_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+        leave_fill = PatternFill(start_color="E0F2FE", end_color="E0F2FE", fill_type="solid")
 
         header_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
         regular_font = Font(name="Calibri", size=10, bold=False, color="1E293B")
         score_bold_font = Font(name="Calibri", size=10, bold=True, color="0F766E")
         not_filled_font = Font(name="Calibri", size=9, bold=False, color="C00000")
         approval_font = Font(name="Calibri", size=9, bold=False, color="7F6000")
+        weekoff_font = Font(name="Calibri", size=9, bold=False, color="64748B")
+        absent_font = Font(name="Calibri", size=9, bold=True, color="B91C1C")
+        leave_font = Font(name="Calibri", size=9, bold=True, color="0369A1")
         total_font = Font(name="Calibri", size=10, bold=True, color="0F172A")
 
         thin_side = Side(border_style="thin", color="CBD5E1")
@@ -1764,7 +1925,15 @@ def export_rankings_matrix():
             bottom=Side(style="thin", color="E2E8F0")
         )
 
-        headers = ["S.No", "Department", "Team", "Emp Code", "Name Of the Employee"] + date_cols + ["Score", "Composite Score", "Present Days", "Absent Days"]
+        def format_date_header(d_str):
+            try:
+                dt = date.fromisoformat(d_str)
+                return dt.strftime("%d-%m-%Y")
+            except Exception:
+                return d_str
+
+        formatted_date_headers = [format_date_header(d) for d in date_cols]
+        headers = ["S.No", "Department", "Team", "Emp Code", "Name Of the Employee"] + formatted_date_headers + ["Score", "Composite Score", "Present Days", "Absent Days"]
 
         # Filter by selected_team_param or selected_manager_param
         teams_to_export = {}
@@ -1800,8 +1969,28 @@ def export_rankings_matrix():
         all_evaluated_members = []
         for t_k, m_list in emp_records_by_team.items():
             for m in m_list:
-                num_scs = [v for v in m["daily_scores"].values() if isinstance(v, (int, float))]
-                avg_sc = (sum(num_scs) / len(num_scs)) if num_scs else -1.0
+                # Sum the score earned on working days (excluding week-offs, holidays, and leaves)
+                num_scs = []
+                for d_str, v in m["daily_scores"].items():
+                    if not isinstance(v, (int, float)):
+                        continue
+                    dt = None
+                    try:
+                        dt = date.fromisoformat(d_str)
+                    except Exception:
+                        pass
+                    # Skip week-offs, holidays, leaves, and absences from being counted as score
+                    if dt and (is_date_week_off(dt) or dt in holiday_dates):
+                        continue
+                    att_st = (m.get("daily_att_status") or {}).get(d_str)
+                    if att_st in ["Leave", "Absent"]:
+                        continue
+                    num_scs.append(float(v))
+
+                # Formula: Total score on present working days divided by standard month working days
+                # e.g. Vignesh: 22 days worked * 100 = 2200 / 23 working days = 95.65%
+                avg_sc = round((sum(num_scs) / standard_working_days), 2) if num_scs else -1.0
+
                 m["calc_avg_score"] = avg_sc
                 abs_cnt = float(m.get("absent_days", 0.0))
                 m["perf_composite_score"] = round(avg_sc - (abs_cnt * 0.5), 3) if avg_sc >= 0 else -999.0
@@ -2004,8 +2193,28 @@ def export_rankings_matrix():
             # Net Performance Score = Average Score - (Absent Days * 0.5)
             # This ensures consistent high attendance (0 absent days) ranks above equal/near-equal scores with absences!
             for m in members:
-                num_scs = [v for v in m["daily_scores"].values() if isinstance(v, (int, float))]
-                avg_sc = (sum(num_scs) / len(num_scs)) if num_scs else -1.0
+                # Sum the score earned on working days (excluding week-offs, holidays, and leaves)
+                num_scs = []
+                for d_str, v in m["daily_scores"].items():
+                    if not isinstance(v, (int, float)):
+                        continue
+                    dt = None
+                    try:
+                        dt = date.fromisoformat(d_str)
+                    except Exception:
+                        pass
+                    # Skip week-offs, holidays, leaves, and absences from being counted as score
+                    if dt and (is_date_week_off(dt) or dt in holiday_dates):
+                        continue
+                    att_st = (m.get("daily_att_status") or {}).get(d_str)
+                    if att_st in ["Leave", "Absent"]:
+                        continue
+                    num_scs.append(float(v))
+
+                # Formula: Total score on present working days divided by standard month working days
+                # e.g. Vignesh: 22 days worked * 100 = 2200 / 23 working days = 95.65%
+                avg_sc = round((sum(num_scs) / standard_working_days), 2) if num_scs else -1.0
+
                 m["calc_avg_score"] = avg_sc
                 abs_cnt = float(m.get("absent_days", 0.0))
                 # Attendance penalty: 0.5 mark deduction per absent day for composite ranking
@@ -2062,7 +2271,40 @@ def export_rankings_matrix():
                     cell = ws.cell(row_idx, d_idx)
                     cell.border = data_border
 
-                    if isinstance(val, (int, float)):
+                    # Check attendance and calendar status for this date
+                    dt_obj = None
+                    try:
+                        dt_obj = date.fromisoformat(d_str)
+                    except Exception:
+                        pass
+
+                    is_wkoff = is_date_week_off(dt_obj) if dt_obj else False
+                    is_hldy = (dt_obj in holiday_dates) if dt_obj else False
+                    att_status = (emp.get("daily_att_status") or {}).get(d_str)
+
+                    # Non-working days and absences have HIGHEST visual priority:
+                    # They must NEVER be overwritten with score numbers!
+                    if is_hldy:
+                        cell.value = "Holiday"
+                        cell.fill = weekoff_fill
+                        cell.font = weekoff_font
+                        cell.alignment = center_align
+                    elif is_wkoff:
+                        cell.value = "Week Off"
+                        cell.fill = weekoff_fill
+                        cell.font = weekoff_font
+                        cell.alignment = center_align
+                    elif att_status == "Leave":
+                        cell.value = "Leave"
+                        cell.fill = leave_fill
+                        cell.font = leave_font
+                        cell.alignment = center_align
+                    elif att_status == "Absent":
+                        cell.value = "Absent"
+                        cell.fill = absent_fill
+                        cell.font = absent_font
+                        cell.alignment = center_align
+                    elif isinstance(val, (int, float)):
                         cell.value = float(val)
                         cell.font = regular_font
                         cell.alignment = center_align
@@ -2102,7 +2344,9 @@ def export_rankings_matrix():
                     comp_cell.fill = row_fill
 
                 if numeric_scores:
-                    emp_avg = round(sum(numeric_scores) / len(numeric_scores), 2)
+                    # Formula: Total earned scores on present working days divided by standard working days
+                    # e.g. Vignesh E: 22 days present * 100 = 2200 / 23 standard working days = 95.65%
+                    emp_avg = round(sum(numeric_scores) / standard_working_days, 2)
                     avg_cell.value = f"{emp_avg}%"
                     avg_cell.font = score_bold_font
                     avg_cell.alignment = center_align
@@ -2252,13 +2496,174 @@ def export_rankings_matrix():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+_EMP_PENDING_STATUSES = {"pending_employee", "Assigned to Employee", "employee_in_progress"}
+
+
+def _build_sidebar_summary_payload(payload: dict) -> dict:
+    """Distill the full evaluation payload down to minimal pending-count metadata for Sidebar badges."""
+    cycles = payload.get("cycles") or []
+    responses = payload.get("responses") or []
+
+    pending_sm_cycles = [
+        {
+            "status": c.get("status"),
+            "serviceManagerName": c.get("serviceManagerName"),
+        }
+        for c in cycles
+        if c and c.get("status") == "pending_sm_launch_approval"
+    ]
+
+    lite_responses = []
+    for r in responses:
+        if not r:
+            continue
+        q_recs = r.get("quarterly_records") or []
+        w_recs = r.get("weekly_records") or []
+        m_recs = r.get("monthly_records") or []
+        d_recs = r.get("daily_records") or []
+
+        is_yearly = bool(
+            r.get("milestone_frequency")
+            or r.get("frequency") == "daily"
+            or len(d_recs) > 0
+            or len(w_recs) > 0
+            or len(m_recs) > 0
+            or len(q_recs) > 0
+        )
+
+        # Collapse heavy KPI arrays into minimal status stubs while preserving Sidebar filter parity
+        has_pending_emp = any(
+            rec and rec.get("status") in _EMP_PENDING_STATUSES
+            for rec in (d_recs + w_recs + m_recs + q_recs)
+        )
+        has_submitted_mgr = any(
+            rec and rec.get("status") == "submitted_to_manager"
+            for rec in (q_recs + w_recs + m_recs + d_recs)
+        )
+
+        stub = {
+            "employeeCode": r.get("employeeCode"),
+            "employeeId": r.get("employeeId"),
+            "employee_id": r.get("employee_id"),
+            "employeeName": r.get("employeeName"),
+            "name": r.get("name"),
+            "email": r.get("email"),
+            "reportingManager": r.get("reportingManager"),
+            "reporting_manager": r.get("reporting_manager"),
+            "reporting_manager_id": r.get("reporting_manager_id"),
+            "manager_id": r.get("manager_id"),
+            "reportingManagerId": r.get("reportingManagerId"),
+            "managerId": r.get("managerId"),
+            "managerName": r.get("managerName"),
+            "manager_name": r.get("manager_name"),
+            "status": r.get("status"),
+            "managerScore": r.get("managerScore"),
+            "employeeSubmittedAt": r.get("employeeSubmittedAt"),
+            "submitted_at": r.get("submitted_at"),
+            "submittedAt": r.get("submittedAt"),
+            "employee_submitted_at": r.get("employee_submitted_at"),
+            "milestone_frequency": "yearly" if is_yearly else r.get("milestone_frequency"),
+            "frequency": r.get("frequency"),
+        }
+        if is_yearly:
+            stub["daily_records"] = (
+                [{"status": "pending_employee"}] if has_pending_emp else []
+            ) + (
+                [{"status": "submitted_to_manager"}] if has_submitted_mgr else []
+            )
+        lite_responses.append(stub)
+
+    return {"success": True, "cycles": pending_sm_cycles, "responses": lite_responses}
+
+
+def _cache_sidebar_summary_in_redis(summary_cache_key: str, summary_payload: dict, ttl_seconds: int):
+    r = _get_redis()
+    if r is None:
+        return
+    try:
+        raw_bytes = json.dumps(summary_payload, default=str).encode("utf-8")
+        gz_bytes = gzip.compress(raw_bytes, compresslevel=5)
+        r.setex(summary_cache_key, ttl_seconds, base64.b64encode(gz_bytes).decode("ascii"))
+    except Exception:
+        pass
+
+
+_SUBREC_SLIM_DROP_KEYS = {"kpiEntries", "categories", "kpis", "metrics_data", "comments"}
+_TOP_SLIM_DROP_KEYS = {"categories", "kpis", "metrics_data", "comments"}
+
+
+def _slim_record_list(recs):
+    if not isinstance(recs, list):
+        return []
+    return [{k: v for k, v in item.items() if k not in _SUBREC_SLIM_DROP_KEYS} for item in recs if isinstance(item, dict)]
+
+
+def _build_checkout_base_payload(full_payload: dict) -> dict:
+    """Strips heavy KPI scorecard arrays from cycles/responses while keeping all checkout due-date metadata intact."""
+    slim_cycles = []
+    for c in (full_payload.get("cycles") or []):
+        if not isinstance(c, dict):
+            continue
+        sc = {k: v for k, v in c.items() if k not in _TOP_SLIM_DROP_KEYS}
+        if isinstance(sc.get("daily_records"), list):
+            sc["daily_records"] = _slim_record_list(sc["daily_records"])
+        slim_cycles.append(sc)
+
+    slim_responses = []
+    for r in (full_payload.get("responses") or []):
+        if not isinstance(r, dict):
+            continue
+        sr = {k: v for k, v in r.items() if k not in _TOP_SLIM_DROP_KEYS}
+        for key in ("daily_records", "weekly_records", "monthly_records", "quarterly_records"):
+            if isinstance(sr.get(key), list):
+                sr[key] = _slim_record_list(sr[key])
+        slim_responses.append(sr)
+
+    return {"success": True, "cycles": slim_cycles, "responses": slim_responses}
+
+
+def _cache_checkout_base_in_redis(base_cache_key: str, full_payload: dict, ttl_seconds: int):
+    _cache_sidebar_summary_in_redis(base_cache_key, _build_checkout_base_payload(full_payload), ttl_seconds)
+
+
+def _clean_emp_token(val) -> str:
+    return re.sub(r"^emp-?", "", str(val or "").strip().lower())
+
+
 @performance_bp.route("/evaluation/data", methods=["GET"])
 def get_evaluation_data():
     try:
+        cache_key = f"peoplehub:api:performance:eval_data:gz:v{_get_perf_cache_ver()}"
+        cached_resp = _cache_get_precompressed(cache_key)
+        if cached_resp is not None:
+            return cached_resp
+
+        with _eval_build_lock:
+            # Double-check inside per-worker single-flight lock so concurrent misses don't rebuild simultaneously
+            cache_key = f"peoplehub:api:performance:eval_data:gz:v{_get_perf_cache_ver()}"
+            cached_resp = _cache_get_precompressed(cache_key)
+            if cached_resp is not None:
+                return cached_resp
+
+            return _build_and_cache_evaluation_data(cache_key)
+    except Exception as e:
+        return jsonify({"error": str(e), "cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}), 500
+
+
+def _build_and_cache_evaluation_data(cache_key: str):
+    try:
+
         eval_records, store = sync_postgres_kpi_to_store_and_back()
         db_unavailable = eval_records is None  # DB had an exception; use JSON-only fallback
         if db_unavailable:
             eval_records = []
+
+        # Batch lookup map from cached employee list (eliminates ~110 N+1 SQL queries)
+        emp_by_code = {
+            str(e.employee_id): e
+            for e in get_all_employees_cached()
+            if getattr(e, "employee_id", None)
+        }
 
         json_all_cycles = list(store.get("cycles", []))
         json_all_responses = [
@@ -2269,6 +2674,13 @@ def get_evaluation_data():
         # 1. Dynamically build and maintain cycles directly from PostgreSQL KpiEvaluation records
         team_eval_groups = {}
         for rec in eval_records:
+            emp_id = str(rec.employee_id or "").strip()
+            emp_obj = emp_by_code.get(emp_id)
+            if emp_obj:
+                emp_st = str(getattr(emp_obj, "status", "") or "").strip().lower()
+                if emp_st in ["inactive", "deactive", "deactivated", "resigned", "terminated"] or getattr(emp_obj, "is_active", None) is False:
+                    continue
+
             t_key = rec.team_name or rec.team_id or "General"
             f_name = rec.form or "Performance Evaluation"
             f_date_str = rec.from_date.isoformat() if rec.from_date else ""
@@ -2304,7 +2716,6 @@ def get_evaluation_data():
             elif extracted_period and not team_eval_groups[group_key].get("periodName"):
                 team_eval_groups[group_key]["periodName"] = extracted_period
 
-            emp_id = str(rec.employee_id or "").strip()
             if emp_id and emp_id not in team_eval_groups[group_key]["employeeIds"]:
                 team_eval_groups[group_key]["employeeIds"].append(emp_id)
 
@@ -2323,9 +2734,9 @@ def get_evaluation_data():
                     seen_cycle_keys.add(c_key)
                     tpl_mgr_name = tpl.manager_name
                     if (not tpl_mgr_name or tpl_mgr_name == "Manager" or tpl_mgr_name == "Reporting Manager") and tpl.manager_id:
-                        m_emp = Employee.query.filter(Employee.employee_id == str(tpl.manager_id)).first()
+                        m_emp = emp_by_code.get(str(tpl.manager_id))
                         if m_emp:
-                            tpl_mgr_name = m_emp.name or f"{m_emp.first_name} {m_emp.last_name}".strip()
+                            tpl_mgr_name = getattr(m_emp, "name", None) or f"{m_emp.first_name or ''} {m_emp.last_name or ''}".strip()
 
                     cycles.append({
                         "id": cid,
@@ -2393,9 +2804,15 @@ def get_evaluation_data():
             responses = []
             for rec in eval_records:
                 emp_id = str(rec.employee_id or "")
-                emp_obj = Employee.query.filter(Employee.employee_id == emp_id).first()
+                emp_obj = emp_by_code.get(emp_id)
+                # Exclude deactivated / inactive employees
+                if emp_obj:
+                    emp_st = str(getattr(emp_obj, "status", "") or "").strip().lower()
+                    if emp_st in ["inactive", "deactive", "deactivated", "resigned", "terminated"] or getattr(emp_obj, "is_active", None) is False:
+                        continue
+
                 actual_code = emp_obj.employee_id if emp_obj and emp_obj.employee_id else emp_id
-                resolved_team = rec.team_name or rec.team_id or (emp_obj.department if emp_obj else None) or (emp_obj.team if emp_obj else None) or "Media"
+                resolved_team = rec.team_name or rec.team_id or (emp_obj.department if emp_obj else None) or (getattr(emp_obj, "team", None) if emp_obj else None) or "Media"
                 resolved_name = rec.employee_name or (f"{emp_obj.first_name} {emp_obj.last_name}" if emp_obj else f"Employee #{actual_code}")
 
                 db_kpis = extract_kpi_responses_from_metrics_data(rec.metrics_data)
@@ -2588,9 +3005,134 @@ def get_evaluation_data():
 
         merged_cycles = valid_merged_cycles
         rating_scale = store.get("ratingScale", DEFAULT_RATING_SCALE)
-        return jsonify({"success": True, "cycles": merged_cycles, "responses": merged_responses, "ratingScale": rating_scale}), 200
+        payload = {"success": True, "cycles": merged_cycles, "responses": merged_responses, "ratingScale": rating_scale}
+        ver = _get_perf_cache_ver()
+        _cache_sidebar_summary_in_redis(
+            f"peoplehub:api:performance:sidebar_summary:gz:v{ver}",
+            _build_sidebar_summary_payload(payload),
+            PERF_CACHE_TTL,
+        )
+        _cache_checkout_base_in_redis(
+            f"peoplehub:api:performance:checkout_base:gz:v{ver}",
+            payload,
+            PERF_CACHE_TTL,
+        )
+        return _cache_set_precompressed(cache_key, payload, PERF_CACHE_TTL)
     except Exception as e:
         return jsonify({"error": str(e), "cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}), 500
+
+
+def _decode_redis_gz_json(redis_key: str):
+    r = _get_redis()
+    if r is None:
+        return None
+    try:
+        b64 = r.get(redis_key)
+        if not b64:
+            return None
+        return json.loads(gzip.decompress(base64.b64decode(b64)).decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _decode_payload_from_response(resp):
+    if not (hasattr(resp, "body") or hasattr(resp, "get_data")):
+        return None
+    try:
+        raw_body = resp.get_data() if hasattr(resp, "get_data") else resp.body
+        if getattr(resp, "headers", {}).get("Content-Encoding") == "gzip":
+            raw_body = gzip.decompress(raw_body)
+        return json.loads(raw_body.decode("utf-8"))
+    except Exception:
+        return None
+
+
+@performance_bp.route("/evaluation/sidebar-summary", methods=["GET"])
+def get_evaluation_sidebar_summary():
+    """Lightweight evaluation summary endpoint for sidebar pending badges (~98% smaller than /evaluation/data)."""
+    try:
+        ver = _get_perf_cache_ver()
+        summary_cache_key = f"peoplehub:api:performance:sidebar_summary:gz:v{ver}"
+        cached_resp = _cache_get_precompressed(summary_cache_key)
+        if cached_resp is not None:
+            return cached_resp
+
+        # If full evaluation payload is already in Redis, distill it without touching Postgres
+        full_payload = _decode_redis_gz_json(f"peoplehub:api:performance:eval_data:gz:v{ver}")
+        if full_payload is not None:
+            summary_payload = _build_sidebar_summary_payload(full_payload)
+            return _cache_set_precompressed(summary_cache_key, summary_payload, PERF_CACHE_TTL)
+
+        # Cache miss on both keys — warm full payload once via get_evaluation_data, then serve summary
+        full_resp = get_evaluation_data()
+        cached_resp = _cache_get_precompressed(summary_cache_key)
+        if cached_resp is not None:
+            return cached_resp
+        full_payload = _decode_payload_from_response(full_resp)
+        if full_payload is not None:
+            return jsonify(_build_sidebar_summary_payload(full_payload)), 200
+        return jsonify({"success": True, "cycles": [], "responses": []}), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "cycles": [], "responses": []}), 500
+
+
+@performance_bp.route("/evaluation/checkout-data", methods=["GET"])
+def get_checkout_evaluation_data():
+    """Scoped, KPI-stripped evaluation payload for fast pre-checkout verification (~98% smaller than /evaluation/data)."""
+    try:
+        raw_ids = (request.args.get("employee_ids") or "").strip()
+        target_ids = {_clean_emp_token(x) for x in raw_ids.split(",") if _clean_emp_token(x)}
+
+        ver = _get_perf_cache_ver()
+        now_mono = time.monotonic()
+        if (
+            _checkout_base_mem["data"] is not None
+            and _checkout_base_mem["ver"] == ver
+            and (now_mono - _checkout_base_mem["ts"]) < PERF_CACHE_TTL
+        ):
+            base_payload = _checkout_base_mem["data"]
+        else:
+            base_key = f"peoplehub:api:performance:checkout_base:gz:v{ver}"
+            base_payload = _decode_redis_gz_json(base_key)
+
+            if base_payload is None:
+                full_payload = _decode_redis_gz_json(f"peoplehub:api:performance:eval_data:gz:v{ver}")
+                if full_payload is None:
+                    full_resp = get_evaluation_data()
+                    ver = _get_perf_cache_ver()
+                    base_payload = _decode_redis_gz_json(f"peoplehub:api:performance:checkout_base:gz:v{ver}")
+                    if base_payload is None:
+                        full_payload = _decode_payload_from_response(full_resp)
+                if base_payload is None and full_payload is not None:
+                    base_payload = _build_checkout_base_payload(full_payload)
+                    _cache_sidebar_summary_in_redis(f"peoplehub:api:performance:checkout_base:gz:v{ver}", base_payload, PERF_CACHE_TTL)
+
+            if base_payload is not None:
+                _checkout_base_mem["ver"] = ver
+                _checkout_base_mem["ts"] = now_mono
+                _checkout_base_mem["data"] = base_payload
+
+        if base_payload is None:
+            return jsonify({"success": True, "cycles": [], "responses": []}), 200
+
+        responses = base_payload.get("responses") or []
+        if target_ids:
+            responses = [
+                r for r in responses
+                if (
+                    _clean_emp_token(r.get("employeeCode")) in target_ids
+                    or _clean_emp_token(r.get("employeeId")) in target_ids
+                    or _clean_emp_token(r.get("employee_id")) in target_ids
+                )
+            ]
+
+        return jsonify({
+            "success": True,
+            "cycles": base_payload.get("cycles") or [],
+            "responses": responses,
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "cycles": [], "responses": []}), 500
 
 @performance_bp.route("/rating-scale", methods=["GET"])
 def get_rating_scale():
@@ -3203,6 +3745,13 @@ def get_kpi_evaluations():
         status_filter = request.args.get("status")
         team_id_filter = request.args.get("team_id")
         include_archived = request.args.get("include_archived", "false").lower() == "true"
+
+        raw_params = f"{form_filter}|{employee_id_filter}|{reporting_manager_id_filter}|{service_manager_id_filter}|{status_filter}|{team_id_filter}|{include_archived}"
+        params_hash = hashlib.md5(raw_params.encode("utf-8")).hexdigest()
+        cache_key = f"peoplehub:api:performance:kpi_evals:gz:v{_get_perf_cache_ver()}:{params_hash}"
+        cached_resp = _cache_get_precompressed(cache_key)
+        if cached_resp is not None:
+            return cached_resp
         
         query = KpiEvaluation.query
         if not include_archived:
@@ -3245,7 +3794,8 @@ def get_kpi_evaluations():
                 continue
             eval_list.append(r)
 
-        return jsonify({"success": True, "evaluations": eval_list}), 200
+        payload = {"success": True, "evaluations": eval_list}
+        return _cache_set_precompressed(cache_key, payload, PERF_CACHE_TTL)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -3911,6 +4461,7 @@ def delete_manager_kpi_template():
             ).delete(synchronize_session=False)
 
         db.session.commit()
+        invalidate_performance_cache()
         return jsonify({"success": True, "message": f"Template {template_key} deleted successfully"}), 200
     except Exception as e:
         db.session.rollback()

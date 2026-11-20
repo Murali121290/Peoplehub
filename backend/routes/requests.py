@@ -94,8 +94,6 @@ def email_action():
 
                 cycle_start, cycle_end = get_permission_cycle_range(req.permission_date)
                 emp_ids = [str(employee.employee_id)]
-                if employee.id:
-                    emp_ids.append(str(employee.id))
 
                 other_approved = LeaveRequest.query.filter(
                     LeaveRequest.employee_id.in_(emp_ids),

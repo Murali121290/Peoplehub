@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 # pyrefly: ignore [missing-import]
@@ -55,8 +56,16 @@ from extensions import socketio
 from socket_events import register_socket_events
 from services.checkin_monitor import check_missed_checkins, generate_daily_notifications
 
+# Module-level handle to keep the file lock open for the lifetime of this worker process.
+# If this was local to create_app(), it would get garbage-collected upon function return,
+# immediately releasing the lock and letting every Uvicorn worker process start APScheduler!
+_SCHEDULER_LOCK_FD = None
+
 def create_app():
     fastapi_app = FastAPI(title="Peoplehub API", version="1.0.0")
+
+    # GZip compression — compresses all JSON/text responses >= 1 KB automatically.
+    fastapi_app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     # Configure CORS
     allowed_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5555,http://localhost:3000").split(",")
@@ -136,13 +145,13 @@ def create_app():
     # Scheduler configuration
     # Guard: only run background scheduler in ONE worker process when using --workers N.
     # We use a lock file approach: the first worker to acquire the lock starts the scheduler.
+    global _SCHEDULER_LOCK_FD
     import fcntl
     _scheduler_lock_file = "/tmp/peoplehub_scheduler.lock"
-    _lock_fd = None
     _is_scheduler_worker = False
     try:
-        _lock_fd = open(_scheduler_lock_file, "w")
-        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _SCHEDULER_LOCK_FD = open(_scheduler_lock_file, "w")
+        fcntl.flock(_SCHEDULER_LOCK_FD, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _is_scheduler_worker = True
     except (IOError, OSError):
         _is_scheduler_worker = False
@@ -169,7 +178,6 @@ def create_app():
             from services.leave_balance_service import update_all_employee_leave_balances
             try:
                 result = update_all_employee_leave_balances()
-                print(f"[Scheduler] Monthly leave credit: {result}")
             except Exception as e:
                 print(f"[Scheduler] Monthly leave credit error: {e}")
             finally:
@@ -188,7 +196,6 @@ def create_app():
             from services.leave_balance_service import update_all_employee_permission_balances
             try:
                 result = update_all_employee_permission_balances()
-                print(f"[Scheduler] Monthly permission reset: {result}")
             except Exception as e:
                 print(f"[Scheduler] Monthly permission reset error: {e}")
             finally:
@@ -207,7 +214,6 @@ def create_app():
             from services.leave_balance_service import update_all_employee_pl_balances
             try:
                 result = update_all_employee_pl_balances()
-                print(f"[Scheduler] Yearly PL credit: {result}")
             except Exception as e:
                 print(f"[Scheduler] Yearly PL credit error: {e}")
             finally:
@@ -227,7 +233,6 @@ def create_app():
             try:
                 from services.kpi_evaluation_rollup_service import auto_rollup_kpi_evaluations_job
                 count = auto_rollup_kpi_evaluations_job()
-                print(f"[Scheduler] Nightly KPI Evaluation Rollup: {count} period(s) rolled up.")
             except Exception as e:
                 print(f"[Scheduler] Nightly KPI Evaluation Rollup error: {e}")
             finally:
@@ -241,7 +246,6 @@ def create_app():
         )
 
         scheduler.start()
-        print(f"[Scheduler] Started in worker PID {os.getpid()}")
     else:
         print(f"[Scheduler] Skipped in worker PID {os.getpid()} (already running in another worker)")
 

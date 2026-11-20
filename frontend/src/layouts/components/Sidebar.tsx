@@ -10,6 +10,7 @@ import logo from '../../images/s.png';
 import { Button } from '../../components/ui/Button';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { socket } from "../../services/socket";
+import { getEmployees } from "../../services/employeesCache";
 
 interface SidebarProps {
   sidebarItems: any[];
@@ -28,8 +29,8 @@ const reportLinks = [
 
 const checkManagerMatch = (reportingManager: string | null | undefined, managerFullName: string | null | undefined): boolean => {
   if (!reportingManager || !managerFullName) return false;
-  const repManagerClean = reportingManager.trim().toLowerCase();
-  const managerName = managerFullName.trim().toLowerCase();
+  const repManagerClean = reportingManager.replace(/\s+/g, " ").trim().toLowerCase();
+  const managerName = managerFullName.replace(/\s+/g, " ").trim().toLowerCase();
 
   if (repManagerClean === managerName) return true;
   const repParts = repManagerClean.split(/\s+/);
@@ -101,9 +102,9 @@ const Sidebar: React.FC<SidebarProps> = ({
       try {
         const token = localStorage.getItem('token');
         const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
-        const [evalRes, empRes] = await Promise.all([
-          fetch(`${API_URL}/api/performance/evaluation/data`, { headers }),
-          fetch(`${API_URL}/api/employees/`, { headers }).catch(() => null)
+        const [evalRes, employees] = await Promise.all([
+          fetch(`${API_URL}/api/performance/evaluation/sidebar-summary`, { headers }),
+          getEmployees().catch(() => [])
         ]);
 
         if (!evalRes.ok) return;
@@ -120,15 +121,12 @@ const Sidebar: React.FC<SidebarProps> = ({
         const isManagerOrLead = access.includes('manager') || access.includes('lead') || access.includes('service_manager') || isHrOrAdmin;
 
         let directReportingIdentifiers = new Set<string>();
-        if (empRes && empRes.ok && user?.full_name) {
-          const employees = await empRes.json().catch(() => []);
-          if (Array.isArray(employees)) {
-            for (const emp of employees) {
-              if (checkManagerMatch(emp.reporting_manager, user.full_name)) {
-                if (emp.employee_id) directReportingIdentifiers.add(String(emp.employee_id).toLowerCase());
-                const empFullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.name || "";
-                if (empFullName) directReportingIdentifiers.add(empFullName.toLowerCase());
-              }
+        if (user?.full_name && Array.isArray(employees)) {
+          for (const emp of employees) {
+            if (checkManagerMatch(emp.reporting_manager, user.full_name)) {
+              if (emp.employee_id) directReportingIdentifiers.add(String(emp.employee_id).toLowerCase());
+              const empFullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.name || "";
+              if (empFullName) directReportingIdentifiers.add(empFullName.toLowerCase());
             }
           }
         }
@@ -288,8 +286,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     window.addEventListener('evaluationUpdated', handleEvalUpdate);
     socket.on('evaluation_update', handleEvalUpdate);
 
-    // Periodic refresh every 15 seconds
-    const interval = setInterval(fetchEvaluationCount, 15000);
+    // Fallback refresh every 60s (Socket.IO already triggers instant updates); skip hidden tabs
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchEvaluationCount();
+    }, 60000);
 
     return () => {
       window.removeEventListener('evaluationUpdated', handleEvalUpdate);
@@ -310,21 +310,18 @@ const Sidebar: React.FC<SidebarProps> = ({
         try {
           const token = localStorage.getItem('token');
           const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
-          const [leaveRes, shiftRes, empRes] = await Promise.all([
-            fetch(`${API_URL}/api/leaves/`, { headers }),
-            fetch(`${API_URL}/api/shifts/`, { headers }),
-            fetch(`${API_URL}/api/employees/`, { headers })
-          ]);
-
           const accessClean = user?.access_level?.toLowerCase() || '';
           const isAdmin = accessClean === 'admin';
 
+          const [leaveRes, shiftRes, employees] = await Promise.all([
+            fetch(`${API_URL}/api/leaves/`, { headers }),
+            fetch(`${API_URL}/api/shifts/`, { headers }),
+            (!isAdmin && user?.full_name) ? getEmployees().catch(() => []) : Promise.resolve([])
+          ]);
+
           let reportingIdentifiers = new Set<string>();
-          if (empRes.ok && user?.full_name && !isAdmin) {
-            const employees = await empRes.json();
-            if (Array.isArray(employees)) {
-              reportingIdentifiers = getRecursiveReportingIdentifiers(user.full_name, employees);
-            }
+          if (user?.full_name && !isAdmin && Array.isArray(employees)) {
+            reportingIdentifiers = getRecursiveReportingIdentifiers(user.full_name, employees);
           }
 
           const filterByManager = (req: any): boolean => {

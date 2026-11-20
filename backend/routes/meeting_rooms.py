@@ -137,7 +137,6 @@ def create_booking():
     try:
         data = request.get_json()
 
-        print("BOOKING REQUEST:", data)
 
         room_id = int(data["room_id"])
 

@@ -11,6 +11,7 @@ interface DatePickerProps {
   name?: string;
   error?: boolean;
   disabledDates?: string[];
+  workingDayOverrides?: string[];
   bookedDates?: string[];
   disablePast?: boolean;
   disableWeekends?: boolean;
@@ -54,6 +55,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   name,
   error = false,
   disabledDates = [],
+  workingDayOverrides = [],
   bookedDates = [],
   disablePast = false,
   disableWeekends = false,
@@ -213,7 +215,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         const dd = String(parsed.getDate()).padStart(2, "0");
         const formattedStr = `${yyyy}-${mm}-${dd}`;
 
-        const isWeekoff = isCompanyWeekoff(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+        const isOverrideWorkingDay = workingDayOverrides.includes(formattedStr);
+        const isWeekoff = !isOverrideWorkingDay && isCompanyWeekoff(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const isPast = parsed < today;
@@ -573,7 +576,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
 
                   const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
 
-                  const isWeekoff = isCompanyWeekoff(viewYear, viewMonth, dayNum);
+                  const isOverrideWorkingDay = workingDayOverrides.includes(dateStr);
+                  const isWeekoff = !isOverrideWorkingDay && isCompanyWeekoff(viewYear, viewMonth, dayNum);
 
                   const isPast = (() => {
                     const t = new Date();

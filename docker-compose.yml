@@ -38,8 +38,9 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-local}
       DATABASE_URL: ${DATABASE_URL}
-      DB_POOL_SIZE: ${DB_POOL_SIZE:-15}
-      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-15}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
       THREADPOOL_SIZE: ${THREADPOOL_SIZE:-40}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       TZ: ${TZ}

@@ -20,11 +20,27 @@ def send_birthday_wish():
         if not sender_id or not receiver_id or not message:
             return jsonify({"success": False, "error": "Missing required fields"}), 400
 
+        # Resolve sender: check by employee_id string first (e.g. "2150"), then fallback to primary key id
+        sender = Employee.query.filter(Employee.employee_id == str(sender_id)).first()
+        if not sender:
+            sender = Employee.query.get(sender_id)
+
+        # Resolve receiver: check by primary key id, fallback to employee_id string
+        receiver = Employee.query.get(receiver_id)
+        if not receiver:
+            receiver = Employee.query.filter(Employee.employee_id == str(receiver_id)).first()
+
+        if not sender or not receiver:
+            return jsonify({"success": False, "error": "Sender or Receiver not found"}), 404
+
+        actual_sender_id = sender.id
+        actual_receiver_id = receiver.id
+
         # One employee can send only one birthday wish per birthday (checked by date today)
         today_start = datetime.combine(date.today(), datetime.min.time())
         existing = BirthdayWish.query.filter(
-            BirthdayWish.sender_id == sender_id,
-            BirthdayWish.receiver_id == receiver_id,
+            BirthdayWish.sender_id == actual_sender_id,
+            BirthdayWish.receiver_id == actual_receiver_id,
             BirthdayWish.created_at >= today_start
         ).first()
 
@@ -32,21 +48,14 @@ def send_birthday_wish():
             return jsonify({"success": False, "error": "You have already sent birthday wishes today."}), 400
 
         wish = BirthdayWish(
-            sender_id=sender_id,
-            receiver_id=receiver_id,
+            sender_id=actual_sender_id,
+            receiver_id=actual_receiver_id,
             message=message,
             status="Sent",
             thanked=False
         )
         db.session.add(wish)
         db.session.flush() # populated wish.id
-
-        # Fetch sender and receiver employee records
-        sender = Employee.query.get(sender_id)
-        receiver = Employee.query.get(receiver_id)
-
-        if not sender or not receiver:
-            return jsonify({"success": False, "error": "Sender or Receiver not found"}), 404
 
         sender_full_name = f"{sender.first_name} {sender.last_name or ''}".strip()
         receiver_full_name = f"{receiver.first_name} {receiver.last_name or ''}".strip()

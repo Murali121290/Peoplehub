@@ -22,10 +22,6 @@ def register_socket_events(socketio):
 
     join_room(employee_id)
 
-    print(
-        f"Employee {employee_id} joined room"
-    )
-
     try:
         from models.employee import Employee
         from models.user import User
@@ -38,10 +34,8 @@ def register_socket_events(socketio):
                 
                 if access_level in ("manager", "team_lead", "service_manager", "lead") or "manager" in access_level or "lead" in access_level or "manager" in role_name or "lead" in role_name:
                     join_room("managers")
-                    print(f"Employee {employee_id} (Manager) joined 'managers' room")
                 else:
                     join_room("employees")
-                    print(f"Employee {employee_id} (Employee) joined 'employees' room")
     except Exception as e:
         print("Error joining role-based room:", str(e))
     finally:
@@ -62,10 +56,6 @@ def register_socket_events(socketio):
         f"manager_{manager_name}"
     )
 
-    print(
-        f"Manager {manager_name} joined room"
-    )
-
 
 # =====================================
 # JOIN EMPLOYEES ROOM
@@ -75,10 +65,6 @@ def register_socket_events(socketio):
   def join_employee(data):
 
     join_room("employees")
-
-    print(
-        "Employee joined employees room"
-    )
 
 
 # =====================================
@@ -90,9 +76,6 @@ def register_socket_events(socketio):
 
     join_room("managers")
 
-    print(
-        "Manager joined managers room"
-    )
 # =====================================
 # SEND PRIVATE MESSAGE
 # =====================================

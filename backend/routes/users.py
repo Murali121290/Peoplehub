@@ -70,7 +70,6 @@ def create_user():
     try:
         data = request.get_json()
 
-        print("REQUEST DATA:", data)
 
         required_fields = [
             'full_name',

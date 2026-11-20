@@ -17,7 +17,6 @@ def add_telecom():
 
         data = request.json
 
-        print("DATA RECEIVED:", data)
 
         telecom = TelecomDirectory(
         department_name=data["department_name"],
@@ -40,7 +39,6 @@ def add_telecom():
 
         db.session.rollback()
 
-        print("POST ERROR:", str(e))
 
         return jsonify({
             "success": False,
@@ -61,7 +59,6 @@ def get_telecoms():
 
     except Exception as e:
 
-        print("TELECOM ERROR:", e)
 
         return jsonify({
             "success": False,

@@ -254,7 +254,9 @@ def get_employee_holidays():
             "weekly_offs": standard_weekly_offs,
             "upcoming_holidays": upcoming_holidays,
             "published_holidays": published_list,
-            "overrides": [o.to_dict() for o in overrides]
+            "overrides": [o.to_dict() for o in overrides],
+            "all_overrides": [o.to_dict() for o in all_overrides],
+            "working_day_overrides": [o.date.strftime("%Y-%m-%d") for o in all_overrides if o.date and o.override_type == "Working Day"]
         }), 200
         
     except Exception as e:
