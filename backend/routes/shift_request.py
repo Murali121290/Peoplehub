@@ -102,26 +102,29 @@ def apply_shift():
         is_flexible_employee = bool(employee and emp_mode_str in ("flexible", "pm", "hybrid"))
         is_flexible_auto_approve = is_auto_approve_requested and is_flexible_employee
 
+        is_incoming_overtime_odw = (data.get("request_type") == "One Day Wages") and ("Overtime Compensation" in (data.get("reason") or "") or "Day(s) ODW" in (data.get("requested_shift") or ""))
+
         if employee:
-            overlapping_leave = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == employee.employee_id,
-                LeaveRequest.status == "Approved",
-                LeaveRequest.request_type == "Leave",
-                LeaveRequest.from_date <= req_to,
-                LeaveRequest.to_date >= req_from,
-                ((LeaveRequest.total_days > 0.5) | (LeaveRequest.total_days.is_(None)))
-            ).first()
-            
-            if overlapping_leave:
-                return jsonify({
-                    "success": False,
-                    "message": f"Cannot apply for shift change/WFH. You have an approved full-day leave from {overlapping_leave.from_date} to {overlapping_leave.to_date}."
-                }), 400
+            if not is_incoming_overtime_odw:
+                overlapping_leave = LeaveRequest.query.filter(
+                    LeaveRequest.employee_id == employee.employee_id,
+                    LeaveRequest.status == "Approved",
+                    LeaveRequest.request_type == "Leave",
+                    LeaveRequest.from_date <= req_to,
+                    LeaveRequest.to_date >= req_from,
+                    ((LeaveRequest.total_days > 0.5) | (LeaveRequest.total_days.is_(None)))
+                ).first()
+                
+                if overlapping_leave:
+                    return jsonify({
+                        "success": False,
+                        "message": f"Cannot apply for shift change/WFH. You have an approved full-day leave from {overlapping_leave.from_date} to {overlapping_leave.to_date}."
+                    }), 400
 
             # Check for existing approved Shift/WFH/Office requests in the date range
             if data.get("request_type") == "One Day Wages":
-                # For TODAY: An employee must have already checked in AND checked out before applying for One Day Wages
-                if req_from == ist_today or req_to == ist_today:
+                # For TODAY: An employee must have already checked in AND checked out before applying for standard One Day Wages
+                if (not is_incoming_overtime_odw) and (req_from == ist_today or req_to == ist_today):
                     resolved_user_id = employee.user_id if employee else emp_id
                     today_att = Attendance.query.filter_by(
                         user_id=resolved_user_id,
