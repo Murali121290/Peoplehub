@@ -1494,12 +1494,11 @@ def export_rankings_matrix():
             period_title = f"Monthly Report - {m_name} {cur_year}"
             period_label = f"Monthly_Report_{m_name}_{cur_year}"
 
-        # Calendar columns: dates within range (skip Sundays for clean reading)
+        # Calendar columns: include all dates within range so Sundays and weekoffs are visibly shown
         cur_d = start_date
         date_cols = []
         while cur_d <= end_date:
-            if cur_d.weekday() != 6:  # Skip Sundays
-                date_cols.append(cur_d.strftime("%Y-%m-%d"))
+            date_cols.append(cur_d.strftime("%Y-%m-%d"))
             cur_d += timedelta(days=1)
 
         # Scoping logic: accurately filter by employee_id and manager_id
@@ -1598,6 +1597,17 @@ def export_rankings_matrix():
         hols = Holiday.query.filter(Holiday.date >= start_date, Holiday.date <= end_date).all()
         holiday_dates = {h.date for h in hols}
 
+        # Calculate standard working days for this period (excludes weekoffs and company holidays)
+        # Weekoffs = Sundays + 2nd & 4th Saturdays
+        # This count is FIXED for everyone in this period (leaves do NOT reduce the working days denominator)
+        standard_working_days_list = []
+        _chk_d = start_date
+        while _chk_d <= end_date:
+            if not is_date_week_off(_chk_d) and _chk_d not in holiday_dates:
+                standard_working_days_list.append(_chk_d)
+            _chk_d += timedelta(days=1)
+        standard_working_days = max(len(standard_working_days_list), 1)
+
         user_ids = [e.user_id for e in employees if e.user_id]
         attendances = Attendance.query.filter(
             Attendance.user_id.in_(user_ids),
@@ -1618,6 +1628,12 @@ def export_rankings_matrix():
 
         for ke in eval_list:
             emp = emp_by_code.get(str(ke.employee_id))
+            # Exclude deactivated / inactive employees from export
+            if emp:
+                emp_st = str(getattr(emp, "status", "") or "").strip().lower()
+                if emp_st in ["inactive", "deactive", "deactivated", "resigned", "terminated"] or getattr(emp, "is_active", None) is False:
+                    continue
+
             emp_code = str(ke.employee_id)
             raw_team = (ke.team_name or "").strip()
             # Resolve canonical team name (avoid comma-separated aggregate manager bundle names like 'Editorial Services, Media, Qbend')
@@ -1660,17 +1676,22 @@ def export_rankings_matrix():
             present_days = 0.0
             absent_days = 0.0
             recorded_dates = set()
+            daily_att_status = {}
 
             for a in user_atts:
                 recorded_dates.add(a.attendance_date)
                 st = (a.status or "").strip().lower()
+                d_key = a.attendance_date.strftime("%Y-%m-%d")
                 if st == "present":
                     present_days += 1.0
+                    daily_att_status[d_key] = "Present"
                 elif st in ["half day", "half-day", "halfday"]:
                     present_days += 0.5
                     absent_days += 0.5
+                    daily_att_status[d_key] = "Half Day"
                 elif st in ["absent", "lop", "leave", "pl", "cl", "sl", "cl/sl"]:
                     absent_days += 1.0
+                    daily_att_status[d_key] = "Leave" if st in ["leave", "pl", "cl", "sl", "cl/sl"] else "Absent"
 
             # Approved leaves from LeaveRequest
             if emp:
@@ -1686,9 +1707,13 @@ def export_rankings_matrix():
                     end_l = min(l.to_date, end_date)
                     while cur_l <= end_l:
                         if cur_l not in holiday_dates and not is_date_week_off(cur_l):
+                            d_key = cur_l.strftime("%Y-%m-%d")
                             if cur_l not in recorded_dates:
                                 absent_days += float(l.total_days if l.from_date == l.to_date else 1.0)
                                 recorded_dates.add(cur_l)
+                                daily_att_status[d_key] = "Leave"
+                            elif d_key not in daily_att_status or daily_att_status[d_key] == "Absent":
+                                daily_att_status[d_key] = "Leave"
                         cur_l += timedelta(days=1)
 
             rep_mgr = (getattr(ke, 'reporting_manager', None) or (getattr(emp, 'reporting_manager', None) if emp else None) or "").strip()
@@ -1702,6 +1727,9 @@ def export_rankings_matrix():
                 "reporting_manager": rep_mgr,
                 "present_days": present_days,
                 "absent_days": absent_days,
+                "daily_att_status": daily_att_status,
+                "cadence_type": "daily",
+                "direct_eval_score": None,
                 "daily_scores": {},
             }
 
@@ -1712,6 +1740,12 @@ def export_rankings_matrix():
         # Aggregate daily scores from the evaluation records
         for ke in eval_list:
             emp = emp_by_code.get(str(ke.employee_id))
+            # Exclude deactivated / inactive employees from export
+            if emp:
+                emp_st = str(getattr(emp, "status", "") or "").strip().lower()
+                if emp_st in ["inactive", "deactive", "deactivated", "resigned", "terminated"] or getattr(emp, "is_active", None) is False:
+                    continue
+
             emp_code = str(ke.employee_id)
             raw_team = (ke.team_name or "").strip()
             if emp:
@@ -1747,7 +1781,8 @@ def export_rankings_matrix():
 
             # 1. Process daily_records (for daily cadence evaluations)
             daily_recs = m_data.get("daily_records", []) if isinstance(m_data, dict) else []
-            if isinstance(daily_recs, list):
+            if isinstance(daily_recs, list) and len(daily_recs) > 0:
+                emp_rec["cadence_type"] = "daily"
                 for d in daily_recs:
                     d_str = d.get("date")
                     if not d_str or d_str not in date_cols:
@@ -1766,7 +1801,8 @@ def export_rankings_matrix():
 
             # 2. Process weekly_records (for weekly cadence evaluations like Media & Qbend teams)
             weekly_recs = m_data.get("weekly_records", []) if isinstance(m_data, dict) else []
-            if isinstance(weekly_recs, list):
+            if isinstance(weekly_recs, list) and len(weekly_recs) > 0:
+                emp_rec["cadence_type"] = "weekly"
                 for w in weekly_recs:
                     w_start_str = w.get("startDate")
                     w_end_str = w.get("endDate")
@@ -1816,8 +1852,10 @@ def export_rankings_matrix():
                     is_appr = (st in ["manager_approved", "approved", "completed"]) or (mgr_sc is not None and float(mgr_sc) > 0)
                     is_subm = (st in ["submitted_to_manager", "submitted", "manager_review"]) or ("submit" in st)
 
+                    emp_rec["cadence_type"] = "periodic"
                     if is_appr:
                         period_val = round(float(mgr_sc if mgr_sc is not None else emp_sc or 0), 2)
+                        emp_rec["direct_eval_score"] = period_val
                     elif is_subm:
                         period_val = "Approval needed"
                     else:
@@ -1851,12 +1889,18 @@ def export_rankings_matrix():
         zebra_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
         not_filled_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
         approval_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+        weekoff_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+        absent_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+        leave_fill = PatternFill(start_color="E0F2FE", end_color="E0F2FE", fill_type="solid")
 
         header_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
         regular_font = Font(name="Calibri", size=10, bold=False, color="1E293B")
         score_bold_font = Font(name="Calibri", size=10, bold=True, color="0F766E")
         not_filled_font = Font(name="Calibri", size=9, bold=False, color="C00000")
         approval_font = Font(name="Calibri", size=9, bold=False, color="7F6000")
+        weekoff_font = Font(name="Calibri", size=9, bold=False, color="64748B")
+        absent_font = Font(name="Calibri", size=9, bold=True, color="B91C1C")
+        leave_font = Font(name="Calibri", size=9, bold=True, color="0369A1")
         total_font = Font(name="Calibri", size=10, bold=True, color="0F172A")
 
         thin_side = Side(border_style="thin", color="CBD5E1")
@@ -1881,7 +1925,15 @@ def export_rankings_matrix():
             bottom=Side(style="thin", color="E2E8F0")
         )
 
-        headers = ["S.No", "Department", "Team", "Emp Code", "Name Of the Employee"] + date_cols + ["Score", "Composite Score", "Present Days", "Absent Days"]
+        def format_date_header(d_str):
+            try:
+                dt = date.fromisoformat(d_str)
+                return dt.strftime("%d-%m-%Y")
+            except Exception:
+                return d_str
+
+        formatted_date_headers = [format_date_header(d) for d in date_cols]
+        headers = ["S.No", "Department", "Team", "Emp Code", "Name Of the Employee"] + formatted_date_headers + ["Score", "Composite Score", "Present Days", "Absent Days"]
 
         # Filter by selected_team_param or selected_manager_param
         teams_to_export = {}
@@ -1917,8 +1969,28 @@ def export_rankings_matrix():
         all_evaluated_members = []
         for t_k, m_list in emp_records_by_team.items():
             for m in m_list:
-                num_scs = [v for v in m["daily_scores"].values() if isinstance(v, (int, float))]
-                avg_sc = (sum(num_scs) / len(num_scs)) if num_scs else -1.0
+                # Sum the score earned on working days (excluding week-offs, holidays, and leaves)
+                num_scs = []
+                for d_str, v in m["daily_scores"].items():
+                    if not isinstance(v, (int, float)):
+                        continue
+                    dt = None
+                    try:
+                        dt = date.fromisoformat(d_str)
+                    except Exception:
+                        pass
+                    # Skip week-offs, holidays, leaves, and absences from being counted as score
+                    if dt and (is_date_week_off(dt) or dt in holiday_dates):
+                        continue
+                    att_st = (m.get("daily_att_status") or {}).get(d_str)
+                    if att_st in ["Leave", "Absent"]:
+                        continue
+                    num_scs.append(float(v))
+
+                # Formula: Total score on present working days divided by standard month working days
+                # e.g. Vignesh: 22 days worked * 100 = 2200 / 23 working days = 95.65%
+                avg_sc = round((sum(num_scs) / standard_working_days), 2) if num_scs else -1.0
+
                 m["calc_avg_score"] = avg_sc
                 abs_cnt = float(m.get("absent_days", 0.0))
                 m["perf_composite_score"] = round(avg_sc - (abs_cnt * 0.5), 3) if avg_sc >= 0 else -999.0
@@ -2121,8 +2193,28 @@ def export_rankings_matrix():
             # Net Performance Score = Average Score - (Absent Days * 0.5)
             # This ensures consistent high attendance (0 absent days) ranks above equal/near-equal scores with absences!
             for m in members:
-                num_scs = [v for v in m["daily_scores"].values() if isinstance(v, (int, float))]
-                avg_sc = (sum(num_scs) / len(num_scs)) if num_scs else -1.0
+                # Sum the score earned on working days (excluding week-offs, holidays, and leaves)
+                num_scs = []
+                for d_str, v in m["daily_scores"].items():
+                    if not isinstance(v, (int, float)):
+                        continue
+                    dt = None
+                    try:
+                        dt = date.fromisoformat(d_str)
+                    except Exception:
+                        pass
+                    # Skip week-offs, holidays, leaves, and absences from being counted as score
+                    if dt and (is_date_week_off(dt) or dt in holiday_dates):
+                        continue
+                    att_st = (m.get("daily_att_status") or {}).get(d_str)
+                    if att_st in ["Leave", "Absent"]:
+                        continue
+                    num_scs.append(float(v))
+
+                # Formula: Total score on present working days divided by standard month working days
+                # e.g. Vignesh: 22 days worked * 100 = 2200 / 23 working days = 95.65%
+                avg_sc = round((sum(num_scs) / standard_working_days), 2) if num_scs else -1.0
+
                 m["calc_avg_score"] = avg_sc
                 abs_cnt = float(m.get("absent_days", 0.0))
                 # Attendance penalty: 0.5 mark deduction per absent day for composite ranking
@@ -2179,7 +2271,40 @@ def export_rankings_matrix():
                     cell = ws.cell(row_idx, d_idx)
                     cell.border = data_border
 
-                    if isinstance(val, (int, float)):
+                    # Check attendance and calendar status for this date
+                    dt_obj = None
+                    try:
+                        dt_obj = date.fromisoformat(d_str)
+                    except Exception:
+                        pass
+
+                    is_wkoff = is_date_week_off(dt_obj) if dt_obj else False
+                    is_hldy = (dt_obj in holiday_dates) if dt_obj else False
+                    att_status = (emp.get("daily_att_status") or {}).get(d_str)
+
+                    # Non-working days and absences have HIGHEST visual priority:
+                    # They must NEVER be overwritten with score numbers!
+                    if is_hldy:
+                        cell.value = "Holiday"
+                        cell.fill = weekoff_fill
+                        cell.font = weekoff_font
+                        cell.alignment = center_align
+                    elif is_wkoff:
+                        cell.value = "Week Off"
+                        cell.fill = weekoff_fill
+                        cell.font = weekoff_font
+                        cell.alignment = center_align
+                    elif att_status == "Leave":
+                        cell.value = "Leave"
+                        cell.fill = leave_fill
+                        cell.font = leave_font
+                        cell.alignment = center_align
+                    elif att_status == "Absent":
+                        cell.value = "Absent"
+                        cell.fill = absent_fill
+                        cell.font = absent_font
+                        cell.alignment = center_align
+                    elif isinstance(val, (int, float)):
                         cell.value = float(val)
                         cell.font = regular_font
                         cell.alignment = center_align
@@ -2219,7 +2344,9 @@ def export_rankings_matrix():
                     comp_cell.fill = row_fill
 
                 if numeric_scores:
-                    emp_avg = round(sum(numeric_scores) / len(numeric_scores), 2)
+                    # Formula: Total earned scores on present working days divided by standard working days
+                    # e.g. Vignesh E: 22 days present * 100 = 2200 / 23 standard working days = 95.65%
+                    emp_avg = round(sum(numeric_scores) / standard_working_days, 2)
                     avg_cell.value = f"{emp_avg}%"
                     avg_cell.font = score_bold_font
                     avg_cell.alignment = center_align
@@ -2547,6 +2674,13 @@ def _build_and_cache_evaluation_data(cache_key: str):
         # 1. Dynamically build and maintain cycles directly from PostgreSQL KpiEvaluation records
         team_eval_groups = {}
         for rec in eval_records:
+            emp_id = str(rec.employee_id or "").strip()
+            emp_obj = emp_by_code.get(emp_id)
+            if emp_obj:
+                emp_st = str(getattr(emp_obj, "status", "") or "").strip().lower()
+                if emp_st in ["inactive", "deactive", "deactivated", "resigned", "terminated"] or getattr(emp_obj, "is_active", None) is False:
+                    continue
+
             t_key = rec.team_name or rec.team_id or "General"
             f_name = rec.form or "Performance Evaluation"
             f_date_str = rec.from_date.isoformat() if rec.from_date else ""
@@ -2582,7 +2716,6 @@ def _build_and_cache_evaluation_data(cache_key: str):
             elif extracted_period and not team_eval_groups[group_key].get("periodName"):
                 team_eval_groups[group_key]["periodName"] = extracted_period
 
-            emp_id = str(rec.employee_id or "").strip()
             if emp_id and emp_id not in team_eval_groups[group_key]["employeeIds"]:
                 team_eval_groups[group_key]["employeeIds"].append(emp_id)
 
@@ -2672,6 +2805,12 @@ def _build_and_cache_evaluation_data(cache_key: str):
             for rec in eval_records:
                 emp_id = str(rec.employee_id or "")
                 emp_obj = emp_by_code.get(emp_id)
+                # Exclude deactivated / inactive employees
+                if emp_obj:
+                    emp_st = str(getattr(emp_obj, "status", "") or "").strip().lower()
+                    if emp_st in ["inactive", "deactive", "deactivated", "resigned", "terminated"] or getattr(emp_obj, "is_active", None) is False:
+                        continue
+
                 actual_code = emp_obj.employee_id if emp_obj and emp_obj.employee_id else emp_id
                 resolved_team = rec.team_name or rec.team_id or (emp_obj.department if emp_obj else None) or (getattr(emp_obj, "team", None) if emp_obj else None) or "Media"
                 resolved_name = rec.employee_name or (f"{emp_obj.first_name} {emp_obj.last_name}" if emp_obj else f"Employee #{actual_code}")

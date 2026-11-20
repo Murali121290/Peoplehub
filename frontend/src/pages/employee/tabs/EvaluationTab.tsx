@@ -1180,6 +1180,49 @@ export const EvaluationTab: React.FC = () => {
     }
   };
 
+  const isDateWeekOff = (dt: Date): boolean => {
+    try {
+      const day = dt.getDay();
+      if (day === 0) return true;
+      if (day === 6) {
+        const satCount = Math.ceil(dt.getDate() / 7);
+        return satCount === 2 || satCount === 4;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const isDateHoliday = (dateStr: string, holidays: any[] = dbHolidays): boolean => {
+    if (!dateStr) return false;
+    return (holidays || []).some((h: any) => {
+      const hDate = (h.date || h.holiday_date || h.start_date || '').split('T')[0];
+      if (hDate !== dateStr) return false;
+      const holType = String(h.holiday_type || h.type || '').trim().toLowerCase();
+      const holName = String(h.name || h.holiday_name || '').trim().toLowerCase();
+      // Exclude Weekly Offs (Sundays, 2nd/4th Saturdays) - these are Week Offs, not Company Holidays
+      if (holType.includes('weekly off') || holType.includes('week off') || holName.includes('weekly off')) {
+        return false;
+      }
+      return Boolean(h.is_holiday || holType.includes('holiday') || h.holiday_name);
+    });
+  };
+
+  const isDateApprovedLeaveForEmp = (dateStr: string, empCode: string, leaves: any[] = dbApprovedLeaves): boolean => {
+    if (!dateStr || !empCode) return false;
+    const cleanEmp = String(empCode).trim().toLowerCase();
+    return (leaves || []).some((l: any) => {
+      if (l.status !== 'Approved') return false;
+      const lEmp = String(l.employee_id || l.employeeId || l.emp_id || '').trim().toLowerCase();
+      if (lEmp && lEmp !== cleanEmp) return false;
+      const from = (l.from_date || l.startDate || '').split('T')[0];
+      const to = (l.to_date || l.endDate || l.from_date || '').split('T')[0];
+      if (!from) return false;
+      return dateStr >= from && dateStr <= to;
+    });
+  };
+
   const syncPeriodAndFormName = (
     pType = mgrPeriodType,
     pQuarter = mgrPeriodQuarter,
@@ -7145,7 +7188,8 @@ export const EvaluationTab: React.FC = () => {
    */
   const getYearlyDailyLockInfo = (
     dayIndex: number,
-    dailyRecords: YearlyDailyRecord[] = []
+    dailyRecords: YearlyDailyRecord[] = [],
+    empCodeOverride?: string
   ) => {
     const todayStr = getLocalTodayDateString();
     const curRec = dailyRecords.find(d => d.dayIndex === dayIndex);
@@ -7157,12 +7201,29 @@ export const EvaluationTab: React.FC = () => {
     const isFutureDay = Boolean(curRec?.date && curRec.date > todayStr);
     const isCurrentActiveDay = Boolean(curRec?.date && curRec.date === todayStr);
 
+    let isWkOff = false;
+    let isHldy = false;
+    let isLve = false;
+    if (curRec?.date) {
+      try {
+        const dt = new Date(curRec.date + 'T00:00:00');
+        isWkOff = isDateWeekOff(dt);
+        isHldy = isDateHoliday(curRec.date, dbHolidays);
+        const targetEmp = empCodeOverride || String(currentDbUser?.employee_id || rawUserCode || user?.employee_id || '').trim();
+        isLve = isDateApprovedLeaveForEmp(curRec.date, targetEmp, dbApprovedLeaves);
+      } catch (_) { }
+    }
+
     if (isApproved) {
       return {
         isLocked: false,
         isApproved: true,
         isSubmitted: false,
         isEditable: false,
+        isWeekOff: isWkOff,
+        isHoliday: isHldy,
+        isLeave: isLve,
+        isNonWorking: isWkOff || isHldy || isLve,
         status: 'manager_approved' as const,
         statusLabel: 'Approved',
         currentDayLabel,
@@ -7176,6 +7237,10 @@ export const EvaluationTab: React.FC = () => {
         isApproved: false,
         isSubmitted: true,
         isEditable: false,
+        isWeekOff: isWkOff,
+        isHoliday: isHldy,
+        isLeave: isLve,
+        isNonWorking: isWkOff || isHldy || isLve,
         status: 'submitted_to_manager' as const,
         statusLabel: 'Submitted for Review',
         currentDayLabel,
@@ -7189,9 +7254,32 @@ export const EvaluationTab: React.FC = () => {
         isApproved: false,
         isSubmitted: false,
         isEditable: false,
+        isWeekOff: isWkOff,
+        isHoliday: isHldy,
+        isLeave: isLve,
+        isNonWorking: isWkOff || isHldy || isLve,
         status: 'locked' as const,
         statusLabel: 'Upcoming',
         lockReason: `${currentDayLabel} milestone is scheduled for the future and will unlock on ${curRec?.date}.`,
+        currentDayLabel,
+        score: null
+      };
+    }
+
+    if (isWkOff || isHldy || isLve) {
+      const nonWorkReason = isWkOff ? 'Weekly Off' : (isHldy ? 'Company Holiday' : 'Approved Leave');
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        isWeekOff: isWkOff,
+        isHoliday: isHldy,
+        isLeave: isLve,
+        isNonWorking: true,
+        status: 'locked' as const,
+        statusLabel: nonWorkReason,
+        lockReason: `${currentDayLabel} is a scheduled ${nonWorkReason}. Daily deliverables are not required to be filled.`,
         currentDayLabel,
         score: null
       };
@@ -7202,6 +7290,10 @@ export const EvaluationTab: React.FC = () => {
       isApproved: false,
       isSubmitted: false,
       isEditable: true,
+      isWeekOff: false,
+      isHoliday: false,
+      isLeave: false,
+      isNonWorking: false,
       status: 'pending_employee' as const,
       statusLabel: isCurrentActiveDay ? 'Current Active Day' : 'Past Period (Open)',
       currentDayLabel,
@@ -8878,6 +8970,14 @@ export const EvaluationTab: React.FC = () => {
       const { employeeCode, employeeName, empInDb } = getEmployeeDisplayInfo(r);
       // Filter out orphan/ghost responses with no name
       if (!empInDb && !employeeName) return;
+
+      // Filter out deactivated / inactive employees
+      if (empInDb) {
+        const empStatus = String(empInDb.status || '').trim().toLowerCase();
+        if (empStatus === 'inactive' || empStatus === 'deactive' || empStatus === 'deactivated' || empStatus === 'resigned' || empStatus === 'terminated' || empInDb.is_active === false) {
+          return;
+        }
+      }
 
       // Filter out logged in user's own response
       if (isResponseForUser(r)) return;
@@ -14340,8 +14440,11 @@ export const EvaluationTab: React.FC = () => {
                                     let badgeStr = '';
                                     if (dLockInfo.isApproved) badgeStr = `✅ Approved (${dLockInfo.score != null ? `${dLockInfo.score}%` : ''})`;
                                     else if (dLockInfo.isSubmitted) badgeStr = '⏳ Under Review';
-                                    else if (dLockInfo.isLocked) badgeStr = '🔒 Locked (Future)';
                                     else if (isToday) badgeStr = '🟢 Today (Active)';
+                                    else if (dLockInfo.isWeekOff) badgeStr = 'Week Off';
+                                    else if (dLockInfo.isHoliday) badgeStr = 'Holiday';
+                                    else if (dLockInfo.isLeave) badgeStr = 'Leave';
+                                    else if (dLockInfo.isLocked) badgeStr = '🔒 Locked (Future)';
                                     else badgeStr = '📄 Open';
 
                                     return (
@@ -15044,6 +15147,15 @@ export const EvaluationTab: React.FC = () => {
                         const isLocked = isYearly ? !lockInfo?.isEditable : isEmpSubmitted;
 
                         if (isLocked) {
+                          const dailyLock = isDaily ? (lockInfo as any) : null;
+                          const lockBadgeLabel = dailyLock?.isWeekOff
+                            ? 'Week Off'
+                            : dailyLock?.isHoliday
+                              ? 'Holiday'
+                              : dailyLock?.isLeave
+                                ? 'Leave'
+                                : (isYearly ? 'Locked' : 'Locked');
+
                           return (
                             <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border ${isYearly && lockInfo?.isLocked
                               ? 'text-slate-700 bg-slate-100 border-slate-200'
@@ -15054,7 +15166,7 @@ export const EvaluationTab: React.FC = () => {
                               {isYearly && lockInfo?.isLocked ? (
                                 <>
                                   <LockClosedIcon className="w-3 h-3 text-slate-500" />
-                                  Locked
+                                  {lockBadgeLabel}
                                 </>
                               ) : isYearly && lockInfo?.isSubmitted ? (
                                 <>
@@ -21594,10 +21706,13 @@ export const EvaluationTab: React.FC = () => {
                                   className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                                 >
                                   {displayedDays.map(d => {
-                                    const dLock = getYearlyDailyLockInfo(d.dayIndex, curDailyRecords);
+                                    const dLock = getYearlyDailyLockInfo(d.dayIndex, curDailyRecords, employeeCode);
                                     let badgeStr = '';
                                     if (d.status === 'manager_approved') badgeStr = `✅ Approved (${d.managerScore != null ? `${d.managerScore}%` : ''})`;
                                     else if (d.status === 'submitted_to_manager') badgeStr = '⚡ Submitted by Employee (Needs Review)';
+                                    else if (dLock.isWeekOff) badgeStr = 'Week Off';
+                                    else if (dLock.isHoliday) badgeStr = 'Holiday';
+                                    else if (dLock.isLeave) badgeStr = 'Leave';
                                     else if (dLock.isLocked) badgeStr = '🔒 Locked (Future)';
                                     else badgeStr = '📄 Open';
 

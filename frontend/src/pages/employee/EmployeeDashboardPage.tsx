@@ -858,7 +858,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
         const targetWorkMode = directMode || (wantsToChangeMode ? "WFH" : (currentEmployee?.work_mode || "Flexible"));
 
         const payload = {
-          employee_id: currentEmployee.employee_id || currentEmployee.id,
+          employee_id: currentEmployee.employee_id,
           employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
           current_shift: todayActiveShift || targetShift,
           requested_shift: targetShift,
@@ -927,7 +927,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
         const todayStr = new Date().toLocaleDateString("en-CA");
 
         const payload = {
-          employee_id: currentEmployee.employee_id || currentEmployee.id,
+          employee_id: currentEmployee.employee_id,
           employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
           current_shift: todayActiveShift,
           requested_shift: targetShift,
@@ -1031,7 +1031,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
       const myIds = [
         ...myEvalEmpIds,
-        clean(currentDbUser?.id),
+        clean(currentDbUser?.employee_id),
+        clean(currentEmployee?.employee_id),
         clean((user as any)?.id),
         clean(localStorage.getItem("user_id")),
       ].filter(Boolean);
@@ -1371,14 +1372,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const isApprovedLeaveDay = (dateStr: string): boolean => {
         if (!leaveRequests.length) return false;
         const dateObj = new Date(dateStr);
-        const empIdStr = String(currentEmployee?.id || '');
         const empCodeStr = String(currentEmployee?.employee_id || '');
         return leaveRequests.some((leave: any) => {
           if (leave.status !== 'Approved') return false;
           if (leave.request_type !== 'Leave') return false;
           if (isHalfDayLeave(leave.total_days)) return false;
           const leaveEmpId = String(leave.employee_id || '');
-          if (leaveEmpId !== empIdStr && leaveEmpId !== empCodeStr) return false;
+          if (leaveEmpId !== empCodeStr) return false;
           if (!leave.from_date || !leave.to_date) return false;
           const from = new Date(leave.from_date);
           const to = new Date(leave.to_date);
@@ -1574,9 +1574,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
           const isTodayWeekend = todayDay === 0 || todayDay === 6;
           const isTodayLeaveOrHoliday = isApprovedLeaveOrHoliday(todayStr);
 
-          // If employee checked in today, daily evaluation is required upon checkout even on Saturdays, rest days, or holidays.
-          // Otherwise, if they did not check in, week-offs (Sundays/Saturdays) and leaves/holidays remain exempt.
-          const isExempt = (isTodayWeekend || isTodayLeaveOrHoliday) && !isCheckedIn;
+          // Week-off (Sat/Sun) and Holiday Checkout: If working on a week-off or holiday,
+          // never restrict or block checkout with evaluation requirements.
+          const isExempt = isTodayWeekend || isTodayLeaveOrHoliday;
 
           if (!isExempt) {
             const respStatus = String(resp.status || '').toLowerCase().trim();
@@ -1611,7 +1611,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                 type: 'employee_eval' as const,
                 periodName: `${periodName} (${dayLabel})`,
                 dueDateText: 'Daily Evaluation Due Today',
-                canCheckOutAnyway: false, // Strict block: cannot checkout until today's daily metrics are completed
+                canCheckOutAnyway: false, // Strict block on normal working days: cannot checkout until today's daily metrics are completed
                 isPreWeekoff: isPreWeekoff || isPreLeaveDay,
               };
             }
