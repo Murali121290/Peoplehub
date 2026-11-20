@@ -144,19 +144,64 @@ def apply_shift():
                             "message": "You are currently checked in. Please check out at the end of your shift before applying for One Day Wages."
                         }), 400
 
-                existing_odw = ShiftRequest.query.filter(
+                # Check for existing One Day Wages request for these dates
+                # Distinguish between Overtime ODW Benefit (covers whole cycle) and standard Single-Day Weekend/Holiday ODW
+                is_incoming_overtime_odw = "Overtime Compensation" in (data.get("reason") or "") or "Day(s) ODW" in (data.get("requested_shift") or "")
+                
+                existing_odw_all = ShiftRequest.query.filter(
                     ShiftRequest.employee_id.in_([employee.employee_id, employee.id]),
                     ShiftRequest.request_type == "One Day Wages",
                     ShiftRequest.status.in_(["Pending", "Approved"]),
                     ShiftRequest.from_date <= req_to,
                     ShiftRequest.to_date >= req_from
-                ).first()
-                if existing_odw:
-                    status_str = existing_odw.status.lower()
-                    return jsonify({
-                        "success": False,
-                        "message": f"You already have a {existing_odw.status} One Day Wages request for {existing_odw.from_date}. You cannot submit another request for the same date."
-                    }), 400
+                ).all()
+
+                for existing_odw in existing_odw_all:
+                    is_existing_overtime = "Overtime Compensation" in (existing_odw.reason or "") or "Day(s) ODW" in (existing_odw.requested_shift or "")
+                    
+                    if is_incoming_overtime_odw:
+                        if is_existing_overtime:
+                            if existing_odw.status == "Pending":
+                                return jsonify({
+                                    "success": False,
+                                    "message": f"You already have a Pending Overtime Compensation claim for this payroll cycle ({existing_odw.from_date} to {existing_odw.to_date}). Please wait for your manager to review it."
+                                }), 400
+                            elif existing_odw.status == "Approved":
+                                # Check if any of the incoming selected dates were already approved
+                                import re
+                                already_approved_ot_dates = set(re.findall(r'\b\d{4}-\d{2}-\d{2}\b', existing_odw.reason or ''))
+                                incoming_dates = set(re.findall(r'\b\d{4}-\d{2}-\d{2}\b', data.get("reason") or ''))
+                                overlapping_approved = incoming_dates.intersection(already_approved_ot_dates)
+                                if overlapping_approved:
+                                    return jsonify({
+                                        "success": False,
+                                        "message": f"The date(s) {', '.join(sorted(overlapping_approved))} are already approved under an earlier Overtime ODW claim. You can only apply for new, unapproved 12-hour dates."
+                                    }), 400
+                    else:
+                        # Standard single-day weekend/holiday ODW application
+                        if not is_existing_overtime:
+                            # Conflict with another standard ODW on the same date
+                            return jsonify({
+                                "success": False,
+                                "message": f"You already have a {existing_odw.status} One Day Wages request for {existing_odw.from_date}. You cannot submit another request for the same date."
+                            }), 400
+                        else:
+                            # It's an Overtime ODW benefit - check if this specific date was approved/claimed as a 12-hour day
+                            import re
+                            ot_dates = set(re.findall(r'\b\d{4}-\d{2}-\d{2}\b', existing_odw.reason or ''))
+                            # Check if req_from or req_to matches any of the approved 12-hour overtime dates
+                            curr = req_from
+                            has_conflict = False
+                            while curr <= req_to:
+                                if str(curr) in ot_dates:
+                                    has_conflict = True
+                                    break
+                                curr += timedelta(days=1)
+                            if has_conflict:
+                                return jsonify({
+                                    "success": False,
+                                    "message": f"The date {curr} is already approved/credited under Overtime ODW Compensation ({existing_odw.status}). You cannot claim weekend/holiday One Day Wages for this date."
+                                }), 400
             else:
                 new_req_type = data.get("request_type")
                 if new_req_type == "Shift":
@@ -449,6 +494,9 @@ def get_shift_approvals(manager_name):
 def cleanup_attendance_for_rejected_or_cancelled_wages(shift_request):
     if shift_request.request_type != "One Day Wages":
         return
+    # If this is an Overtime Compensation ODW benefit, attendance remains intact Present
+    if "Overtime Compensation" in (shift_request.reason or "") or "Day(s) ODW" in (shift_request.requested_shift or ""):
+        return
 
     emp_code = str(shift_request.employee_id).strip()
     employee = Employee.query.filter(Employee.employee_id == emp_code).first()
@@ -526,7 +574,10 @@ def approve_shift(id):
         end_date = shift.to_date or start_date
 
         if shift.request_type == "One Day Wages":
-            if start_date:
+            # If this is an Overtime Compensation ODW benefit (12-hour tiered policy),
+            # DO NOT overwrite or modify daily attendance records - attendance remains Present!
+            is_overtime_odw = "Overtime Compensation" in (shift.reason or "") or "Day(s) ODW" in (shift.requested_shift or "")
+            if not is_overtime_odw and start_date:
                 current_date = start_date
                 while current_date <= end_date:
                     attendance = Attendance.query.filter_by(
@@ -590,6 +641,14 @@ def approve_shift(id):
                                 attendance.status = "Present"
 
                     current_date += timedelta(days=1)
+
+        # If manager customized approved days/shift in payload
+        from utils.compat import request
+        payload = request.get_json(silent=True) or {}
+        if payload.get("approved_shift"):
+            shift.requested_shift = payload.get("approved_shift")
+        if payload.get("approved_reason"):
+            shift.reason = payload.get("approved_reason")
 
         shift.status = "Approved"
         shift.approved_by = shift.reporting_manager or "Manager"
@@ -850,6 +909,95 @@ def delete_request(id):
 # ==========================================
 # GET SHIFT OPTIONS
 # ==========================================
+@shift_bp.route("/<int:id>/overtime-days", methods=["GET"])
+def get_shift_overtime_days(id):
+    """
+    Returns breakdown of 12-hour days associated with an Overtime ODW shift request.
+    Extracts dates from shift.reason or queries attendance records between cycle dates.
+    """
+    try:
+        import re
+        from datetime import datetime
+        from models.attendance import Attendance
+        from models.employee import Employee
+
+        shift = ShiftRequest.query.get(id)
+        if not shift:
+            return jsonify({"success": False, "message": "Request not found"}), 404
+
+        emp_code = str(shift.employee_id).strip()
+        employee = Employee.query.filter(Employee.employee_id == emp_code).first()
+        if not employee:
+            try:
+                employee = Employee.query.get(int(emp_code))
+            except (ValueError, TypeError):
+                pass
+
+        resolved_user_id = employee.user_id if employee else None
+
+        # Try to extract explicit dates from reason: (YYYY-MM-DD, ...) in payroll cycle
+        reason_text = shift.reason or ''
+        paren_match = re.search(r'\(([\d\-,\s]+)\)\s+in\s+payroll\s+cycle', reason_text)
+        if paren_match:
+            matched_dates = [d.strip() for d in paren_match.group(1).split(',') if d.strip()]
+        else:
+            all_found = re.findall(r'\b\d{4}-\d{2}-\d{2}\b', reason_text)
+            matched_dates = all_found[:-2] if len(all_found) > 2 else all_found
+        # If dates are in the reason, fetch attendance for those specific dates
+        records = []
+        if resolved_user_id and matched_dates:
+            from datetime import date
+            parsed_dates = []
+            for ds in matched_dates:
+                try:
+                    parsed_dates.append(datetime.strptime(ds, "%Y-%m-%d").date())
+                except Exception:
+                    pass
+            if parsed_dates:
+                records = Attendance.query.filter(
+                    Attendance.user_id == resolved_user_id,
+                    Attendance.attendance_date.in_(parsed_dates)
+                ).order_by(Attendance.attendance_date.asc()).all()
+        elif resolved_user_id and shift.from_date and shift.to_date:
+            # Fallback to query cycle records >= 12.0 hours
+            records = Attendance.query.filter(
+                Attendance.user_id == resolved_user_id,
+                Attendance.attendance_date >= shift.from_date,
+                Attendance.attendance_date <= shift.to_date,
+                Attendance.total_hours >= 12.0
+            ).order_by(Attendance.attendance_date.asc()).all()
+
+        days_list = []
+        for att in records:
+            ci = att.check_in.strftime("%I:%M %p") if att.check_in else ""
+            co = att.check_out.strftime("%I:%M %p") if att.check_out else ""
+            hrs = round(att.total_hours or 0.0, 2)
+            days_list.append({
+                "date": str(att.attendance_date),
+                "total_hours": hrs,
+                "check_in": ci,
+                "check_out": co,
+                "status": att.status or "Present"
+            })
+
+        return jsonify({
+            "success": True,
+            "request_id": shift.id,
+            "employee_id": shift.employee_id,
+            "employee_name": shift.employee_name,
+            "requested_shift": shift.requested_shift,
+            "reason": shift.reason,
+            "status": shift.status,
+            "from_date": str(shift.from_date) if shift.from_date else None,
+            "to_date": str(shift.to_date) if shift.to_date else None,
+            "days_count": len(days_list),
+            "days": days_list
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @shift_bp.route("/options", methods=["GET"])
 def get_shift_options():
     try:
@@ -913,6 +1061,7 @@ def get_effective_shift_today(employee_id):
         approved_request = ShiftRequest.query.filter(
             ShiftRequest.employee_id == emp.employee_id,
             ShiftRequest.status == "Approved",
+            ShiftRequest.request_type.in_(["Shift", "WFH", "Office"]),
             ShiftRequest.from_date <= today,
             ShiftRequest.to_date >= today
         ).order_by(ShiftRequest.created_at.desc()).first()

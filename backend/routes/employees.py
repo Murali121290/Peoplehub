@@ -2117,13 +2117,31 @@ def get_reporting_employees(user_id):
 
             # Check if there is an approved or pending one day wages request for this date (pick latest)
             from models.shift_request import ShiftRequest
-            wages_req = ShiftRequest.query.filter(
+            import re
+            wages_candidates = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.from_date <= date_to_check,
                 ShiftRequest.to_date >= date_to_check
-            ).order_by(ShiftRequest.id.desc()).first()
+            ).order_by(ShiftRequest.id.desc()).all()
+
+            wages_req = None
+            is_ot_wage = False
+            for w in wages_candidates:
+                is_ot = "Overtime Compensation" in (w.reason or "") or "Day(s) ODW" in (w.requested_shift or "")
+                if is_ot:
+                    ot_dates = set(re.findall(r'\b\d{4}-\d{2}-\d{2}\b', w.reason or ''))
+                    if str(date_to_check) in ot_dates:
+                        wages_req = w
+                        is_ot_wage = True
+                        break
+                else:
+                    wages_req = w
+                    is_ot_wage = False
+                    break
+
             wages_status = wages_req.status if wages_req else None
+            wages_type = "overtime" if is_ot_wage else ("standard" if wages_req else None)
             is_one_day_wages_final = (wages_req is not None and wages_req.status == "Approved")
 
             # Effective Work Mode check (PM mode support)
@@ -2387,6 +2405,9 @@ def get_reporting_employees(user_id):
 
                 "wages_status":
                     wages_status,
+
+                "wages_type":
+                    wages_type,
 
                 "leave_details": [
                     {

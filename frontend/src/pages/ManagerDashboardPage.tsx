@@ -3186,24 +3186,45 @@ const ManagerDashboardPage = () => {
                                   );
                                 })}
                                 {record.is_one_day_wages && record.wages_status && (
-                                  <span
-                                    title={`One Day Wages: ${record.wages_status}`}
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "4px",
-                                      padding: "2px 8px",
-                                      borderRadius: "999px",
-                                      background: record.wages_status === "Approved" ? "#fef3c7" : "#f9fafb",
-                                      border: `1px solid ${record.wages_status === "Approved" ? "#fbbf24" : "#e2e8f0"}`,
-                                      color: record.wages_status === "Approved" ? "#92400e" : "#64748b",
-                                      fontSize: "10px",
-                                      fontWeight: 800,
-                                      whiteSpace: "nowrap",
-                                    }}
-                                  >
-                                    ⭐ ODW: {record.wages_status}
-                                  </span>
+                                  record.wages_type === "overtime" ? (
+                                    <span
+                                      title="12+ Hours Overtime Day (Approved Compensation)"
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        padding: "2px 8px",
+                                        borderRadius: "999px",
+                                        background: "#ecfdf5",
+                                        border: "1px solid #6ee7b7",
+                                        color: "#065f46",
+                                        fontSize: "10px",
+                                        fontWeight: 800,
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      ✨ Overtime ODW: {record.wages_status}
+                                    </span>
+                                  ) : (
+                                    <span
+                                      title={`One Day Wages: ${record.wages_status}`}
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        padding: "2px 8px",
+                                        borderRadius: "999px",
+                                        background: record.wages_status === "Approved" ? "#fef3c7" : "#f9fafb",
+                                        border: `1px solid ${record.wages_status === "Approved" ? "#fbbf24" : "#e2e8f0"}`,
+                                        color: record.wages_status === "Approved" ? "#92400e" : "#64748b",
+                                        fontSize: "10px",
+                                        fontWeight: 800,
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      ⭐ ODW: {record.wages_status}
+                                    </span>
+                                  )
                                 )}
                                 {record.has_permission && (
                                   <span
