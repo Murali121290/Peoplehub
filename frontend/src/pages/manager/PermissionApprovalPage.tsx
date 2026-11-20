@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 import { BookLoader } from "../../components/ui/Spinner";
 import { formatDateStr } from "../../utils/date";
 import { generateFinancialYears, generateCyclesForYear, getCurrentCycleValue } from "../../utils/cycle";
+import { getEmployees } from "../../services/employeesCache";
 const BASE_URL = `${API_URL}/api`;
 
 const formatDateTime = (isoString: string | null | undefined) => {
@@ -81,22 +82,16 @@ const PermissionApprovalPage: React.FC = () => {
   const fetchLeaves = async () => {
     try {
       setLoading(true);
-      const [leavesRes, empRes] = await Promise.all([
+      const [leavesRes, empData] = await Promise.all([
         fetch(`${BASE_URL}/leaves/`, {
           headers: { "Authorization": `Bearer ${token}` }
         }),
-        fetch(`${BASE_URL}/employees/`, {
-          headers: { "Authorization": `Bearer ${token}` }
-        })
+        getEmployees()
       ]);
       if (!leavesRes.ok) throw new Error("Failed to load leaves");
       const leavesData = await leavesRes.json();
       setLeaveRequests(Array.isArray(leavesData) ? leavesData : []);
-
-      if (empRes.ok) {
-        const empData = await empRes.json();
-        setEmployees(Array.isArray(empData) ? empData : []);
-      }
+      setEmployees(Array.isArray(empData) ? empData : []);
     } catch (error) {
       console.error(error);
       toast.error("Failed to load permission requests");

@@ -25,10 +25,10 @@ def send_birthday_wish():
         if not sender:
             sender = Employee.query.get(sender_id)
 
-        # Resolve receiver: check by primary key id, fallback to employee_id string
-        receiver = Employee.query.get(receiver_id)
+        # Resolve receiver: check by employee_id string first, then fallback to primary key id
+        receiver = Employee.query.filter(Employee.employee_id == str(receiver_id)).first()
         if not receiver:
-            receiver = Employee.query.filter(Employee.employee_id == str(receiver_id)).first()
+            receiver = Employee.query.get(receiver_id)
 
         if not sender or not receiver:
             return jsonify({"success": False, "error": "Sender or Receiver not found"}), 404
@@ -82,7 +82,7 @@ def send_birthday_wish():
             "related_id": wish.id,
             "related_type": "birthday_wish",
             "thanked": False,
-            "sender_employee_id": sender_id
+            "sender_employee_id": sender.employee_id
         }
 
         # Emit birthday_wish_sent to receiver's socket room
@@ -146,7 +146,7 @@ def send_thanks(wish_id):
             "related_id": wish_id,
             "related_type": "birthday_thanks",
             "thanked": True,
-            "sender_employee_id": wish.receiver_id # sender of thanks is receiver of wish
+            "sender_employee_id": receiver.employee_id  # sender of thanks is receiver of wish
         }
 
         # Emit birthday_thanks_sent to sender's socket room

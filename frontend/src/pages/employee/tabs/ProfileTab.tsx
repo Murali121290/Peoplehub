@@ -463,7 +463,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
         setEmergencyDigits(eDigits);
 
         if (data.profile_image) {
-          setProfilePreview(getProfileImageUrl(data.profile_image, data.id));
+          setProfilePreview(getProfileImageUrl(data.profile_image, data.employee_id || data.id));
         } else {
           setProfilePreview("");
         }

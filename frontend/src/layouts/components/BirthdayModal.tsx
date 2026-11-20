@@ -152,7 +152,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
 
   if (isMyBirthday) {
     const myEmployeeData = birthdayEmployees.find((emp) => Number(emp.user_id) === Number(user?.id)) || currentEmployee;
-    const imageId = myEmployeeData?.id || localStorage.getItem("employee_id");
+    const imageId = myEmployeeData?.employee_id || localStorage.getItem("employee_id");
 
     return (
       <div className="fixed inset-0 z-[9999] bg-[linear-gradient(135deg,#d3d6ea_0%,#b8bcdb_45%,#9ea5d0_100%)] overflow-y-auto overflow-x-hidden animate-bg">
@@ -413,7 +413,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
           <div className="p-6 space-y-5">
             <div className="flex items-center gap-4 border-b border-gray-100 pb-4">
               <img
-                src={`${BASE_URL}/employees/image/${selectedEmpForWish.id}`}
+                src={`${BASE_URL}/employees/image/${selectedEmpForWish.employee_id || selectedEmpForWish.id}`}
                 alt={selectedEmpForWish.first_name}
                 className="w-14 h-14 rounded-full object-cover border border-gray-200"
                 onError={(e) => {
@@ -525,7 +525,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                   className="flex items-center gap-4 p-4 rounded-xl bg-primary-50/20 border border-primary-100/50 hover:bg-primary-50/40 transition-colors"
                 >
                   <img
-                    src={`${BASE_URL}/employees/image/${emp.id}`}
+                    src={`${BASE_URL}/employees/image/${emp.employee_id || emp.id}`}
                     alt={emp.first_name}
                     className="w-16 h-16 rounded-full object-cover border border-primary-200 shadow-sm"
                     onError={(e) => {

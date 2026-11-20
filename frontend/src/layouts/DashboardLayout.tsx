@@ -369,8 +369,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sender_id: Number(senderId),
-          receiver_id: emp.id,
+          sender_id: senderId,
+          receiver_id: emp.employee_id || emp.id,
           message: customMessage,
         }),
       });
@@ -399,8 +399,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sender_id: Number(senderId),
-          receiver_id: emp.id,
+          sender_id: senderId,
+          receiver_id: emp.employee_id || emp.id,
           message: customMessage,
         }),
       });

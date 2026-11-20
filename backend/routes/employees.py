@@ -101,7 +101,8 @@ def get_profile_image_url(emp):
             return f"/uploads/{decoded}"
     except Exception:
         pass
-    return f"/api/employees/image/{emp.id}"
+    emp_code = getattr(emp, "employee_id", None) or getattr(emp, "id", None)
+    return f"/api/employees/image/{emp_code}"
 
 def save_profile_image_data(employee_id, filename, image_data):
     ext = os.path.splitext(filename or "profile.jpg")[1].lower() or ".jpg"
@@ -465,7 +466,7 @@ def get_employees():
 @employees_bp.route("/<int:employee_id>/document/<string:doc_type>", methods=["GET"])
 def download_employee_document(employee_id, doc_type):
     try:
-        employee = Employee.query.get(employee_id)
+        employee = Employee.query.filter_by(employee_id=str(employee_id)).first()
         if not employee:
             return jsonify({"error": "Employee not found"}), 404
             
@@ -531,9 +532,7 @@ def download_employee_document(employee_id, doc_type):
 @employees_bp.route("/<int:employee_id>", methods=["GET"])
 def get_employee(employee_id):
 
-    employee = Employee.query.get(employee_id)
-    if not employee:
-        employee = Employee.query.filter_by(employee_id=str(employee_id)).first()
+    employee = Employee.query.filter_by(employee_id=str(employee_id)).first()
 
     if not employee:
         return jsonify({
@@ -700,14 +699,7 @@ def get_employee(employee_id):
 )
 def get_employee_image(employee_id):
     emp_code = str(employee_id).strip()
-    employee = None
-    if emp_code.isdigit():
-        try:
-            employee = Employee.query.get(int(emp_code))
-        except Exception:
-            employee = None
-    if not employee:
-        employee = Employee.query.filter_by(employee_id=emp_code).first()
+    employee = Employee.query.filter_by(employee_id=emp_code).first()
 
     if not employee:
         return jsonify({
@@ -768,7 +760,7 @@ def update_employee_profile(employee_id):
         if not is_hr_or_admin:
             employee = Employee.query.filter_by(user_id=current_user.id).first()
         else:
-            employee = Employee.query.get(employee_id)
+            employee = Employee.query.filter_by(employee_id=str(employee_id)).first() or Employee.query.get(employee_id)
 
         if not employee:
             return jsonify({
@@ -1262,16 +1254,20 @@ def today_birthdays():
         already_wished_ids = []
         if sender_id:
             from models.birthday_wish import BirthdayWish
-            today_start = datetime.combine(today, datetime.min.time())
-            wishes = BirthdayWish.query.filter(
-                BirthdayWish.sender_id == sender_id,
-                BirthdayWish.created_at >= today_start
-            ).all()
-            already_wished_ids = [w.receiver_id for w in wishes]
+            sender_emp = Employee.query.filter(Employee.employee_id == str(sender_id)).first()
+            actual_sender_pk = sender_emp.id if sender_emp else (int(sender_id) if str(sender_id).isdigit() else None)
+            if actual_sender_pk:
+                today_start = datetime.combine(today, datetime.min.time())
+                wishes = BirthdayWish.query.filter(
+                    BirthdayWish.sender_id == actual_sender_pk,
+                    BirthdayWish.created_at >= today_start
+                ).all()
+                already_wished_ids = [w.receiver_id for w in wishes]
 
         return jsonify([
             {
                 "id": e.id,
+                "employee_id": e.employee_id,
                 "first_name": e.first_name,
                 "last_name": e.last_name,
                 "user_id": e.user_id,
@@ -2818,7 +2814,7 @@ def get_team_attendance_by_id(team_id):
                 "role": emp.designation,
                 "designation": emp.designation,
                 "reporting_manager": emp.reporting_manager,
-                "profile_image": f"/api/employees/image/{emp.id}" if emp.profile_image else None,
+                "profile_image": get_profile_image_url(emp),
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
                 "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-",
@@ -3124,7 +3120,7 @@ def get_employee_details(employee_id):
 @employees_bp.route("/<int:employee_id>/status", methods=["POST"])
 def update_employee_status(employee_id):
     try:
-        employee = Employee.query.get(employee_id)
+        employee = Employee.query.filter_by(employee_id=str(employee_id)).first() or Employee.query.get(employee_id)
         if not employee:
             return jsonify({
                 "success": False,

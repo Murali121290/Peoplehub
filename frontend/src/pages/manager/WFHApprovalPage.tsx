@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 import { BookLoader } from "../../components/ui/Spinner";
 import { formatDateStr } from "../../utils/date";
 import { generateFinancialYears, generateCyclesForYear, getCurrentCycleValue } from "../../utils/cycle";
+import { getEmployees } from "../../services/employeesCache";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -89,13 +90,8 @@ const WFHApprovalPage: React.FC = () => {
 
   const fetchEmployees = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/employees/`, {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setTeamEmployees(Array.isArray(data) ? data : []);
-      }
+      const data = await getEmployees();
+      setTeamEmployees(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to fetch employees", err);
     }

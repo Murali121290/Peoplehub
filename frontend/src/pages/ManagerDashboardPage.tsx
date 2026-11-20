@@ -507,7 +507,7 @@ const ManagerDashboardPage = () => {
     setSavingEdit(true);
     try {
       const token = localStorage.getItem("token");
-      const targetEmpId = historyModalUser.id || historyModalUser.employee_id;
+      const targetEmpId = historyModalUser.employee_id;
 
       const payload = {
         employee_id: targetEmpId,
@@ -641,7 +641,7 @@ const ManagerDashboardPage = () => {
     const defaultCycle = cycles[0]?.value || "";
     setSelectedCycle(defaultCycle);
     try {
-      const targetUserId = member?.user_id || member?.id || member?.employee_id;
+      const targetUserId = member?.employee_id;
       if (!targetUserId || targetUserId === "undefined") {
         console.warn("Cannot fetch attendance history: invalid user ID", member);
         return;
@@ -661,7 +661,7 @@ const ManagerDashboardPage = () => {
     setSelectedCycle(cycleValue);
     setLoadingHistory(true);
     try {
-      const targetUserId = historyModalUser?.user_id || historyModalUser?.id || historyModalUser?.employee_id;
+      const targetUserId = historyModalUser?.employee_id;
       const response = await fetch(`${BASE_URL}/attendance/history/${targetUserId}?start_date=${cycleValue}`);
       if (!response.ok) throw new Error("Failed to fetch history");
       const data = await response.json();
@@ -989,7 +989,7 @@ const ManagerDashboardPage = () => {
       if (response.ok) {
         toast.success("Time adjustment approved successfully");
         if (historyModalUser) {
-          const targetUserId = historyModalUser.user_id || historyModalUser.id || historyModalUser.employee_id;
+          const targetUserId = historyModalUser.employee_id;
           const res = await fetch(`${BASE_URL}/attendance/history/${targetUserId}?start_date=${selectedCycle}`);
           if (res.ok) {
             const data = await res.json();
@@ -1013,7 +1013,7 @@ const ManagerDashboardPage = () => {
       if (response.ok) {
         toast.success("Time adjustment rejected successfully");
         if (historyModalUser) {
-          const targetUserId = historyModalUser.user_id || historyModalUser.id || historyModalUser.employee_id;
+          const targetUserId = historyModalUser.employee_id;
           const res = await fetch(`${BASE_URL}/attendance/history/${targetUserId}?start_date=${selectedCycle}`);
           if (res.ok) {
             const data = await res.json();
@@ -1863,6 +1863,9 @@ const ManagerDashboardPage = () => {
                     .filter((m) => {
                       const matchSearch =
                         m.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
+                        (m.employee_id || "")
+                          .toLowerCase()
+                          .includes(attendanceSearch.toLowerCase()) ||
                         (m.designation || "")
                           .toLowerCase()
                           .includes(attendanceSearch.toLowerCase());
@@ -2451,6 +2454,9 @@ const ManagerDashboardPage = () => {
                         .filter((m) => {
                           const matchSearch =
                             m.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
+                            (m.employee_id || "")
+                              .toLowerCase()
+                              .includes(attendanceSearch.toLowerCase()) ||
                             (m.designation || "")
                               .toLowerCase()
                               .includes(attendanceSearch.toLowerCase());
@@ -3298,7 +3304,7 @@ const ManagerDashboardPage = () => {
                                     </div>
                                     <div style={{ display: "flex", gap: "4px" }}>
                                       <button
-                                        onClick={() => handleApproveHistoryRegularization(historyModalUser?.id || historyModalUser?.employee_id, record.date)}
+                                        onClick={() => handleApproveHistoryRegularization(historyModalUser?.employee_id, record.date)}
                                         style={{
                                           padding: "3px 8px",
                                           background: "#10b981",
@@ -3313,7 +3319,7 @@ const ManagerDashboardPage = () => {
                                         Approve
                                       </button>
                                       <button
-                                        onClick={() => handleRejectHistoryRegularization(historyModalUser?.id || historyModalUser?.employee_id, record.date)}
+                                        onClick={() => handleRejectHistoryRegularization(historyModalUser?.employee_id, record.date)}
                                         style={{
                                           padding: "3px 8px",
                                           background: "#ef4444",

@@ -1715,7 +1715,7 @@ def check_overtime_odw_eligibility():
 @attendance_bp.route("/history/<int:user_id>")
 def attendance_history(user_id):
 
-    employee = Employee.query.filter_by(user_id=user_id).first()
+    employee = Employee.query.filter_by(user_id=user_id).first() or Employee.query.filter_by(employee_id=str(user_id)).first() or Employee.query.get(user_id)
     if not employee:
         return jsonify([])
 
@@ -4515,7 +4515,7 @@ def approve_attendance(employee_id):
             target_date = date.today() - timedelta(days=1)
 
         from models.employee import Employee
-        emp = Employee.query.get(employee_id)
+        emp = Employee.query.filter_by(employee_id=str(employee_id)).first() or Employee.query.get(employee_id) or Employee.query.filter_by(user_id=employee_id).first()
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
         target_user_id = emp.user_id
@@ -5025,9 +5025,7 @@ def accept_lop(employee_id):
         target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
 
         from models.employee import Employee
-        emp = Employee.query.get(employee_id)
-        if not emp:
-            emp = Employee.query.filter_by(user_id=employee_id).first()
+        emp = Employee.query.filter_by(employee_id=str(employee_id)).first() or Employee.query.get(employee_id) or Employee.query.filter_by(user_id=employee_id).first()
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
 
@@ -5114,9 +5112,7 @@ def reject_attendance(employee_id):
             target_date = get_last_working_day()
 
         from models.employee import Employee
-        emp = Employee.query.get(employee_id)
-        if not emp:
-            emp = Employee.query.filter_by(user_id=employee_id).first()
+        emp = Employee.query.filter_by(employee_id=str(employee_id)).first() or Employee.query.get(employee_id) or Employee.query.filter_by(user_id=employee_id).first()
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
         target_user_id = emp.user_id
@@ -5241,9 +5237,7 @@ def reply_clarification(employee_id):
             target_date = get_last_working_day()
 
         from models.employee import Employee
-        emp = Employee.query.get(employee_id)
-        if not emp:
-            emp = Employee.query.filter_by(user_id=employee_id).first()
+        emp = Employee.query.filter_by(employee_id=str(employee_id)).first() or Employee.query.get(employee_id) or Employee.query.filter_by(user_id=employee_id).first()
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
 

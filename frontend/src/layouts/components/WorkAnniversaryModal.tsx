@@ -29,7 +29,7 @@ const WorkAnniversaryModal: React.FC<WorkAnniversaryModalProps> = ({
 
   if (isMyAnniversary) {
     const myEmpData = anniversaryEmployees.find((emp) => Number(emp.user_id) === Number(user?.id)) || currentEmployee;
-    const imageId = myEmpData?.id || localStorage.getItem("employee_id");
+    const imageId = myEmpData?.employee_id || localStorage.getItem("employee_id");
     const yearsCompleted = myEmpData?.years_completed || 1;
 
     return (
@@ -171,7 +171,7 @@ const WorkAnniversaryModal: React.FC<WorkAnniversaryModalProps> = ({
           <div className="p-6 space-y-5">
             <div className="flex items-center gap-4 border-b border-gray-100 pb-4">
               <img
-                src={`${BASE_URL}/employees/image/${selectedEmpForWish.id}`}
+                src={`${BASE_URL}/employees/image/${selectedEmpForWish.employee_id || selectedEmpForWish.id}`}
                 alt={selectedEmpForWish.first_name}
                 className="w-14 h-14 rounded-full object-cover border border-gray-200"
                 onError={(e) => {
@@ -263,7 +263,7 @@ const WorkAnniversaryModal: React.FC<WorkAnniversaryModalProps> = ({
                 className="flex items-center gap-4 p-4 rounded-xl bg-indigo-50/30 border border-indigo-100 hover:bg-indigo-50/60 transition-colors"
               >
                 <img
-                  src={`${BASE_URL}/employees/image/${emp.id}`}
+                  src={`${BASE_URL}/employees/image/${emp.employee_id || emp.id}`}
                   alt={emp.first_name}
                   className="w-16 h-16 rounded-full object-cover border border-indigo-200 shadow-sm"
                   onError={(e) => {

@@ -26,6 +26,44 @@ shift_bp = Blueprint(
     __name__
 )
 
+# ---------------------------------------------------------------------------
+# Redis cache for GET /api/shifts/ (all shift/WFH/ODW requests).
+# Invalidation hooks SQLAlchemy session so ANY commit touching ShiftRequest
+# clears the cache immediately.
+# ---------------------------------------------------------------------------
+from sqlalchemy import event as _sa_event
+from utils.redis_client import cache_get_json, cache_set_json, cache_delete
+
+SHIFTS_ALL_CACHE_KEY = "peoplehub:api:shifts:all:v1"
+SHIFTS_ALL_CACHE_TTL = 30  # seconds
+
+
+def invalidate_shifts_cache():
+    cache_delete(SHIFTS_ALL_CACHE_KEY)
+
+
+def _mark_shift_changes(session, flush_context):
+    for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+        if isinstance(obj, ShiftRequest):
+            session.info["shifts_changed"] = True
+            return
+
+
+def _invalidate_shifts_after_commit(session):
+    if session.info.pop("shifts_changed", False):
+        invalidate_shifts_cache()
+
+
+def _clear_shifts_flag_after_rollback(session):
+    session.info.pop("shifts_changed", None)
+
+
+_shift_session_factory = db.session.session_factory
+if not _sa_event.contains(_shift_session_factory, "after_flush", _mark_shift_changes):
+    _sa_event.listen(_shift_session_factory, "after_flush", _mark_shift_changes)
+    _sa_event.listen(_shift_session_factory, "after_commit", _invalidate_shifts_after_commit)
+    _sa_event.listen(_shift_session_factory, "after_rollback", _clear_shifts_flag_after_rollback)
+
 def init_db_columns():
     try:
         from sqlalchemy import text
@@ -402,11 +440,16 @@ def apply_shift():
 )
 def get_shift_requests():
     try:
+        fresh = request.args.get("fresh") == "true"
+        if not fresh:
+            cached = cache_get_json(SHIFTS_ALL_CACHE_KEY)
+            if cached is not None:
+                return jsonify(cached), 200
+
         shift_requests = ShiftRequest.query.order_by(ShiftRequest.id.desc()).all()
-        return jsonify([
-            item.to_dict()
-            for item in shift_requests
-        ])
+        result = [item.to_dict() for item in shift_requests]
+        cache_set_json(SHIFTS_ALL_CACHE_KEY, result, SHIFTS_ALL_CACHE_TTL)
+        return jsonify(result), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 

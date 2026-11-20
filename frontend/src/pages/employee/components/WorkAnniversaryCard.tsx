@@ -98,7 +98,7 @@ const WorkAnniversaryCard: React.FC = () => {
   }, [employees, pause]);
 
   const profileImage = currentEmployee?.profile_image
-    ? `${API_URL}/api/employees/image/${currentEmployee.id}`
+    ? `${API_URL}/api/employees/image/${currentEmployee.employee_id || currentEmployee.id}`
     : DEFAULT_AVATAR;
 
   if (loading) {

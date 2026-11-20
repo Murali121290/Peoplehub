@@ -168,7 +168,7 @@ export default function HRAdminDashboard() {
   const [isResetting, setIsResetting] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [detailedEditOpen, setDetailedEditOpen] = useState(false);
-  const [detailedEditEmployeeId, setDetailedEditEmployeeId] = useState<number | null>(null);
+  const [detailedEditEmployeeId, setDetailedEditEmployeeId] = useState<string | number | null>(null);
   const [isEmployeesLoading, setIsEmployeesLoading] = useState(false);
 
   // --- API Calls ---
@@ -626,8 +626,9 @@ export default function HRAdminDashboard() {
 
       // Determine method and URL based on edit mode
       const method = isEditMode ? "PATCH" : "POST";
+      const empIdentifier = newEmp.employee_id;
       const url = isEditMode
-        ? `${BASE_URL}/employees/${newEmp.id}`
+        ? `${BASE_URL}/employees/${empIdentifier}`
         : `${BASE_URL}/employees/`;
 
       const token = localStorage.getItem("token");
@@ -674,7 +675,8 @@ export default function HRAdminDashboard() {
     setIsActionLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`${BASE_URL}/employees/${employee.id}`, {
+      const empIdentifier = employee.employee_id;
+      const response = await fetch(`${BASE_URL}/employees/${empIdentifier}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const fullEmployee = await response.json();
@@ -735,8 +737,9 @@ export default function HRAdminDashboard() {
   };
 
   const handleEditDetailedProfile = (employee: any) => {
-    if (employee && employee.id) {
-      setDetailedEditEmployeeId(employee.id);
+    const empIdentifier = employee?.employee_id;
+    if (empIdentifier) {
+      setDetailedEditEmployeeId(empIdentifier);
       setDetailedEditOpen(true);
     }
   };
@@ -746,8 +749,9 @@ export default function HRAdminDashboard() {
     setIsActionLoading(true);
     try {
       const token = localStorage.getItem("token");
+      const empIdentifier = currentEmployee.employee_id;
       const response = await fetch(
-        `${BASE_URL}/employees/${currentEmployee.id}`,
+        `${BASE_URL}/employees/${empIdentifier}`,
         {
           method: "PATCH",
           headers: { 

@@ -8,6 +8,7 @@ import PermissionApprovalPage from "./PermissionApprovalPage";
 import RegularizationApprovalPage from "./RegularizationApprovalPage";
 import { socket } from "../../services/socket";
 import { debounce } from "../../utils/debounce";
+import { getEmployees } from "../../services/employeesCache";
 import {
   CalendarDaysIcon,
   ShieldCheckIcon,
@@ -131,11 +132,7 @@ const TeamManagementPage: React.FC = () => {
       const userFullName = user?.full_name || `${(user as any)?.first_name || ""} ${(user as any)?.last_name || ""}`.trim();
       let activeEmployees: any[] = [];
       try {
-        const empRes = await fetch(`${BASE_URL}/employees/`);
-        if (empRes.ok) {
-          const empData = await empRes.json();
-          activeEmployees = Array.isArray(empData) ? empData : [];
-        }
+        activeEmployees = await getEmployees();
       } catch (err) {
         console.error("Failed to fetch employees for team counts", err);
       }

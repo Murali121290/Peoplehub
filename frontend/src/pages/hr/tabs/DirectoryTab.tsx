@@ -115,7 +115,8 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
     } else {
       try {
         const token = localStorage.getItem("token");
-        const response = await fetch(`${BASE_URL}/employees/${emp.id}/status`, {
+        const empIdentifier = emp.employee_id;
+        const response = await fetch(`${BASE_URL}/employees/${empIdentifier}/status`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -145,7 +146,8 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
     setIsStatusSubmitting(true);
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`${BASE_URL}/employees/${deactivateEmp.id}/status`, {
+      const empIdentifier = deactivateEmp.employee_id;
+      const response = await fetch(`${BASE_URL}/employees/${empIdentifier}/status`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

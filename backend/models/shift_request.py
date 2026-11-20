@@ -120,12 +120,14 @@ class ShiftRequest(db.Model):
     def to_dict(self):
         emp_string_id = str(self.employee_id) if self.employee_id is not None else ""
         try:
-            from models.employee import Employee
+            from utils.employee_cache import get_all_employees_cached
             if emp_string_id:
-                emp = Employee.query.filter(Employee.employee_id == str(emp_string_id)).first()
+                all_emps = get_all_employees_cached()
+                emp = next((e for e in all_emps if str(e.employee_id) == emp_string_id), None)
                 if not emp:
                     try:
-                        emp = Employee.query.get(int(emp_string_id))
+                        emp_int = int(emp_string_id)
+                        emp = next((e for e in all_emps if e.id == emp_int), None)
                     except (ValueError, TypeError):
                         pass
                 if emp and emp.employee_id:

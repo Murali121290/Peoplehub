@@ -19,7 +19,8 @@ work_anniversary_bp = Blueprint(
 def get_today_work_anniversaries():
     today = date.today()
     sender_id_str = request.args.get("sender_id")
-    sender_id = int(sender_id_str) if sender_id_str and sender_id_str.isdigit() else None
+    sender_emp = Employee.query.filter(Employee.employee_id == str(sender_id_str)).first() if sender_id_str else None
+    sender_id = sender_emp.id if sender_emp else (int(sender_id_str) if sender_id_str and sender_id_str.isdigit() else None)
 
     employees = Employee.query.filter(
         Employee.joining_date.isnot(None),
@@ -90,14 +91,14 @@ def send_work_anniversary_wish():
         if not sender_id or not receiver_id or not message:
             return jsonify({"success": False, "error": "Missing required fields"}), 400
 
-        # Resolve sender & receiver by employee_id or primary key id
+        # Resolve sender & receiver by employee_id string first
         sender = Employee.query.filter(Employee.employee_id == str(sender_id)).first()
         if not sender:
             sender = Employee.query.get(sender_id)
 
-        receiver = Employee.query.get(receiver_id)
+        receiver = Employee.query.filter(Employee.employee_id == str(receiver_id)).first()
         if not receiver:
-            receiver = Employee.query.filter(Employee.employee_id == str(receiver_id)).first()
+            receiver = Employee.query.get(receiver_id)
 
         if not sender or not receiver:
             return jsonify({"success": False, "error": "Sender or Receiver not found"}), 404
@@ -148,7 +149,7 @@ def send_work_anniversary_wish():
             "related_id": wish.id,
             "related_type": "anniversary_wish",
             "thanked": False,
-            "sender_employee_id": sender_id
+            "sender_employee_id": sender.employee_id
         }
 
         try:
@@ -213,7 +214,7 @@ def send_anniversary_thanks(wish_id):
             "related_id": wish_id,
             "related_type": "anniversary_thanks",
             "thanked": True,
-            "sender_employee_id": wish.receiver_id
+            "sender_employee_id": receiver.employee_id
         }
 
         try:
