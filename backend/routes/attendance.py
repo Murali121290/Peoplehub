@@ -3154,6 +3154,10 @@ def export_monthly_attendance():
                         remaining_day = max(0.0, 1.0 - total_day_leave_val)
                         if remaining_day > 0.0:
                             worked_hrs = (getattr(att, "total_hours", 0.0) or 0.0) if att else 0.0
+                            gross_hrs = worked_hrs
+                            if att and att.check_in and att.check_out:
+                                gross_hrs = max((att.check_out - att.check_in).total_seconds() / 3600.0, 0.0)
+                            added_hrs = ((getattr(att, "added_minutes", 0) or 0) / 60.0) if att else 0.0
                             # Calculate any approved permission hours for this date
                             day_perm_hrs = 0.0
                             for p in emp_permissions:
@@ -3162,11 +3166,11 @@ def export_monthly_attendance():
                                     t_sec = p.to_time.hour * 3600 + p.to_time.minute * 60 + getattr(p.to_time, 'second', 0)
                                     day_perm_hrs += max(t_sec - f_sec, 0) / 3600.0
 
-                            effective_worked_hrs = worked_hrs + day_perm_hrs
+                            effective_worked_hrs = max(worked_hrs, gross_hrs) + day_perm_hrs + added_hrs
                             # For PM mode employee, check card hours if available
                             emp_work_mode = (getattr(employee, "work_mode", None) or "").strip().upper()
                             card_hrs = (getattr(att, "card_working_hours", 0.0) or 0.0) if att else 0.0
-                            effective_card_hrs = card_hrs + day_perm_hrs
+                            effective_card_hrs = card_hrs + day_perm_hrs + added_hrs
                             has_punches = bool(att and (att.check_in or att.card_check_in or att.check_out or att.card_check_out))
                             
                             # A half-day worked portion requires at least 4.0 hours (worked/card + permission) to be counted as present
@@ -4376,6 +4380,33 @@ def approve_attendance(employee_id):
                     leave_req.status = "Approved"
                     leave_req.approved_by = emp.reporting_manager or "Manager"
                     leave_req.approved_at = datetime.now()
+                elif getattr(attendance, "is_lop", False):
+                    existing_approved_lop = LeaveRequest.query.filter(
+                        LeaveRequest.employee_id == emp.employee_id,
+                        LeaveRequest.from_date <= target_date,
+                        LeaveRequest.to_date >= target_date,
+                        LeaveRequest.status == "Approved"
+                    ).first()
+                    if not existing_approved_lop:
+                        now_dt = datetime.now()
+                        lop_leave = LeaveRequest(
+                            employee_id=emp.employee_id,
+                            employee_name=f"{emp.first_name} {emp.last_name}".strip(),
+                            request_type="Leave",
+                            leave_type="Loss of Pay",
+                            from_date=target_date,
+                            to_date=target_date,
+                            total_days=1.0,
+                            status="Approved",
+                            reason="Accepted Loss of Pay (LOP) for this absent day.",
+                            reporting_manager=emp.reporting_manager,
+                            approved_by=emp.reporting_manager or "Manager",
+                            created_at=now_dt,
+                            approved_at=now_dt
+                        )
+                        db.session.add(lop_leave)
+                    attendance.status = "Leave"
+                    attendance.leave_type = "Loss of Pay"
             else:
                 # Normal present/half-day record — recalculate using the full engine
                 # so that approved permissions are included in the status calculation.
@@ -4815,6 +4846,30 @@ def accept_lop(employee_id):
             flag_modified(attendance, "clarification_history")
             flag_modified(attendance, "manager_status")
             flag_modified(attendance, "is_lop")
+
+        # Also ensure a corresponding Loss of Pay LeaveRequest exists in leave_requests
+        from models.leave import LeaveRequest
+        existing_lop_leave = LeaveRequest.query.filter(
+            LeaveRequest.employee_id == emp.employee_id,
+            LeaveRequest.from_date <= target_date,
+            LeaveRequest.to_date >= target_date,
+            LeaveRequest.status.in_(["Pending", "Approved"])
+        ).first()
+        if not existing_lop_leave:
+            lop_leave = LeaveRequest(
+                employee_id=emp.employee_id,
+                employee_name=f"{emp.first_name} {emp.last_name}".strip(),
+                request_type="Leave",
+                leave_type="Loss of Pay",
+                from_date=target_date,
+                to_date=target_date,
+                total_days=1.0,
+                status="Pending",
+                reason="Accepted Loss of Pay (LOP) for this absent day.",
+                reporting_manager=emp.reporting_manager,
+                created_at=datetime.utcnow()
+            )
+            db.session.add(lop_leave)
 
         db.session.commit()
 

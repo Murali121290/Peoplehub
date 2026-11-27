@@ -2767,7 +2767,8 @@ const ManagerDashboardPage = () => {
                                       false,
                                       (member as any).permission_hours || 0,
                                       cardHrsMem,
-                                      isPmMem
+                                      isPmMem,
+                                      (member as any).added_minutes || (member as any).addedMinutes || 0
                                     );
                                     return badgeStr.split(" & ").map((part: string, idx: number) => {
                                       const s = part.toLowerCase();
@@ -3079,7 +3080,8 @@ const ManagerDashboardPage = () => {
                           record.is_one_day_wages || false,
                           record.permission_hours || 0,
                           cardHrsRec,
-                          isPmRec
+                          isPmRec,
+                          record.added_minutes || record.addedMinutes || 0
                         );
 
                         // Format date nicely

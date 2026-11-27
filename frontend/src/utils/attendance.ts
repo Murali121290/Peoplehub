@@ -2,10 +2,12 @@ export const isHalfDayPresent = (
   totalHours: number,
   permissionHours: number = 0,
   cardHours: number = 0,
-  isPmMode: boolean = false
+  isPmMode: boolean = false,
+  addedMinutes: number = 0
 ): boolean => {
-  const effectiveHours = totalHours + (permissionHours || 0);
-  const effectiveCardHours = cardHours + (permissionHours || 0);
+  const addedHours = (addedMinutes || 0) / 60;
+  const effectiveHours = totalHours + (permissionHours || 0) + addedHours;
+  const effectiveCardHours = cardHours + (permissionHours || 0) + addedHours;
 
   // In PM mode, if biometric card entry exists, Biometric Card Entry is STRICT FIRST PRIORITY:
   // Card Hours + Permission >= 4.0 hours -> Half Day Present
@@ -28,7 +30,8 @@ export const computeAttendanceBadgeLabel = (
   isOneDayWages: boolean = false,
   permissionHours: number = 0,
   cardHours: number = 0,
-  isPmMode: boolean = false
+  isPmMode: boolean = false,
+  addedMinutes: number = 0
 ): string => {
   if (leaveDetails && leaveDetails.length > 0 && !isOneDayWages) {
     if (leaveDetails.length === 2 && leaveDetails.every((l: any) => l.total_days != null && Number(l.total_days) <= 0.5)) {
@@ -58,7 +61,7 @@ export const computeAttendanceBadgeLabel = (
 
       let otherHalfStatusStr = "";
       if (isHalfDay && dateStr <= todayStr && !isFuture) {
-        if (isHalfDayPresent(totalHours, permissionHours, cardHours, isPmMode)) {
+        if (isHalfDayPresent(totalHours, permissionHours, cardHours, isPmMode, addedMinutes)) {
           otherHalfStatusStr = "Half Day Present & ";
         } else {
           otherHalfStatusStr = "Half Day Absent & ";

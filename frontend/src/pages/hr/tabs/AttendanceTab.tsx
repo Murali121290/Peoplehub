@@ -1400,7 +1400,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                               todayStr,
                               (row.date || row.attendance_date || todayStr) > todayStr,
                               false,
-                              row.permission_hours || 0
+                              row.permission_hours || 0,
+                              Number(row.card_working_hours || 0),
+                              Boolean(row.is_pm_mode || (row.work_mode || "").trim().toUpperCase() === "PM"),
+                              row.added_minutes || row.addedMinutes || 0
                             );
                             if ((badgeStr === "Leave" || badgeStr === "Half Day") && row.leave_type) {
                               badgeStr = row.leave_type;

@@ -1029,12 +1029,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             clean(localStorage.getItem("employee_id")),
           ].filter(Boolean);
 
-      const myIds = [
-        ...myEvalEmpIds,
-        clean(currentDbUser?.id),
-        clean((user as any)?.id),
-        clean(localStorage.getItem("user_id")),
-      ].filter(Boolean);
+      const myIds = [...myEvalEmpIds].filter(Boolean);
 
       const myNames = [
         user?.full_name,
@@ -1062,7 +1057,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const isMatchLoggedInManager = (mgrRef: string, mgrId: string) => {
         if (mgrId) {
           const cleanId = clean(mgrId);
-          if (myIds.includes(cleanId)) return true;
+          // reporting_manager_id / team_lead_id are employee_id badge codes, NOT DB primary keys (employees.id / users.id)
+          if (myEvalEmpIds.includes(cleanId)) return true;
         }
         if (mgrRef) {
           const cleanRef = mgrRef.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -1084,7 +1080,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const isDirectReport = (emp: any): boolean => {
         if (!emp || !isEmployeeActive(emp)) return false;
         const eId = clean(emp.employee_id);
-        if (myIds.includes(eId)) return false;
+        if (myEvalEmpIds.includes(eId)) return false;
 
         const leads: { ref: string; id: string }[] = [
           {
