@@ -96,9 +96,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
       return;
     }
 
-    // Only check for missing timings if they are NOT regularizing and NOT on Leave
+    // Only check for missing timings if they are NOT regularizing, NOT on Leave, and NOT accepted LOP
     const isLeave = emp.status === "Leave" || emp.attendance_status === "Leave";
-    if (!isPendingRegularization && !isLeave) {
+    const isLop = Boolean(emp.is_lop);
+    if (!isPendingRegularization && !isLeave && !isLop) {
       const checkIn = emp.check_in;
       const checkOut = emp.check_out;
       const hasCheckIn = checkIn && checkIn !== "-" && checkIn !== "—";
@@ -207,11 +208,12 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
           );
           for (const e of pendingItems) {
             const isLeave = e.status === "Leave" || e.attendance_status === "Leave";
+            const isLop = Boolean(e.is_lop);
             const checkIn = e.check_in;
             const checkOut = e.check_out;
             const hasCheckIn = checkIn && checkIn !== "-" && checkIn !== "—";
             const hasCheckOut = checkOut && checkOut !== "-" && checkOut !== "—";
-            if (!isLeave && (!hasCheckIn || !hasCheckOut)) {
+            if (!isLeave && !isLop && (!hasCheckIn || !hasCheckOut)) {
               continue;
             }
             await onApproveEmployee(e.employee_id || e.id);
@@ -219,11 +221,12 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
           setEmployees((prev) =>
             prev.map((e) => {
               const isLeave = e.status === "Leave" || e.attendance_status === "Leave";
+              const isLop = Boolean(e.is_lop);
               const checkIn = e.check_in;
               const checkOut = e.check_out;
               const hasCheckIn = checkIn && checkIn !== "-" && checkIn !== "—";
               const hasCheckOut = checkOut && checkOut !== "-" && checkOut !== "—";
-              if (!isLeave && (!hasCheckIn || !hasCheckOut)) {
+              if (!isLeave && !isLop && (!hasCheckIn || !hasCheckOut)) {
                 return e;
               }
               return (!e.decision || e.decision === "Pending") ? { ...e, decision: "Approved" } : e;
@@ -256,7 +259,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     );
     const cardHrs = emp.card_working_hours != null ? Number(emp.card_working_hours) : 0;
 
-    const badgeStr = computeAttendanceBadgeLabel(
+    const rawBadgeStr = computeAttendanceBadgeLabel(
       emp.status,
       emp.gross_hours || 0,
       emp.leave_details || [],
@@ -266,8 +269,17 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
       emp.is_one_day_wages || false,
       emp.permission_hours || 0,
       cardHrs,
-      isPm
+      isPm,
+      emp.added_minutes || emp.addedMinutes || 0
     );
+
+    const badgeStr =
+      emp.is_lop &&
+      (!emp.leave_details || emp.leave_details.length === 0) &&
+      !rawBadgeStr.toLowerCase().includes("lop") &&
+      !rawBadgeStr.toLowerCase().includes("loss of pay")
+        ? "Loss of Pay (LOP)"
+        : rawBadgeStr;
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
